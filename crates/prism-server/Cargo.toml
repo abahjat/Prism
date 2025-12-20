@@ -1,0 +1,57 @@
+[package]
+name = "prism-server"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+description = "REST API server for Prism document processing"
+keywords = ["api", "server", "rest", "document", "conversion"]
+categories = ["web-programming::http-server"]
+
+[[bin]]
+name = "prism-server"
+path = "src/main.rs"
+
+[dependencies]
+# Internal dependencies
+prism-core = { workspace = true }
+prism-parsers = { workspace = true }
+prism-render = { workspace = true }
+prism-sandbox = { workspace = true }
+
+# Async runtime
+tokio = { workspace = true }
+async-trait = { workspace = true }
+futures = { workspace = true }
+
+# Web framework
+axum = { workspace = true }
+tower = { workspace = true }
+tower-http = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Error handling
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+# Logging & Tracing
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+# Utilities
+uuid = { workspace = true }
+bytes = { workspace = true }
+chrono = { workspace = true }
+mime = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[features]
+default = []

@@ -1,0 +1,47 @@
+[package]
+name = "prism-render"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+description = "Rendering engine for Prism document output"
+keywords = ["document", "rendering", "pdf", "html", "image"]
+categories = ["rendering"]
+
+[dependencies]
+# Internal dependencies
+prism-core = { workspace = true }
+
+# Async runtime
+tokio = { workspace = true }
+async-trait = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Error handling
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+
+# Utilities
+uuid = { workspace = true }
+bytes = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+tempfile = { workspace = true }
+
+[features]
+default = []
+# Individual renderer features
+render-html = []
+render-pdf = []
+render-image = []
+render-svg = []

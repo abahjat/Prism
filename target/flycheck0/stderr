@@ -1,0 +1,1700 @@
+   0.178037100s  INFO prepare_target{force=false package_id=prism-cli v0.1.0 (C:\Dev\RustSandbox\Prism\crates\prism-cli) target="prism_cli"}: cargo::core::compiler::fingerprint: fingerprint error for prism-cli v0.1.0 (C:\Dev\RustSandbox\Prism\crates\prism-cli)/Check { test: false }/TargetInner { name_inferred: true, ..: lib_target("prism_cli", ["lib"], "C:\\Dev\\RustSandbox\\Prism\\crates\\prism-cli\\src\\lib.rs", Edition2021) }
+   0.178111700s  INFO prepare_target{force=false package_id=prism-cli v0.1.0 (C:\Dev\RustSandbox\Prism\crates\prism-cli) target="prism_cli"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Dev\RustSandbox\Prism\target\debug\.fingerprint\prism-cli-ed809bdeaca86e88\lib-prism_cli`
+
+Caused by:
+    The system cannot find the file specified. (os error 2)
+
+Stack backtrace:
+   0: git_midx_writer_dump
+   1: git_midx_writer_dump
+   2: git_midx_writer_dump
+   3: git_midx_writer_dump
+   4: git_filter_source_repo
+   5: git_filter_source_repo
+   6: git_filter_source_repo
+   7: git_filter_source_repo
+   8: git_filter_source_repo
+   9: git_filter_source_repo
+  10: git_filter_source_repo
+  11: git_libgit2_prerelease
+  12: <unknown>
+  13: <unknown>
+  14: <unknown>
+  15: <unknown>
+  16: git_midx_writer_dump
+  17: git_filter_source_repo
+  18: git_midx_writer_dump
+  19: BaseThreadInitThunk
+  20: RtlUserThreadStart
+   0.185561000s  INFO prepare_target{force=false package_id=prism-core v0.1.0 (C:\Dev\RustSandbox\Prism\crates\prism-core) target="prism_core"}: cargo::core::compiler::fingerprint: fingerprint error for prism-core v0.1.0 (C:\Dev\RustSandbox\Prism\crates\prism-core)/Check { test: false }/TargetInner { name_inferred: true, ..: lib_target("prism_core", ["lib"], "C:\\Dev\\RustSandbox\\Prism\\crates\\prism-core\\src\\lib.rs", Edition2021) }
+   0.185581000s  INFO prepare_target{force=false package_id=prism-core v0.1.0 (C:\Dev\RustSandbox\Prism\crates\prism-core) target="prism_core"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Dev\RustSandbox\Prism\target\debug\.fingerprint\prism-core-a2c7a341a71ada5d\lib-prism_core`
+
+Caused by:
+    The system cannot find the file specified. (os error 2)
+
+Stack backtrace:
+   0: git_midx_writer_dump
+   1: git_midx_writer_dump
+   2: git_midx_writer_dump
+   3: git_midx_writer_dump
+   4: git_filter_source_repo
+   5: git_filter_source_repo
+   6: git_filter_source_repo
+   7: git_filter_source_repo
+   8: git_filter_source_repo
+   9: git_filter_source_repo
+  10: git_filter_source_repo
+  11: git_filter_source_repo
+  12: git_libgit2_prerelease
+  13: <unknown>
+  14: <unknown>
+  15: <unknown>
+  16: <unknown>
+  17: git_midx_writer_dump
+  18: git_filter_source_repo
+  19: git_midx_writer_dump
+  20: BaseThreadInitThunk
+  21: RtlUserThreadStart
+   0.191720000s  INFO prepare_target{force=false package_id=tokio v1.48.0 target="tokio"}: cargo::core::compiler::fingerprint: fingerprint error for tokio v1.48.0/Check { test: false }/TargetInner { ..: lib_target("tokio", ["lib"], "C:\\Users\\Bahjat\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\tokio-1.48.0\\src\\lib.rs", Edition2021) }
+   0.191740700s  INFO prepare_target{force=false package_id=tokio v1.48.0 target="tokio"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Dev\RustSandbox\Prism\target\debug\.fingerprint\tokio-d101ab7ca9d7dea1\lib-tokio`
+
+Caused by:
+    The system cannot find the file specified. (os error 2)
+
+Stack backtrace:
+   0: git_midx_writer_dump
+   1: git_midx_writer_dump
+   2: git_midx_writer_dump
+   3: git_midx_writer_dump
+   4: git_filter_source_repo
+   5: git_filter_source_repo
+   6: git_filter_source_repo
+   7: git_filter_source_repo
+   8: git_filter_source_repo
+   9: git_filter_source_repo
+  10: git_filter_source_repo
+  11: git_filter_source_repo
+  12: git_filter_source_repo
+  13: git_libgit2_prerelease
+  14: <unknown>
+  15: <unknown>
+  16: <unknown>
+  17: <unknown>
+  18: git_midx_writer_dump
+  19: git_filter_source_repo
+  20: git_midx_writer_dump
+  21: BaseThreadInitThunk
+  22: RtlUserThreadStart
+   0.192227800s  INFO prepare_target{force=false package_id=mio v1.1.1 target="mio"}: cargo::core::compiler::fingerprint: fingerprint error for mio v1.1.1/Check { test: false }/TargetInner { ..: lib_target("mio", ["lib"], "C:\\Users\\Bahjat\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\mio-1.1.1\\src\\lib.rs", Edition2021) }
+   0.192240600s  INFO prepare_target{force=false package_id=mio v1.1.1 target="mio"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Dev\RustSandbox\Prism\target\debug\.fingerprint\mio-977d00102037b4b1\lib-mio`
+
+Caused by:
+    The system cannot find the file specified. (os error 2)
+
+Stack backtrace:
+   0: git_midx_writer_dump
+   1: git_midx_writer_dump
+   2: git_midx_writer_dump
+   3: git_midx_writer_dump
+   4: git_filter_source_repo
+   5: git_filter_source_repo
+   6: git_filter_source_repo
+   7: git_filter_source_repo
+   8: git_filter_source_repo
+   9: git_filter_source_repo
+  10: git_filter_source_repo
+  11: git_filter_source_repo
+  12: git_filter_source_repo
+  13: git_filter_source_repo
+  14: git_libgit2_prerelease
+  15: <unknown>
+  16: <unknown>
+  17: <unknown>
+  18: <unknown>
+  19: git_midx_writer_dump
+  20: git_filter_source_repo
+  21: git_midx_writer_dump
+  22: BaseThreadInitThunk
+  23: RtlUserThreadStart
+   0.192502500s  INFO prepare_target{force=false package_id=windows-sys v0.61.2 target="windows_sys"}: cargo::core::compiler::fingerprint: fingerprint error for windows-sys v0.61.2/Check { test: false }/TargetInner { tested: false, doctest: false, ..: lib_target("windows_sys", ["lib"], "C:\\Users\\Bahjat\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\windows-sys-0.61.2\\src\\lib.rs", Edition2021) }
+   0.192512600s  INFO prepare_target{force=false package_id=windows-sys v0.61.2 target="windows_sys"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Dev\RustSandbox\Prism\target\debug\.fingerprint\windows-sys-019755a8144796fc\lib-windows_sys`
+
+Caused by:
+    The system cannot find the file specified. (os error 2)
+
+Stack backtrace:
+   0: git_midx_writer_dump
+   1: git_midx_writer_dump
+   2: git_midx_writer_dump
+   3: git_midx_writer_dump
+   4: git_filter_source_repo
+   5: git_filter_source_repo
+   6: git_filter_source_repo
+   7: git_filter_source_repo
+   8: git_filter_source_repo
+   9: git_filter_source_repo
+  10: git_filter_source_repo
+  11: git_filter_source_repo
+  12: git_filter_source_repo
+  13: git_filter_source_repo
+  14: git_filter_source_repo
+  15: git_libgit2_prerelease
+  16: <unknown>
+  17: <unknown>
+  18: <unknown>
+  19: <unknown>
+  20: git_midx_writer_dump
+  21: git_filter_source_repo
+  22: git_midx_writer_dump
+  23: BaseThreadInitThunk
+  24: RtlUserThreadStart
+   0.195580300s  INFO prepare_target{force=false package_id=prism-parsers v0.1.0 (C:\Dev\RustSandbox\Prism\crates\prism-parsers) target="prism_parsers"}: cargo::core::compiler::fingerprint: fingerprint error for prism-parsers v0.1.0 (C:\Dev\RustSandbox\Prism\crates\prism-parsers)/Check { test: false }/TargetInner { name_inferred: true, ..: lib_target("prism_parsers", ["lib"], "C:\\Dev\\RustSandbox\\Prism\\crates\\prism-parsers\\src\\lib.rs", Edition2021) }
+   0.195594100s  INFO prepare_target{force=false package_id=prism-parsers v0.1.0 (C:\Dev\RustSandbox\Prism\crates\prism-parsers) target="prism_parsers"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Dev\RustSandbox\Prism\target\debug\.fingerprint\prism-parsers-c72d648046393d91\lib-prism_parsers`
+
+Caused by:
+    The system cannot find the file specified. (os error 2)
+
+Stack backtrace:
+   0: git_midx_writer_dump
+   1: git_midx_writer_dump
+   2: git_midx_writer_dump
+   3: git_midx_writer_dump
+   4: git_filter_source_repo
+   5: git_filter_source_repo
+   6: git_filter_source_repo
+   7: git_filter_source_repo
+   8: git_filter_source_repo
+   9: git_filter_source_repo
+  10: git_filter_source_repo
+  11: git_filter_source_repo
+  12: git_libgit2_prerelease
+  13: <unknown>
+  14: <unknown>
+  15: <unknown>
+  16: <unknown>
+  17: git_midx_writer_dump
+  18: git_filter_source_repo
+  19: git_midx_writer_dump
+  20: BaseThreadInitThunk
+  21: RtlUserThreadStart
+   0.195980800s  INFO prepare_target{force=false package_id=prism-render v0.1.0 (C:\Dev\RustSandbox\Prism\crates\prism-render) target="prism_render"}: cargo::core::compiler::fingerprint: fingerprint error for prism-render v0.1.0 (C:\Dev\RustSandbox\Prism\crates\prism-render)/Check { test: false }/TargetInner { name_inferred: true, ..: lib_target("prism_render", ["lib"], "C:\\Dev\\RustSandbox\\Prism\\crates\\prism-render\\src\\lib.rs", Edition2021) }
+   0.196001400s  INFO prepare_target{force=false package_id=prism-render v0.1.0 (C:\Dev\RustSandbox\Prism\crates\prism-render) target="prism_render"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Dev\RustSandbox\Prism\target\debug\.fingerprint\prism-render-89b38733a07b9d6d\lib-prism_render`
+
+Caused by:
+    The system cannot find the file specified. (os error 2)
+
+Stack backtrace:
+   0: git_midx_writer_dump
+   1: git_midx_writer_dump
+   2: git_midx_writer_dump
+   3: git_midx_writer_dump
+   4: git_filter_source_repo
+   5: git_filter_source_repo
+   6: git_filter_source_repo
+   7: git_filter_source_repo
+   8: git_filter_source_repo
+   9: git_filter_source_repo
+  10: git_filter_source_repo
+  11: git_filter_source_repo
+  12: git_libgit2_prerelease
+  13: <unknown>
+  14: <unknown>
+  15: <unknown>
+  16: <unknown>
+  17: git_midx_writer_dump
+  18: git_filter_source_repo
+  19: git_midx_writer_dump
+  20: BaseThreadInitThunk
+  21: RtlUserThreadStart
+   0.196423200s  INFO prepare_target{force=false package_id=tracing-subscriber v0.3.22 target="tracing_subscriber"}: cargo::core::compiler::fingerprint: fingerprint error for tracing-subscriber v0.3.22/Check { test: false }/TargetInner { ..: lib_target("tracing_subscriber", ["lib"], "C:\\Users\\Bahjat\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\tracing-subscriber-0.3.22\\src\\lib.rs", Edition2018) }
+   0.196435800s  INFO prepare_target{force=false package_id=tracing-subscriber v0.3.22 target="tracing_subscriber"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Dev\RustSandbox\Prism\target\debug\.fingerprint\tracing-subscriber-f452f75e75a0c13c\lib-tracing_subscriber`
+
+Caused by:
+    The system cannot find the file specified. (os error 2)
+
+Stack backtrace:
+   0: git_midx_writer_dump
+   1: git_midx_writer_dump
+   2: git_midx_writer_dump
+   3: git_midx_writer_dump
+   4: git_filter_source_repo
+   5: git_filter_source_repo
+   6: git_filter_source_repo
+   7: git_filter_source_repo
+   8: git_filter_source_repo
+   9: git_filter_source_repo
+  10: git_filter_source_repo
+  11: git_filter_source_repo
+  12: git_libgit2_prerelease
+  13: <unknown>
+  14: <unknown>
+  15: <unknown>
+  16: <unknown>
+  17: git_midx_writer_dump
+  18: git_filter_source_repo
+  19: git_midx_writer_dump
+  20: BaseThreadInitThunk
+  21: RtlUserThreadStart
+   0.196838700s  INFO prepare_target{force=false package_id=matchers v0.2.0 target="matchers"}: cargo::core::compiler::fingerprint: fingerprint error for matchers v0.2.0/Check { test: false }/TargetInner { name_inferred: true, ..: lib_target("matchers", ["lib"], "C:\\Users\\Bahjat\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\matchers-0.2.0\\src\\lib.rs", Edition2018) }
+   0.196851400s  INFO prepare_target{force=false package_id=matchers v0.2.0 target="matchers"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Dev\RustSandbox\Prism\target\debug\.fingerprint\matchers-0e756f81eaa7e923\lib-matchers`
+
+Caused by:
+    The system cannot find the file specified. (os error 2)
+
+Stack backtrace:
+   0: git_midx_writer_dump
+   1: git_midx_writer_dump
+   2: git_midx_writer_dump
+   3: git_midx_writer_dump
+   4: git_filter_source_repo
+   5: git_filter_source_repo
+   6: git_filter_source_repo
+   7: git_filter_source_repo
+   8: git_filter_source_repo
+   9: git_filter_source_repo
+  10: git_filter_source_repo
+  11: git_filter_source_repo
+  12: git_filter_source_repo
+  13: git_libgit2_prerelease
+  14: <unknown>
+  15: <unknown>
+  16: <unknown>
+  17: <unknown>
+  18: git_midx_writer_dump
+  19: git_filter_source_repo
+  20: git_midx_writer_dump
+  21: BaseThreadInitThunk
+  22: RtlUserThreadStart
+   0.197104000s  INFO prepare_target{force=false package_id=regex-automata v0.4.13 target="regex_automata"}: cargo::core::compiler::fingerprint: fingerprint error for regex-automata v0.4.13/Check { test: false }/TargetInner { benched: false, ..: lib_target("regex_automata", ["lib"], "C:\\Users\\Bahjat\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\regex-automata-0.4.13\\src\\lib.rs", Edition2021) }
+   0.197115000s  INFO prepare_target{force=false package_id=regex-automata v0.4.13 target="regex_automata"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Dev\RustSandbox\Prism\target\debug\.fingerprint\regex-automata-627287a1a8a91412\lib-regex_automata`
+
+Caused by:
+    The system cannot find the file specified. (os error 2)
+
+Stack backtrace:
+   0: git_midx_writer_dump
+   1: git_midx_writer_dump
+   2: git_midx_writer_dump
+   3: git_midx_writer_dump
+   4: git_filter_source_repo
+   5: git_filter_source_repo
+   6: git_filter_source_repo
+   7: git_filter_source_repo
+   8: git_filter_source_repo
+   9: git_filter_source_repo
+  10: git_filter_source_repo
+  11: git_filter_source_repo
+  12: git_filter_source_repo
+  13: git_filter_source_repo
+  14: git_libgit2_prerelease
+  15: <unknown>
+  16: <unknown>
+  17: <unknown>
+  18: <unknown>
+  19: git_midx_writer_dump
+  20: git_filter_source_repo
+  21: git_midx_writer_dump
+  22: BaseThreadInitThunk
+  23: RtlUserThreadStart
+   0.197385600s  INFO prepare_target{force=false package_id=aho-corasick v1.1.4 target="aho_corasick"}: cargo::core::compiler::fingerprint: fingerprint error for aho-corasick v1.1.4/Check { test: false }/TargetInner { ..: lib_target("aho_corasick", ["lib"], "C:\\Users\\Bahjat\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\aho-corasick-1.1.4\\src\\lib.rs", Edition2021) }
+   0.197394500s  INFO prepare_target{force=false package_id=aho-corasick v1.1.4 target="aho_corasick"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Dev\RustSandbox\Prism\target\debug\.fingerprint\aho-corasick-cbef9f4f4d5d2580\lib-aho_corasick`
+
+Caused by:
+    The system cannot find the file specified. (os error 2)
+
+Stack backtrace:
+   0: git_midx_writer_dump
+   1: git_midx_writer_dump
+   2: git_midx_writer_dump
+   3: git_midx_writer_dump
+   4: git_filter_source_repo
+   5: git_filter_source_repo
+   6: git_filter_source_repo
+   7: git_filter_source_repo
+   8: git_filter_source_repo
+   9: git_filter_source_repo
+  10: git_filter_source_repo
+  11: git_filter_source_repo
+  12: git_filter_source_repo
+  13: git_filter_source_repo
+  14: git_filter_source_repo
+  15: git_libgit2_prerelease
+  16: <unknown>
+  17: <unknown>
+  18: <unknown>
+  19: <unknown>
+  20: git_midx_writer_dump
+  21: git_filter_source_repo
+  22: git_midx_writer_dump
+  23: BaseThreadInitThunk
+  24: RtlUserThreadStart
+   0.197655300s  INFO prepare_target{force=false package_id=regex-syntax v0.8.8 target="regex_syntax"}: cargo::core::compiler::fingerprint: fingerprint error for regex-syntax v0.8.8/Check { test: false }/TargetInner { ..: lib_target("regex_syntax", ["lib"], "C:\\Users\\Bahjat\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\regex-syntax-0.8.8\\src\\lib.rs", Edition2021) }
+   0.197664200s  INFO prepare_target{force=false package_id=regex-syntax v0.8.8 target="regex_syntax"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Dev\RustSandbox\Prism\target\debug\.fingerprint\regex-syntax-54184524283063f0\lib-regex_syntax`
+
+Caused by:
+    The system cannot find the file specified. (os error 2)
+
+Stack backtrace:
+   0: git_midx_writer_dump
+   1: git_midx_writer_dump
+   2: git_midx_writer_dump
+   3: git_midx_writer_dump
+   4: git_filter_source_repo
+   5: git_filter_source_repo
+   6: git_filter_source_repo
+   7: git_filter_source_repo
+   8: git_filter_source_repo
+   9: git_filter_source_repo
+  10: git_filter_source_repo
+  11: git_filter_source_repo
+  12: git_filter_source_repo
+  13: git_filter_source_repo
+  14: git_filter_source_repo
+  15: git_libgit2_prerelease
+  16: <unknown>
+  17: <unknown>
+  18: <unknown>
+  19: <unknown>
+  20: git_midx_writer_dump
+  21: git_filter_source_repo
+  22: git_midx_writer_dump
+  23: BaseThreadInitThunk
+  24: RtlUserThreadStart
+   0.197924500s  INFO prepare_target{force=false package_id=nu-ansi-term v0.50.3 target="nu_ansi_term"}: cargo::core::compiler::fingerprint: fingerprint error for nu-ansi-term v0.50.3/Check { test: false }/TargetInner { ..: lib_target("nu_ansi_term", ["lib"], "C:\\Users\\Bahjat\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\nu-ansi-term-0.50.3\\src\\lib.rs", Edition2021) }
+   0.197932900s  INFO prepare_target{force=false package_id=nu-ansi-term v0.50.3 target="nu_ansi_term"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Dev\RustSandbox\Prism\target\debug\.fingerprint\nu-ansi-term-6a0cde3fe46c7389\lib-nu_ansi_term`
+
+Caused by:
+    The system cannot find the file specified. (os error 2)
+
+Stack backtrace:
+   0: git_midx_writer_dump
+   1: git_midx_writer_dump
+   2: git_midx_writer_dump
+   3: git_midx_writer_dump
+   4: git_filter_source_repo
+   5: git_filter_source_repo
+   6: git_filter_source_repo
+   7: git_filter_source_repo
+   8: git_filter_source_repo
+   9: git_filter_source_repo
+  10: git_filter_source_repo
+  11: git_filter_source_repo
+  12: git_filter_source_repo
+  13: git_libgit2_prerelease
+  14: <unknown>
+  15: <unknown>
+  16: <unknown>
+  17: <unknown>
+  18: git_midx_writer_dump
+  19: git_filter_source_repo
+  20: git_midx_writer_dump
+  21: BaseThreadInitThunk
+  22: RtlUserThreadStart
+   0.199255800s  INFO prepare_target{force=false package_id=prism-cli v0.1.0 (C:\Dev\RustSandbox\Prism\crates\prism-cli) target="prism_cli"}: cargo::core::compiler::fingerprint: fingerprint error for prism-cli v0.1.0 (C:\Dev\RustSandbox\Prism\crates\prism-cli)/Check { test: true }/TargetInner { name_inferred: true, ..: lib_target("prism_cli", ["lib"], "C:\\Dev\\RustSandbox\\Prism\\crates\\prism-cli\\src\\lib.rs", Edition2021) }
+   0.199269800s  INFO prepare_target{force=false package_id=prism-cli v0.1.0 (C:\Dev\RustSandbox\Prism\crates\prism-cli) target="prism_cli"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Dev\RustSandbox\Prism\target\debug\.fingerprint\prism-cli-e1072913ed929516\test-lib-prism_cli`
+
+Caused by:
+    The system cannot find the file specified. (os error 2)
+
+Stack backtrace:
+   0: git_midx_writer_dump
+   1: git_midx_writer_dump
+   2: git_midx_writer_dump
+   3: git_midx_writer_dump
+   4: git_filter_source_repo
+   5: git_filter_source_repo
+   6: git_filter_source_repo
+   7: git_filter_source_repo
+   8: git_filter_source_repo
+   9: git_filter_source_repo
+  10: git_filter_source_repo
+  11: git_libgit2_prerelease
+  12: <unknown>
+  13: <unknown>
+  14: <unknown>
+  15: <unknown>
+  16: git_midx_writer_dump
+  17: git_filter_source_repo
+  18: git_midx_writer_dump
+  19: BaseThreadInitThunk
+  20: RtlUserThreadStart
+   0.199728200s  INFO prepare_target{force=false package_id=assert_fs v1.1.3 target="assert_fs"}: cargo::core::compiler::fingerprint: fingerprint error for assert_fs v1.1.3/Check { test: false }/TargetInner { ..: lib_target("assert_fs", ["lib"], "C:\\Users\\Bahjat\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\assert_fs-1.1.3\\src\\lib.rs", Edition2021) }
+   0.199740400s  INFO prepare_target{force=false package_id=assert_fs v1.1.3 target="assert_fs"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Dev\RustSandbox\Prism\target\debug\.fingerprint\assert_fs-1156c79462c23b52\lib-assert_fs`
+
+Caused by:
+    The system cannot find the file specified. (os error 2)
+
+Stack backtrace:
+   0: git_midx_writer_dump
+   1: git_midx_writer_dump
+   2: git_midx_writer_dump
+   3: git_midx_writer_dump
+   4: git_filter_source_repo
+   5: git_filter_source_repo
+   6: git_filter_source_repo
+   7: git_filter_source_repo
+   8: git_filter_source_repo
+   9: git_filter_source_repo
+  10: git_filter_source_repo
+  11: git_filter_source_repo
+  12: git_libgit2_prerelease
+  13: <unknown>
+  14: <unknown>
+  15: <unknown>
+  16: <unknown>
+  17: git_midx_writer_dump
+  18: git_filter_source_repo
+  19: git_midx_writer_dump
+  20: BaseThreadInitThunk
+  21: RtlUserThreadStart
+   0.200046600s  INFO prepare_target{force=false package_id=anstyle v1.0.13 target="anstyle"}: cargo::core::compiler::fingerprint: fingerprint error for anstyle v1.0.13/Check { test: false }/TargetInner { ..: lib_target("anstyle", ["lib"], "C:\\Users\\Bahjat\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\anstyle-1.0.13\\src\\lib.rs", Edition2021) }
+   0.200058400s  INFO prepare_target{force=false package_id=anstyle v1.0.13 target="anstyle"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Dev\RustSandbox\Prism\target\debug\.fingerprint\anstyle-0da8b928771fdc4e\lib-anstyle`
+
+Caused by:
+    The system cannot find the file specified. (os error 2)
+
+Stack backtrace:
+   0: git_midx_writer_dump
+   1: git_midx_writer_dump
+   2: git_midx_writer_dump
+   3: git_midx_writer_dump
+   4: git_filter_source_repo
+   5: git_filter_source_repo
+   6: git_filter_source_repo
+   7: git_filter_source_repo
+   8: git_filter_source_repo
+   9: git_filter_source_repo
+  10: git_filter_source_repo
+  11: git_filter_source_repo
+  12: git_filter_source_repo
+  13: git_libgit2_prerelease
+  14: <unknown>
+  15: <unknown>
+  16: <unknown>
+  17: <unknown>
+  18: git_midx_writer_dump
+  19: git_filter_source_repo
+  20: git_midx_writer_dump
+  21: BaseThreadInitThunk
+  22: RtlUserThreadStart
+   0.200338500s  INFO prepare_target{force=false package_id=doc-comment v0.3.4 target="doc_comment"}: cargo::core::compiler::fingerprint: fingerprint error for doc-comment v0.3.4/Check { test: false }/TargetInner { ..: lib_target("doc_comment", ["lib"], "C:\\Users\\Bahjat\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\doc-comment-0.3.4\\src\\lib.rs", Edition2015) }
+   0.200349400s  INFO prepare_target{force=false package_id=doc-comment v0.3.4 target="doc_comment"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Dev\RustSandbox\Prism\target\debug\.fingerprint\doc-comment-ee47dac5c46e6663\lib-doc_comment`
+
+Caused by:
+    The system cannot find the file specified. (os error 2)
+
+Stack backtrace:
+   0: git_midx_writer_dump
+   1: git_midx_writer_dump
+   2: git_midx_writer_dump
+   3: git_midx_writer_dump
+   4: git_filter_source_repo
+   5: git_filter_source_repo
+   6: git_filter_source_repo
+   7: git_filter_source_repo
+   8: git_filter_source_repo
+   9: git_filter_source_repo
+  10: git_filter_source_repo
+  11: git_filter_source_repo
+  12: git_filter_source_repo
+  13: git_libgit2_prerelease
+  14: <unknown>
+  15: <unknown>
+  16: <unknown>
+  17: <unknown>
+  18: git_midx_writer_dump
+  19: git_filter_source_repo
+  20: git_midx_writer_dump
+  21: BaseThreadInitThunk
+  22: RtlUserThreadStart
+   0.200971900s  INFO prepare_target{force=false package_id=globwalk v0.9.1 target="globwalk"}: cargo::core::compiler::fingerprint: fingerprint error for globwalk v0.9.1/Check { test: false }/TargetInner { name_inferred: true, ..: lib_target("globwalk", ["lib"], "C:\\Users\\Bahjat\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\globwalk-0.9.1\\src\\lib.rs", Edition2021) }
+   0.200983100s  INFO prepare_target{force=false package_id=globwalk v0.9.1 target="globwalk"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Dev\RustSandbox\Prism\target\debug\.fingerprint\globwalk-ce6c9643b309113c\lib-globwalk`
+
+Caused by:
+    The system cannot find the file specified. (os error 2)
+
+Stack backtrace:
+   0: git_midx_writer_dump
+   1: git_midx_writer_dump
+   2: git_midx_writer_dump
+   3: git_midx_writer_dump
+   4: git_filter_source_repo
+   5: git_filter_source_repo
+   6: git_filter_source_repo
+   7: git_filter_source_repo
+   8: git_filter_source_repo
+   9: git_filter_source_repo
+  10: git_filter_source_repo
+  11: git_filter_source_repo
+  12: git_filter_source_repo
+  13: git_libgit2_prerelease
+  14: <unknown>
+  15: <unknown>
+  16: <unknown>
+  17: <unknown>
+  18: git_midx_writer_dump
+  19: git_filter_source_repo
+  20: git_midx_writer_dump
+  21: BaseThreadInitThunk
+  22: RtlUserThreadStart
+   0.201361700s  INFO prepare_target{force=false package_id=ignore v0.4.25 target="ignore"}: cargo::core::compiler::fingerprint: fingerprint error for ignore v0.4.25/Check { test: false }/TargetInner { benched: false, ..: lib_target("ignore", ["lib"], "C:\\Users\\Bahjat\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\ignore-0.4.25\\src\\lib.rs", Edition2024) }
+   0.201373400s  INFO prepare_target{force=false package_id=ignore v0.4.25 target="ignore"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Dev\RustSandbox\Prism\target\debug\.fingerprint\ignore-0c8eec541c5dd980\lib-ignore`
+
+Caused by:
+    The system cannot find the file specified. (os error 2)
+
+Stack backtrace:
+   0: git_midx_writer_dump
+   1: git_midx_writer_dump
+   2: git_midx_writer_dump
+   3: git_midx_writer_dump
+   4: git_filter_source_repo
+   5: git_filter_source_repo
+   6: git_filter_source_repo
+   7: git_filter_source_repo
+   8: git_filter_source_repo
+   9: git_filter_source_repo
+  10: git_filter_source_repo
+  11: git_filter_source_repo
+  12: git_filter_source_repo
+  13: git_filter_source_repo
+  14: git_libgit2_prerelease
+  15: <unknown>
+  16: <unknown>
+  17: <unknown>
+  18: <unknown>
+  19: git_midx_writer_dump
+  20: git_filter_source_repo
+  21: git_midx_writer_dump
+  22: BaseThreadInitThunk
+  23: RtlUserThreadStart
+   0.201658700s  INFO prepare_target{force=false package_id=crossbeam-deque v0.8.6 target="crossbeam_deque"}: cargo::core::compiler::fingerprint: fingerprint error for crossbeam-deque v0.8.6/Check { test: false }/TargetInner { ..: lib_target("crossbeam_deque", ["lib"], "C:\\Users\\Bahjat\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\crossbeam-deque-0.8.6\\src\\lib.rs", Edition2021) }
+   0.201668700s  INFO prepare_target{force=false package_id=crossbeam-deque v0.8.6 target="crossbeam_deque"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Dev\RustSandbox\Prism\target\debug\.fingerprint\crossbeam-deque-ffceb0cb15d195bc\lib-crossbeam_deque`
+
+Caused by:
+    The system cannot find the file specified. (os error 2)
+
+Stack backtrace:
+   0: git_midx_writer_dump
+   1: git_midx_writer_dump
+   2: git_midx_writer_dump
+   3: git_midx_writer_dump
+   4: git_filter_source_repo
+   5: git_filter_source_repo
+   6: git_filter_source_repo
+   7: git_filter_source_repo
+   8: git_filter_source_repo
+   9: git_filter_source_repo
+  10: git_filter_source_repo
+  11: git_filter_source_repo
+  12: git_filter_source_repo
+  13: git_filter_source_repo
+  14: git_filter_source_repo
+  15: git_libgit2_prerelease
+  16: <unknown>
+  17: <unknown>
+  18: <unknown>
+  19: <unknown>
+  20: git_midx_writer_dump
+  21: git_filter_source_repo
+  22: git_midx_writer_dump
+  23: BaseThreadInitThunk
+  24: RtlUserThreadStart
+   0.201934700s  INFO prepare_target{force=false package_id=crossbeam-epoch v0.9.18 target="crossbeam_epoch"}: cargo::core::compiler::fingerprint: fingerprint error for crossbeam-epoch v0.9.18/Check { test: false }/TargetInner { name_inferred: true, ..: lib_target("crossbeam_epoch", ["lib"], "C:\\Users\\Bahjat\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\crossbeam-epoch-0.9.18\\src\\lib.rs", Edition2021) }
+   0.201944100s  INFO prepare_target{force=false package_id=crossbeam-epoch v0.9.18 target="crossbeam_epoch"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Dev\RustSandbox\Prism\target\debug\.fingerprint\crossbeam-epoch-71ae17bf8f43bda8\lib-crossbeam_epoch`
+
+Caused by:
+    The system cannot find the file specified. (os error 2)
+
+Stack backtrace:
+   0: git_midx_writer_dump
+   1: git_midx_writer_dump
+   2: git_midx_writer_dump
+   3: git_midx_writer_dump
+   4: git_filter_source_repo
+   5: git_filter_source_repo
+   6: git_filter_source_repo
+   7: git_filter_source_repo
+   8: git_filter_source_repo
+   9: git_filter_source_repo
+  10: git_filter_source_repo
+  11: git_filter_source_repo
+  12: git_filter_source_repo
+  13: git_filter_source_repo
+  14: git_filter_source_repo
+  15: git_filter_source_repo
+  16: git_libgit2_prerelease
+  17: <unknown>
+  18: <unknown>
+  19: <unknown>
+  20: <unknown>
+  21: git_midx_writer_dump
+  22: git_filter_source_repo
+  23: git_midx_writer_dump
+  24: BaseThreadInitThunk
+  25: RtlUserThreadStart
+   0.202229700s  INFO prepare_target{force=false package_id=crossbeam-utils v0.8.21 target="crossbeam_utils"}: cargo::core::compiler::fingerprint: fingerprint error for crossbeam-utils v0.8.21/Check { test: false }/TargetInner { ..: lib_target("crossbeam_utils", ["lib"], "C:\\Users\\Bahjat\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\crossbeam-utils-0.8.21\\src\\lib.rs", Edition2021) }
+   0.202238900s  INFO prepare_target{force=false package_id=crossbeam-utils v0.8.21 target="crossbeam_utils"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Dev\RustSandbox\Prism\target\debug\.fingerprint\crossbeam-utils-946af3fd89e1b76f\lib-crossbeam_utils`
+
+Caused by:
+    The system cannot find the file specified. (os error 2)
+
+Stack backtrace:
+   0: git_midx_writer_dump
+   1: git_midx_writer_dump
+   2: git_midx_writer_dump
+   3: git_midx_writer_dump
+   4: git_filter_source_repo
+   5: git_filter_source_repo
+   6: git_filter_source_repo
+   7: git_filter_source_repo
+   8: git_filter_source_repo
+   9: git_filter_source_repo
+  10: git_filter_source_repo
+  11: git_filter_source_repo
+  12: git_filter_source_repo
+  13: git_filter_source_repo
+  14: git_filter_source_repo
+  15: git_filter_source_repo
+  16: git_filter_source_repo
+  17: git_libgit2_prerelease
+  18: <unknown>
+  19: <unknown>
+  20: <unknown>
+  21: <unknown>
+  22: git_midx_writer_dump
+  23: git_filter_source_repo
+  24: git_midx_writer_dump
+  25: BaseThreadInitThunk
+  26: RtlUserThreadStart
+   0.202872200s  INFO prepare_target{force=false package_id=globset v0.4.18 target="globset"}: cargo::core::compiler::fingerprint: fingerprint error for globset v0.4.18/Check { test: false }/TargetInner { benched: false, ..: lib_target("globset", ["lib"], "C:\\Users\\Bahjat\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\globset-0.4.18\\src\\lib.rs", Edition2024) }
+   0.202883300s  INFO prepare_target{force=false package_id=globset v0.4.18 target="globset"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Dev\RustSandbox\Prism\target\debug\.fingerprint\globset-a0a8116c4ee41d6e\lib-globset`
+
+Caused by:
+    The system cannot find the file specified. (os error 2)
+
+Stack backtrace:
+   0: git_midx_writer_dump
+   1: git_midx_writer_dump
+   2: git_midx_writer_dump
+   3: git_midx_writer_dump
+   4: git_filter_source_repo
+   5: git_filter_source_repo
+   6: git_filter_source_repo
+   7: git_filter_source_repo
+   8: git_filter_source_repo
+   9: git_filter_source_repo
+  10: git_filter_source_repo
+  11: git_filter_source_repo
+  12: git_filter_source_repo
+  13: git_filter_source_repo
+  14: git_filter_source_repo
+  15: git_libgit2_prerelease
+  16: <unknown>
+  17: <unknown>
+  18: <unknown>
+  19: <unknown>
+  20: git_midx_writer_dump
+  21: git_filter_source_repo
+  22: git_midx_writer_dump
+  23: BaseThreadInitThunk
+  24: RtlUserThreadStart
+   0.203140100s  INFO prepare_target{force=false package_id=bstr v1.12.1 target="bstr"}: cargo::core::compiler::fingerprint: fingerprint error for bstr v1.12.1/Check { test: false }/TargetInner { benched: false, ..: lib_target("bstr", ["lib"], "C:\\Users\\Bahjat\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\bstr-1.12.1\\src\\lib.rs", Edition2021) }
+   0.203149100s  INFO prepare_target{force=false package_id=bstr v1.12.1 target="bstr"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Dev\RustSandbox\Prism\target\debug\.fingerprint\bstr-182734128c5f75f1\lib-bstr`
+
+Caused by:
+    The system cannot find the file specified. (os error 2)
+
+Stack backtrace:
+   0: git_midx_writer_dump
+   1: git_midx_writer_dump
+   2: git_midx_writer_dump
+   3: git_midx_writer_dump
+   4: git_filter_source_repo
+   5: git_filter_source_repo
+   6: git_filter_source_repo
+   7: git_filter_source_repo
+   8: git_filter_source_repo
+   9: git_filter_source_repo
+  10: git_filter_source_repo
+  11: git_filter_source_repo
+  12: git_filter_source_repo
+  13: git_filter_source_repo
+  14: git_filter_source_repo
+  15: git_filter_source_repo
+  16: git_libgit2_prerelease
+  17: <unknown>
+  18: <unknown>
+  19: <unknown>
+  20: <unknown>
+  21: git_midx_writer_dump
+  22: git_filter_source_repo
+  23: git_midx_writer_dump
+  24: BaseThreadInitThunk
+  25: RtlUserThreadStart
+   0.203404000s  INFO prepare_target{force=false package_id=same-file v1.0.6 target="same_file"}: cargo::core::compiler::fingerprint: fingerprint error for same-file v1.0.6/Check { test: false }/TargetInner { name_inferred: true, ..: lib_target("same_file", ["lib"], "C:\\Users\\Bahjat\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\same-file-1.0.6\\src\\lib.rs", Edition2018) }
+   0.203413600s  INFO prepare_target{force=false package_id=same-file v1.0.6 target="same_file"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Dev\RustSandbox\Prism\target\debug\.fingerprint\same-file-1ce9ed1038adf6d8\lib-same_file`
+
+Caused by:
+    The system cannot find the file specified. (os error 2)
+
+Stack backtrace:
+   0: git_midx_writer_dump
+   1: git_midx_writer_dump
+   2: git_midx_writer_dump
+   3: git_midx_writer_dump
+   4: git_filter_source_repo
+   5: git_filter_source_repo
+   6: git_filter_source_repo
+   7: git_filter_source_repo
+   8: git_filter_source_repo
+   9: git_filter_source_repo
+  10: git_filter_source_repo
+  11: git_filter_source_repo
+  12: git_filter_source_repo
+  13: git_filter_source_repo
+  14: git_filter_source_repo
+  15: git_libgit2_prerelease
+  16: <unknown>
+  17: <unknown>
+  18: <unknown>
+  19: <unknown>
+  20: git_midx_writer_dump
+  21: git_filter_source_repo
+  22: git_midx_writer_dump
+  23: BaseThreadInitThunk
+  24: RtlUserThreadStart
+   0.203657000s  INFO prepare_target{force=false package_id=winapi-util v0.1.11 target="winapi_util"}: cargo::core::compiler::fingerprint: fingerprint error for winapi-util v0.1.11/Check { test: false }/TargetInner { ..: lib_target("winapi_util", ["lib"], "C:\\Users\\Bahjat\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\winapi-util-0.1.11\\src\\lib.rs", Edition2021) }
+   0.203665200s  INFO prepare_target{force=false package_id=winapi-util v0.1.11 target="winapi_util"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Dev\RustSandbox\Prism\target\debug\.fingerprint\winapi-util-17c5572d5581f187\lib-winapi_util`
+
+Caused by:
+    The system cannot find the file specified. (os error 2)
+
+Stack backtrace:
+   0: git_midx_writer_dump
+   1: git_midx_writer_dump
+   2: git_midx_writer_dump
+   3: git_midx_writer_dump
+   4: git_filter_source_repo
+   5: git_filter_source_repo
+   6: git_filter_source_repo
+   7: git_filter_source_repo
+   8: git_filter_source_repo
+   9: git_filter_source_repo
+  10: git_filter_source_repo
+  11: git_filter_source_repo
+  12: git_filter_source_repo
+  13: git_filter_source_repo
+  14: git_filter_source_repo
+  15: git_filter_source_repo
+  16: git_libgit2_prerelease
+  17: <unknown>
+  18: <unknown>
+  19: <unknown>
+  20: <unknown>
+  21: git_midx_writer_dump
+  22: git_filter_source_repo
+  23: git_midx_writer_dump
+  24: BaseThreadInitThunk
+  25: RtlUserThreadStart
+   0.203889800s  INFO prepare_target{force=false package_id=walkdir v2.5.0 target="walkdir"}: cargo::core::compiler::fingerprint: fingerprint error for walkdir v2.5.0/Check { test: false }/TargetInner { name_inferred: true, ..: lib_target("walkdir", ["lib"], "C:\\Users\\Bahjat\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\walkdir-2.5.0\\src\\lib.rs", Edition2018) }
+   0.203897600s  INFO prepare_target{force=false package_id=walkdir v2.5.0 target="walkdir"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Dev\RustSandbox\Prism\target\debug\.fingerprint\walkdir-159ff8ad1c2d2c3f\lib-walkdir`
+
+Caused by:
+    The system cannot find the file specified. (os error 2)
+
+Stack backtrace:
+   0: git_midx_writer_dump
+   1: git_midx_writer_dump
+   2: git_midx_writer_dump
+   3: git_midx_writer_dump
+   4: git_filter_source_repo
+   5: git_filter_source_repo
+   6: git_filter_source_repo
+   7: git_filter_source_repo
+   8: git_filter_source_repo
+   9: git_filter_source_repo
+  10: git_filter_source_repo
+  11: git_filter_source_repo
+  12: git_filter_source_repo
+  13: git_filter_source_repo
+  14: git_filter_source_repo
+  15: git_libgit2_prerelease
+  16: <unknown>
+  17: <unknown>
+  18: <unknown>
+  19: <unknown>
+  20: git_midx_writer_dump
+  21: git_filter_source_repo
+  22: git_midx_writer_dump
+  23: BaseThreadInitThunk
+  24: RtlUserThreadStart
+   0.204129400s  INFO prepare_target{force=false package_id=predicates v3.1.3 target="predicates"}: cargo::core::compiler::fingerprint: fingerprint error for predicates v3.1.3/Check { test: false }/TargetInner { ..: lib_target("predicates", ["lib"], "C:\\Users\\Bahjat\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\predicates-3.1.3\\src\\lib.rs", Edition2021) }
+   0.204137800s  INFO prepare_target{force=false package_id=predicates v3.1.3 target="predicates"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Dev\RustSandbox\Prism\target\debug\.fingerprint\predicates-94beb373b72f472a\lib-predicates`
+
+Caused by:
+    The system cannot find the file specified. (os error 2)
+
+Stack backtrace:
+   0: git_midx_writer_dump
+   1: git_midx_writer_dump
+   2: git_midx_writer_dump
+   3: git_midx_writer_dump
+   4: git_filter_source_repo
+   5: git_filter_source_repo
+   6: git_filter_source_repo
+   7: git_filter_source_repo
+   8: git_filter_source_repo
+   9: git_filter_source_repo
+  10: git_filter_source_repo
+  11: git_filter_source_repo
+  12: git_filter_source_repo
+  13: git_libgit2_prerelease
+  14: <unknown>
+  15: <unknown>
+  16: <unknown>
+  17: <unknown>
+  18: git_midx_writer_dump
+  19: git_filter_source_repo
+  20: git_midx_writer_dump
+  21: BaseThreadInitThunk
+  22: RtlUserThreadStart
+   0.204425100s  INFO prepare_target{force=false package_id=difflib v0.4.0 target="difflib"}: cargo::core::compiler::fingerprint: fingerprint error for difflib v0.4.0/Check { test: false }/TargetInner { name_inferred: true, ..: lib_target("difflib", ["lib"], "C:\\Users\\Bahjat\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\difflib-0.4.0\\src\\lib.rs", Edition2015) }
+   0.204433800s  INFO prepare_target{force=false package_id=difflib v0.4.0 target="difflib"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Dev\RustSandbox\Prism\target\debug\.fingerprint\difflib-857ef1296b5ec81e\lib-difflib`
+
+Caused by:
+    The system cannot find the file specified. (os error 2)
+
+Stack backtrace:
+   0: git_midx_writer_dump
+   1: git_midx_writer_dump
+   2: git_midx_writer_dump
+   3: git_midx_writer_dump
+   4: git_filter_source_repo
+   5: git_filter_source_repo
+   6: git_filter_source_repo
+   7: git_filter_source_repo
+   8: git_filter_source_repo
+   9: git_filter_source_repo
+  10: git_filter_source_repo
+  11: git_filter_source_repo
+  12: git_filter_source_repo
+  13: git_filter_source_repo
+  14: git_libgit2_prerelease
+  15: <unknown>
+  16: <unknown>
+  17: <unknown>
+  18: <unknown>
+  19: git_midx_writer_dump
+  20: git_filter_source_repo
+  21: git_midx_writer_dump
+  22: BaseThreadInitThunk
+  23: RtlUserThreadStart
+   0.204665300s  INFO prepare_target{force=false package_id=float-cmp v0.10.0 target="float_cmp"}: cargo::core::compiler::fingerprint: fingerprint error for float-cmp v0.10.0/Check { test: false }/TargetInner { ..: lib_target("float_cmp", ["lib"], "C:\\Users\\Bahjat\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\float-cmp-0.10.0\\src\\lib.rs", Edition2018) }
+   0.204673600s  INFO prepare_target{force=false package_id=float-cmp v0.10.0 target="float_cmp"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Dev\RustSandbox\Prism\target\debug\.fingerprint\float-cmp-bc3c101ffc61de80\lib-float_cmp`
+
+Caused by:
+    The system cannot find the file specified. (os error 2)
+
+Stack backtrace:
+   0: git_midx_writer_dump
+   1: git_midx_writer_dump
+   2: git_midx_writer_dump
+   3: git_midx_writer_dump
+   4: git_filter_source_repo
+   5: git_filter_source_repo
+   6: git_filter_source_repo
+   7: git_filter_source_repo
+   8: git_filter_source_repo
+   9: git_filter_source_repo
+  10: git_filter_source_repo
+  11: git_filter_source_repo
+  12: git_filter_source_repo
+  13: git_filter_source_repo
+  14: git_libgit2_prerelease
+  15: <unknown>
+  16: <unknown>
+  17: <unknown>
+  18: <unknown>
+  19: git_midx_writer_dump
+  20: git_filter_source_repo
+  21: git_midx_writer_dump
+  22: BaseThreadInitThunk
+  23: RtlUserThreadStart
+   0.204967200s  INFO prepare_target{force=false package_id=normalize-line-endings v0.3.0 target="normalize_line_endings"}: cargo::core::compiler::fingerprint: fingerprint error for normalize-line-endings v0.3.0/Check { test: false }/TargetInner { name_inferred: true, ..: lib_target("normalize_line_endings", ["lib"], "C:\\Users\\Bahjat\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\normalize-line-endings-0.3.0\\src\\lib.rs", Edition2015) }
+   0.204983000s  INFO prepare_target{force=false package_id=normalize-line-endings v0.3.0 target="normalize_line_endings"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Dev\RustSandbox\Prism\target\debug\.fingerprint\normalize-line-endings-bd4799c8bdaa1686\lib-normalize_line_endings`
+
+Caused by:
+    The system cannot find the file specified. (os error 2)
+
+Stack backtrace:
+   0: git_midx_writer_dump
+   1: git_midx_writer_dump
+   2: git_midx_writer_dump
+   3: git_midx_writer_dump
+   4: git_filter_source_repo
+   5: git_filter_source_repo
+   6: git_filter_source_repo
+   7: git_filter_source_repo
+   8: git_filter_source_repo
+   9: git_filter_source_repo
+  10: git_filter_source_repo
+  11: git_filter_source_repo
+  12: git_filter_source_repo
+  13: git_filter_source_repo
+  14: git_libgit2_prerelease
+  15: <unknown>
+  16: <unknown>
+  17: <unknown>
+  18: <unknown>
+  19: git_midx_writer_dump
+  20: git_filter_source_repo
+  21: git_midx_writer_dump
+  22: BaseThreadInitThunk
+  23: RtlUserThreadStart
+   0.205291000s  INFO prepare_target{force=false package_id=predicates-core v1.0.9 target="predicates_core"}: cargo::core::compiler::fingerprint: fingerprint error for predicates-core v1.0.9/Check { test: false }/TargetInner { ..: lib_target("predicates_core", ["lib"], "C:\\Users\\Bahjat\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\predicates-core-1.0.9\\src\\lib.rs", Edition2021) }
+   0.205300800s  INFO prepare_target{force=false package_id=predicates-core v1.0.9 target="predicates_core"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Dev\RustSandbox\Prism\target\debug\.fingerprint\predicates-core-5ca8cdd9db16ed30\lib-predicates_core`
+
+Caused by:
+    The system cannot find the file specified. (os error 2)
+
+Stack backtrace:
+   0: git_midx_writer_dump
+   1: git_midx_writer_dump
+   2: git_midx_writer_dump
+   3: git_midx_writer_dump
+   4: git_filter_source_repo
+   5: git_filter_source_repo
+   6: git_filter_source_repo
+   7: git_filter_source_repo
+   8: git_filter_source_repo
+   9: git_filter_source_repo
+  10: git_filter_source_repo
+  11: git_filter_source_repo
+  12: git_filter_source_repo
+  13: git_filter_source_repo
+  14: git_libgit2_prerelease
+  15: <unknown>
+  16: <unknown>
+  17: <unknown>
+  18: <unknown>
+  19: git_midx_writer_dump
+  20: git_filter_source_repo
+  21: git_midx_writer_dump
+  22: BaseThreadInitThunk
+  23: RtlUserThreadStart
+   0.205611900s  INFO prepare_target{force=false package_id=regex v1.12.2 target="regex"}: cargo::core::compiler::fingerprint: fingerprint error for regex v1.12.2/Check { test: false }/TargetInner { ..: lib_target("regex", ["lib"], "C:\\Users\\Bahjat\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\regex-1.12.2\\src\\lib.rs", Edition2021) }
+   0.205621500s  INFO prepare_target{force=false package_id=regex v1.12.2 target="regex"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Dev\RustSandbox\Prism\target\debug\.fingerprint\regex-55b5aef261f27734\lib-regex`
+
+Caused by:
+    The system cannot find the file specified. (os error 2)
+
+Stack backtrace:
+   0: git_midx_writer_dump
+   1: git_midx_writer_dump
+   2: git_midx_writer_dump
+   3: git_midx_writer_dump
+   4: git_filter_source_repo
+   5: git_filter_source_repo
+   6: git_filter_source_repo
+   7: git_filter_source_repo
+   8: git_filter_source_repo
+   9: git_filter_source_repo
+  10: git_filter_source_repo
+  11: git_filter_source_repo
+  12: git_filter_source_repo
+  13: git_filter_source_repo
+  14: git_libgit2_prerelease
+  15: <unknown>
+  16: <unknown>
+  17: <unknown>
+  18: <unknown>
+  19: git_midx_writer_dump
+  20: git_filter_source_repo
+  21: git_midx_writer_dump
+  22: BaseThreadInitThunk
+  23: RtlUserThreadStart
+   0.206013100s  INFO prepare_target{force=false package_id=predicates-tree v1.0.12 target="predicates_tree"}: cargo::core::compiler::fingerprint: fingerprint error for predicates-tree v1.0.12/Check { test: false }/TargetInner { ..: lib_target("predicates_tree", ["lib"], "C:\\Users\\Bahjat\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\predicates-tree-1.0.12\\src\\lib.rs", Edition2021) }
+   0.206024800s  INFO prepare_target{force=false package_id=predicates-tree v1.0.12 target="predicates_tree"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Dev\RustSandbox\Prism\target\debug\.fingerprint\predicates-tree-dc01325724104f2a\lib-predicates_tree`
+
+Caused by:
+    The system cannot find the file specified. (os error 2)
+
+Stack backtrace:
+   0: git_midx_writer_dump
+   1: git_midx_writer_dump
+   2: git_midx_writer_dump
+   3: git_midx_writer_dump
+   4: git_filter_source_repo
+   5: git_filter_source_repo
+   6: git_filter_source_repo
+   7: git_filter_source_repo
+   8: git_filter_source_repo
+   9: git_filter_source_repo
+  10: git_filter_source_repo
+  11: git_filter_source_repo
+  12: git_filter_source_repo
+  13: git_libgit2_prerelease
+  14: <unknown>
+  15: <unknown>
+  16: <unknown>
+  17: <unknown>
+  18: git_midx_writer_dump
+  19: git_filter_source_repo
+  20: git_midx_writer_dump
+  21: BaseThreadInitThunk
+  22: RtlUserThreadStart
+   0.206321800s  INFO prepare_target{force=false package_id=termtree v0.5.1 target="termtree"}: cargo::core::compiler::fingerprint: fingerprint error for termtree v0.5.1/Check { test: false }/TargetInner { ..: lib_target("termtree", ["lib"], "C:\\Users\\Bahjat\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\termtree-0.5.1\\src\\lib.rs", Edition2021) }
+   0.206331400s  INFO prepare_target{force=false package_id=termtree v0.5.1 target="termtree"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Dev\RustSandbox\Prism\target\debug\.fingerprint\termtree-3c1a78d1865c89c3\lib-termtree`
+
+Caused by:
+    The system cannot find the file specified. (os error 2)
+
+Stack backtrace:
+   0: git_midx_writer_dump
+   1: git_midx_writer_dump
+   2: git_midx_writer_dump
+   3: git_midx_writer_dump
+   4: git_filter_source_repo
+   5: git_filter_source_repo
+   6: git_filter_source_repo
+   7: git_filter_source_repo
+   8: git_filter_source_repo
+   9: git_filter_source_repo
+  10: git_filter_source_repo
+  11: git_filter_source_repo
+  12: git_filter_source_repo
+  13: git_filter_source_repo
+  14: git_libgit2_prerelease
+  15: <unknown>
+  16: <unknown>
+  17: <unknown>
+  18: <unknown>
+  19: git_midx_writer_dump
+  20: git_filter_source_repo
+  21: git_midx_writer_dump
+  22: BaseThreadInitThunk
+  23: RtlUserThreadStart
+   0.206569700s  INFO prepare_target{force=false package_id=tempfile v3.23.0 target="tempfile"}: cargo::core::compiler::fingerprint: fingerprint error for tempfile v3.23.0/Check { test: false }/TargetInner { ..: lib_target("tempfile", ["lib"], "C:\\Users\\Bahjat\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\tempfile-3.23.0\\src\\lib.rs", Edition2021) }
+   0.206578200s  INFO prepare_target{force=false package_id=tempfile v3.23.0 target="tempfile"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Dev\RustSandbox\Prism\target\debug\.fingerprint\tempfile-fcc7236b84e7a444\lib-tempfile`
+
+Caused by:
+    The system cannot find the file specified. (os error 2)
+
+Stack backtrace:
+   0: git_midx_writer_dump
+   1: git_midx_writer_dump
+   2: git_midx_writer_dump
+   3: git_midx_writer_dump
+   4: git_filter_source_repo
+   5: git_filter_source_repo
+   6: git_filter_source_repo
+   7: git_filter_source_repo
+   8: git_filter_source_repo
+   9: git_filter_source_repo
+  10: git_filter_source_repo
+  11: git_filter_source_repo
+  12: git_filter_source_repo
+  13: git_libgit2_prerelease
+  14: <unknown>
+  15: <unknown>
+  16: <unknown>
+  17: <unknown>
+  18: git_midx_writer_dump
+  19: git_filter_source_repo
+  20: git_midx_writer_dump
+  21: BaseThreadInitThunk
+  22: RtlUserThreadStart
+   0.206906100s  INFO prepare_target{force=false package_id=fastrand v2.3.0 target="fastrand"}: cargo::core::compiler::fingerprint: fingerprint error for fastrand v2.3.0/Check { test: false }/TargetInner { ..: lib_target("fastrand", ["lib"], "C:\\Users\\Bahjat\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\fastrand-2.3.0\\src\\lib.rs", Edition2018) }
+   0.206914700s  INFO prepare_target{force=false package_id=fastrand v2.3.0 target="fastrand"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Dev\RustSandbox\Prism\target\debug\.fingerprint\fastrand-f333a90122f9e53b\lib-fastrand`
+
+Caused by:
+    The system cannot find the file specified. (os error 2)
+
+Stack backtrace:
+   0: git_midx_writer_dump
+   1: git_midx_writer_dump
+   2: git_midx_writer_dump
+   3: git_midx_writer_dump
+   4: git_filter_source_repo
+   5: git_filter_source_repo
+   6: git_filter_source_repo
+   7: git_filter_source_repo
+   8: git_filter_source_repo
+   9: git_filter_source_repo
+  10: git_filter_source_repo
+  11: git_filter_source_repo
+  12: git_filter_source_repo
+  13: git_filter_source_repo
+  14: git_libgit2_prerelease
+  15: <unknown>
+  16: <unknown>
+  17: <unknown>
+  18: <unknown>
+  19: git_midx_writer_dump
+  20: git_filter_source_repo
+  21: git_midx_writer_dump
+  22: BaseThreadInitThunk
+  23: RtlUserThreadStart
+   0.207255800s  INFO prepare_target{force=false package_id=prism-cli v0.1.0 (C:\Dev\RustSandbox\Prism\crates\prism-cli) target="prism"}: cargo::core::compiler::fingerprint: fingerprint error for prism-cli v0.1.0 (C:\Dev\RustSandbox\Prism\crates\prism-cli)/Check { test: false }/TargetInner { name: "prism", doc: true, ..: with_path("C:\\Dev\\RustSandbox\\Prism\\crates\\prism-cli\\src\\main.rs", Edition2021) }
+   0.207271700s  INFO prepare_target{force=false package_id=prism-cli v0.1.0 (C:\Dev\RustSandbox\Prism\crates\prism-cli) target="prism"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Dev\RustSandbox\Prism\target\debug\.fingerprint\prism-cli-f21d9ad335eec3d0\bin-prism`
+
+Caused by:
+    The system cannot find the file specified. (os error 2)
+
+Stack backtrace:
+   0: git_midx_writer_dump
+   1: git_midx_writer_dump
+   2: git_midx_writer_dump
+   3: git_midx_writer_dump
+   4: git_filter_source_repo
+   5: git_filter_source_repo
+   6: git_filter_source_repo
+   7: git_filter_source_repo
+   8: git_filter_source_repo
+   9: git_filter_source_repo
+  10: git_filter_source_repo
+  11: git_libgit2_prerelease
+  12: <unknown>
+  13: <unknown>
+  14: <unknown>
+  15: <unknown>
+  16: git_midx_writer_dump
+  17: git_filter_source_repo
+  18: git_midx_writer_dump
+  19: BaseThreadInitThunk
+  20: RtlUserThreadStart
+   0.207718200s  INFO prepare_target{force=false package_id=prism-cli v0.1.0 (C:\Dev\RustSandbox\Prism\crates\prism-cli) target="prism"}: cargo::core::compiler::fingerprint: fingerprint error for prism-cli v0.1.0 (C:\Dev\RustSandbox\Prism\crates\prism-cli)/Check { test: true }/TargetInner { name: "prism", doc: true, ..: with_path("C:\\Dev\\RustSandbox\\Prism\\crates\\prism-cli\\src\\main.rs", Edition2021) }
+   0.207730100s  INFO prepare_target{force=false package_id=prism-cli v0.1.0 (C:\Dev\RustSandbox\Prism\crates\prism-cli) target="prism"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Dev\RustSandbox\Prism\target\debug\.fingerprint\prism-cli-2c3f75ec3a47baa7\test-bin-prism`
+
+Caused by:
+    The system cannot find the file specified. (os error 2)
+
+Stack backtrace:
+   0: git_midx_writer_dump
+   1: git_midx_writer_dump
+   2: git_midx_writer_dump
+   3: git_midx_writer_dump
+   4: git_filter_source_repo
+   5: git_filter_source_repo
+   6: git_filter_source_repo
+   7: git_filter_source_repo
+   8: git_filter_source_repo
+   9: git_filter_source_repo
+  10: git_filter_source_repo
+  11: git_libgit2_prerelease
+  12: <unknown>
+  13: <unknown>
+  14: <unknown>
+  15: <unknown>
+  16: git_midx_writer_dump
+  17: git_filter_source_repo
+  18: git_midx_writer_dump
+  19: BaseThreadInitThunk
+  20: RtlUserThreadStart
+   0.208390400s  INFO prepare_target{force=false package_id=prism-core v0.1.0 (C:\Dev\RustSandbox\Prism\crates\prism-core) target="prism_core"}: cargo::core::compiler::fingerprint: fingerprint error for prism-core v0.1.0 (C:\Dev\RustSandbox\Prism\crates\prism-core)/Check { test: true }/TargetInner { name_inferred: true, ..: lib_target("prism_core", ["lib"], "C:\\Dev\\RustSandbox\\Prism\\crates\\prism-core\\src\\lib.rs", Edition2021) }
+   0.208401600s  INFO prepare_target{force=false package_id=prism-core v0.1.0 (C:\Dev\RustSandbox\Prism\crates\prism-core) target="prism_core"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Dev\RustSandbox\Prism\target\debug\.fingerprint\prism-core-0ed59052d2544e60\test-lib-prism_core`
+
+Caused by:
+    The system cannot find the file specified. (os error 2)
+
+Stack backtrace:
+   0: git_midx_writer_dump
+   1: git_midx_writer_dump
+   2: git_midx_writer_dump
+   3: git_midx_writer_dump
+   4: git_filter_source_repo
+   5: git_filter_source_repo
+   6: git_filter_source_repo
+   7: git_filter_source_repo
+   8: git_filter_source_repo
+   9: git_filter_source_repo
+  10: git_filter_source_repo
+  11: git_libgit2_prerelease
+  12: <unknown>
+  13: <unknown>
+  14: <unknown>
+  15: <unknown>
+  16: git_midx_writer_dump
+  17: git_filter_source_repo
+  18: git_midx_writer_dump
+  19: BaseThreadInitThunk
+  20: RtlUserThreadStart
+   0.208792400s  INFO prepare_target{force=false package_id=mockall v0.12.1 target="mockall"}: cargo::core::compiler::fingerprint: fingerprint error for mockall v0.12.1/Check { test: false }/TargetInner { name_inferred: true, ..: lib_target("mockall", ["lib"], "C:\\Users\\Bahjat\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\mockall-0.12.1\\src\\lib.rs", Edition2021) }
+   0.208802300s  INFO prepare_target{force=false package_id=mockall v0.12.1 target="mockall"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Dev\RustSandbox\Prism\target\debug\.fingerprint\mockall-59fe4df3e3a8698d\lib-mockall`
+
+Caused by:
+    The system cannot find the file specified. (os error 2)
+
+Stack backtrace:
+   0: git_midx_writer_dump
+   1: git_midx_writer_dump
+   2: git_midx_writer_dump
+   3: git_midx_writer_dump
+   4: git_filter_source_repo
+   5: git_filter_source_repo
+   6: git_filter_source_repo
+   7: git_filter_source_repo
+   8: git_filter_source_repo
+   9: git_filter_source_repo
+  10: git_filter_source_repo
+  11: git_filter_source_repo
+  12: git_libgit2_prerelease
+  13: <unknown>
+  14: <unknown>
+  15: <unknown>
+  16: <unknown>
+  17: git_midx_writer_dump
+  18: git_filter_source_repo
+  19: git_midx_writer_dump
+  20: BaseThreadInitThunk
+  21: RtlUserThreadStart
+   0.209100900s  INFO prepare_target{force=false package_id=downcast v0.11.0 target="downcast"}: cargo::core::compiler::fingerprint: fingerprint error for downcast v0.11.0/Check { test: false }/TargetInner { name_inferred: true, ..: lib_target("downcast", ["lib"], "C:\\Users\\Bahjat\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\downcast-0.11.0\\src\\lib.rs", Edition2018) }
+   0.209110700s  INFO prepare_target{force=false package_id=downcast v0.11.0 target="downcast"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Dev\RustSandbox\Prism\target\debug\.fingerprint\downcast-0922e4029737354b\lib-downcast`
+
+Caused by:
+    The system cannot find the file specified. (os error 2)
+
+Stack backtrace:
+   0: git_midx_writer_dump
+   1: git_midx_writer_dump
+   2: git_midx_writer_dump
+   3: git_midx_writer_dump
+   4: git_filter_source_repo
+   5: git_filter_source_repo
+   6: git_filter_source_repo
+   7: git_filter_source_repo
+   8: git_filter_source_repo
+   9: git_filter_source_repo
+  10: git_filter_source_repo
+  11: git_filter_source_repo
+  12: git_filter_source_repo
+  13: git_libgit2_prerelease
+  14: <unknown>
+  15: <unknown>
+  16: <unknown>
+  17: <unknown>
+  18: git_midx_writer_dump
+  19: git_filter_source_repo
+  20: git_midx_writer_dump
+  21: BaseThreadInitThunk
+  22: RtlUserThreadStart
+   0.209341700s  INFO prepare_target{force=false package_id=fragile v2.0.1 target="fragile"}: cargo::core::compiler::fingerprint: fingerprint error for fragile v2.0.1/Check { test: false }/TargetInner { ..: lib_target("fragile", ["lib"], "C:\\Users\\Bahjat\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\fragile-2.0.1\\src\\lib.rs", Edition2018) }
+   0.209352000s  INFO prepare_target{force=false package_id=fragile v2.0.1 target="fragile"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Dev\RustSandbox\Prism\target\debug\.fingerprint\fragile-540ebe7ce527836e\lib-fragile`
+
+Caused by:
+    The system cannot find the file specified. (os error 2)
+
+Stack backtrace:
+   0: git_midx_writer_dump
+   1: git_midx_writer_dump
+   2: git_midx_writer_dump
+   3: git_midx_writer_dump
+   4: git_filter_source_repo
+   5: git_filter_source_repo
+   6: git_filter_source_repo
+   7: git_filter_source_repo
+   8: git_filter_source_repo
+   9: git_filter_source_repo
+  10: git_filter_source_repo
+  11: git_filter_source_repo
+  12: git_filter_source_repo
+  13: git_libgit2_prerelease
+  14: <unknown>
+  15: <unknown>
+  16: <unknown>
+  17: <unknown>
+  18: git_midx_writer_dump
+  19: git_filter_source_repo
+  20: git_midx_writer_dump
+  21: BaseThreadInitThunk
+  22: RtlUserThreadStart
+   0.209780600s  INFO prepare_target{force=false package_id=prism-parsers v0.1.0 (C:\Dev\RustSandbox\Prism\crates\prism-parsers) target="prism_parsers"}: cargo::core::compiler::fingerprint: fingerprint error for prism-parsers v0.1.0 (C:\Dev\RustSandbox\Prism\crates\prism-parsers)/Check { test: true }/TargetInner { name_inferred: true, ..: lib_target("prism_parsers", ["lib"], "C:\\Dev\\RustSandbox\\Prism\\crates\\prism-parsers\\src\\lib.rs", Edition2021) }
+   0.209792000s  INFO prepare_target{force=false package_id=prism-parsers v0.1.0 (C:\Dev\RustSandbox\Prism\crates\prism-parsers) target="prism_parsers"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Dev\RustSandbox\Prism\target\debug\.fingerprint\prism-parsers-c5276d9501d6f22b\test-lib-prism_parsers`
+
+Caused by:
+    The system cannot find the file specified. (os error 2)
+
+Stack backtrace:
+   0: git_midx_writer_dump
+   1: git_midx_writer_dump
+   2: git_midx_writer_dump
+   3: git_midx_writer_dump
+   4: git_filter_source_repo
+   5: git_filter_source_repo
+   6: git_filter_source_repo
+   7: git_filter_source_repo
+   8: git_filter_source_repo
+   9: git_filter_source_repo
+  10: git_filter_source_repo
+  11: git_libgit2_prerelease
+  12: <unknown>
+  13: <unknown>
+  14: <unknown>
+  15: <unknown>
+  16: git_midx_writer_dump
+  17: git_filter_source_repo
+  18: git_midx_writer_dump
+  19: BaseThreadInitThunk
+  20: RtlUserThreadStart
+   0.210266900s  INFO prepare_target{force=false package_id=prism-render v0.1.0 (C:\Dev\RustSandbox\Prism\crates\prism-render) target="prism_render"}: cargo::core::compiler::fingerprint: fingerprint error for prism-render v0.1.0 (C:\Dev\RustSandbox\Prism\crates\prism-render)/Check { test: true }/TargetInner { name_inferred: true, ..: lib_target("prism_render", ["lib"], "C:\\Dev\\RustSandbox\\Prism\\crates\\prism-render\\src\\lib.rs", Edition2021) }
+   0.210281700s  INFO prepare_target{force=false package_id=prism-render v0.1.0 (C:\Dev\RustSandbox\Prism\crates\prism-render) target="prism_render"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Dev\RustSandbox\Prism\target\debug\.fingerprint\prism-render-d19fa5925691a9be\test-lib-prism_render`
+
+Caused by:
+    The system cannot find the file specified. (os error 2)
+
+Stack backtrace:
+   0: git_midx_writer_dump
+   1: git_midx_writer_dump
+   2: git_midx_writer_dump
+   3: git_midx_writer_dump
+   4: git_filter_source_repo
+   5: git_filter_source_repo
+   6: git_filter_source_repo
+   7: git_filter_source_repo
+   8: git_filter_source_repo
+   9: git_filter_source_repo
+  10: git_filter_source_repo
+  11: git_libgit2_prerelease
+  12: <unknown>
+  13: <unknown>
+  14: <unknown>
+  15: <unknown>
+  16: git_midx_writer_dump
+  17: git_filter_source_repo
+  18: git_midx_writer_dump
+  19: BaseThreadInitThunk
+  20: RtlUserThreadStart
+   0.210903100s  INFO prepare_target{force=false package_id=prism-sandbox v0.1.0 (C:\Dev\RustSandbox\Prism\crates\prism-sandbox) target="prism_sandbox"}: cargo::core::compiler::fingerprint: fingerprint error for prism-sandbox v0.1.0 (C:\Dev\RustSandbox\Prism\crates\prism-sandbox)/Check { test: false }/TargetInner { name_inferred: true, ..: lib_target("prism_sandbox", ["lib"], "C:\\Dev\\RustSandbox\\Prism\\crates\\prism-sandbox\\src\\lib.rs", Edition2021) }
+   0.210915900s  INFO prepare_target{force=false package_id=prism-sandbox v0.1.0 (C:\Dev\RustSandbox\Prism\crates\prism-sandbox) target="prism_sandbox"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Dev\RustSandbox\Prism\target\debug\.fingerprint\prism-sandbox-31ba8957290ae505\lib-prism_sandbox`
+
+Caused by:
+    The system cannot find the file specified. (os error 2)
+
+Stack backtrace:
+   0: git_midx_writer_dump
+   1: git_midx_writer_dump
+   2: git_midx_writer_dump
+   3: git_midx_writer_dump
+   4: git_filter_source_repo
+   5: git_filter_source_repo
+   6: git_filter_source_repo
+   7: git_filter_source_repo
+   8: git_filter_source_repo
+   9: git_filter_source_repo
+  10: git_filter_source_repo
+  11: git_libgit2_prerelease
+  12: <unknown>
+  13: <unknown>
+  14: <unknown>
+  15: <unknown>
+  16: git_midx_writer_dump
+  17: git_filter_source_repo
+  18: git_midx_writer_dump
+  19: BaseThreadInitThunk
+  20: RtlUserThreadStart
+   0.211432500s  INFO prepare_target{force=false package_id=prism-sandbox v0.1.0 (C:\Dev\RustSandbox\Prism\crates\prism-sandbox) target="prism_sandbox"}: cargo::core::compiler::fingerprint: fingerprint error for prism-sandbox v0.1.0 (C:\Dev\RustSandbox\Prism\crates\prism-sandbox)/Check { test: true }/TargetInner { name_inferred: true, ..: lib_target("prism_sandbox", ["lib"], "C:\\Dev\\RustSandbox\\Prism\\crates\\prism-sandbox\\src\\lib.rs", Edition2021) }
+   0.211444700s  INFO prepare_target{force=false package_id=prism-sandbox v0.1.0 (C:\Dev\RustSandbox\Prism\crates\prism-sandbox) target="prism_sandbox"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Dev\RustSandbox\Prism\target\debug\.fingerprint\prism-sandbox-95ccf7515555cb56\test-lib-prism_sandbox`
+
+Caused by:
+    The system cannot find the file specified. (os error 2)
+
+Stack backtrace:
+   0: git_midx_writer_dump
+   1: git_midx_writer_dump
+   2: git_midx_writer_dump
+   3: git_midx_writer_dump
+   4: git_filter_source_repo
+   5: git_filter_source_repo
+   6: git_filter_source_repo
+   7: git_filter_source_repo
+   8: git_filter_source_repo
+   9: git_filter_source_repo
+  10: git_filter_source_repo
+  11: git_libgit2_prerelease
+  12: <unknown>
+  13: <unknown>
+  14: <unknown>
+  15: <unknown>
+  16: git_midx_writer_dump
+  17: git_filter_source_repo
+  18: git_midx_writer_dump
+  19: BaseThreadInitThunk
+  20: RtlUserThreadStart
+   0.214274000s  INFO prepare_target{force=false package_id=prism-server v0.1.0 (C:\Dev\RustSandbox\Prism\crates\prism-server) target="prism_server"}: cargo::core::compiler::fingerprint: fingerprint error for prism-server v0.1.0 (C:\Dev\RustSandbox\Prism\crates\prism-server)/Check { test: false }/TargetInner { name_inferred: true, ..: lib_target("prism_server", ["lib"], "C:\\Dev\\RustSandbox\\Prism\\crates\\prism-server\\src\\lib.rs", Edition2021) }
+   0.214292000s  INFO prepare_target{force=false package_id=prism-server v0.1.0 (C:\Dev\RustSandbox\Prism\crates\prism-server) target="prism_server"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Dev\RustSandbox\Prism\target\debug\.fingerprint\prism-server-849177e0d14e9103\lib-prism_server`
+
+Caused by:
+    The system cannot find the file specified. (os error 2)
+
+Stack backtrace:
+   0: git_midx_writer_dump
+   1: git_midx_writer_dump
+   2: git_midx_writer_dump
+   3: git_midx_writer_dump
+   4: git_filter_source_repo
+   5: git_filter_source_repo
+   6: git_filter_source_repo
+   7: git_filter_source_repo
+   8: git_filter_source_repo
+   9: git_filter_source_repo
+  10: git_filter_source_repo
+  11: git_libgit2_prerelease
+  12: <unknown>
+  13: <unknown>
+  14: <unknown>
+  15: <unknown>
+  16: git_midx_writer_dump
+  17: git_filter_source_repo
+  18: git_midx_writer_dump
+  19: BaseThreadInitThunk
+  20: RtlUserThreadStart
+   0.214778100s  INFO prepare_target{force=false package_id=axum v0.7.9 target="axum"}: cargo::core::compiler::fingerprint: fingerprint error for axum v0.7.9/Check { test: false }/TargetInner { ..: lib_target("axum", ["lib"], "C:\\Users\\Bahjat\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\axum-0.7.9\\src\\lib.rs", Edition2021) }
+   0.214790400s  INFO prepare_target{force=false package_id=axum v0.7.9 target="axum"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Dev\RustSandbox\Prism\target\debug\.fingerprint\axum-5a8fbfdc1fa39159\lib-axum`
+
+Caused by:
+    The system cannot find the file specified. (os error 2)
+
+Stack backtrace:
+   0: git_midx_writer_dump
+   1: git_midx_writer_dump
+   2: git_midx_writer_dump
+   3: git_midx_writer_dump
+   4: git_filter_source_repo
+   5: git_filter_source_repo
+   6: git_filter_source_repo
+   7: git_filter_source_repo
+   8: git_filter_source_repo
+   9: git_filter_source_repo
+  10: git_filter_source_repo
+  11: git_filter_source_repo
+  12: git_libgit2_prerelease
+  13: <unknown>
+  14: <unknown>
+  15: <unknown>
+  16: <unknown>
+  17: git_midx_writer_dump
+  18: git_filter_source_repo
+  19: git_midx_writer_dump
+  20: BaseThreadInitThunk
+  21: RtlUserThreadStart
+   0.216233500s  INFO prepare_target{force=false package_id=hyper v1.8.1 target="hyper"}: cargo::core::compiler::fingerprint: fingerprint error for hyper v1.8.1/Check { test: false }/TargetInner { ..: lib_target("hyper", ["lib"], "C:\\Users\\Bahjat\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\hyper-1.8.1\\src\\lib.rs", Edition2021) }
+   0.216246800s  INFO prepare_target{force=false package_id=hyper v1.8.1 target="hyper"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Dev\RustSandbox\Prism\target\debug\.fingerprint\hyper-1e92255abb8800c4\lib-hyper`
+
+Caused by:
+    The system cannot find the file specified. (os error 2)
+
+Stack backtrace:
+   0: git_midx_writer_dump
+   1: git_midx_writer_dump
+   2: git_midx_writer_dump
+   3: git_midx_writer_dump
+   4: git_filter_source_repo
+   5: git_filter_source_repo
+   6: git_filter_source_repo
+   7: git_filter_source_repo
+   8: git_filter_source_repo
+   9: git_filter_source_repo
+  10: git_filter_source_repo
+  11: git_filter_source_repo
+  12: git_filter_source_repo
+  13: git_libgit2_prerelease
+  14: <unknown>
+  15: <unknown>
+  16: <unknown>
+  17: <unknown>
+  18: git_midx_writer_dump
+  19: git_filter_source_repo
+  20: git_midx_writer_dump
+  21: BaseThreadInitThunk
+  22: RtlUserThreadStart
+   0.217276400s  INFO prepare_target{force=false package_id=hyper-util v0.1.19 target="hyper_util"}: cargo::core::compiler::fingerprint: fingerprint error for hyper-util v0.1.19/Check { test: false }/TargetInner { ..: lib_target("hyper_util", ["lib"], "C:\\Users\\Bahjat\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\hyper-util-0.1.19\\src\\lib.rs", Edition2021) }
+   0.217288200s  INFO prepare_target{force=false package_id=hyper-util v0.1.19 target="hyper_util"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Dev\RustSandbox\Prism\target\debug\.fingerprint\hyper-util-f98b00f16b8a844c\lib-hyper_util`
+
+Caused by:
+    The system cannot find the file specified. (os error 2)
+
+Stack backtrace:
+   0: git_midx_writer_dump
+   1: git_midx_writer_dump
+   2: git_midx_writer_dump
+   3: git_midx_writer_dump
+   4: git_filter_source_repo
+   5: git_filter_source_repo
+   6: git_filter_source_repo
+   7: git_filter_source_repo
+   8: git_filter_source_repo
+   9: git_filter_source_repo
+  10: git_filter_source_repo
+  11: git_filter_source_repo
+  12: git_filter_source_repo
+  13: git_libgit2_prerelease
+  14: <unknown>
+  15: <unknown>
+  16: <unknown>
+  17: <unknown>
+  18: git_midx_writer_dump
+  19: git_filter_source_repo
+  20: git_midx_writer_dump
+  21: BaseThreadInitThunk
+  22: RtlUserThreadStart
+   0.219315100s  INFO prepare_target{force=false package_id=tower v0.5.2 target="tower"}: cargo::core::compiler::fingerprint: fingerprint error for tower v0.5.2/Check { test: false }/TargetInner { ..: lib_target("tower", ["lib"], "C:\\Users\\Bahjat\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\tower-0.5.2\\src\\lib.rs", Edition2018) }
+   0.219329500s  INFO prepare_target{force=false package_id=tower v0.5.2 target="tower"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Dev\RustSandbox\Prism\target\debug\.fingerprint\tower-2a770e73df197b15\lib-tower`
+
+Caused by:
+    The system cannot find the file specified. (os error 2)
+
+Stack backtrace:
+   0: git_midx_writer_dump
+   1: git_midx_writer_dump
+   2: git_midx_writer_dump
+   3: git_midx_writer_dump
+   4: git_filter_source_repo
+   5: git_filter_source_repo
+   6: git_filter_source_repo
+   7: git_filter_source_repo
+   8: git_filter_source_repo
+   9: git_filter_source_repo
+  10: git_filter_source_repo
+  11: git_filter_source_repo
+  12: git_filter_source_repo
+  13: git_libgit2_prerelease
+  14: <unknown>
+  15: <unknown>
+  16: <unknown>
+  17: <unknown>
+  18: git_midx_writer_dump
+  19: git_filter_source_repo
+  20: git_midx_writer_dump
+  21: BaseThreadInitThunk
+  22: RtlUserThreadStart
+   0.220010500s  INFO prepare_target{force=false package_id=prism-server v0.1.0 (C:\Dev\RustSandbox\Prism\crates\prism-server) target="prism_server"}: cargo::core::compiler::fingerprint: fingerprint error for prism-server v0.1.0 (C:\Dev\RustSandbox\Prism\crates\prism-server)/Check { test: true }/TargetInner { name_inferred: true, ..: lib_target("prism_server", ["lib"], "C:\\Dev\\RustSandbox\\Prism\\crates\\prism-server\\src\\lib.rs", Edition2021) }
+   0.220023800s  INFO prepare_target{force=false package_id=prism-server v0.1.0 (C:\Dev\RustSandbox\Prism\crates\prism-server) target="prism_server"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Dev\RustSandbox\Prism\target\debug\.fingerprint\prism-server-88ecabd6e0e6ba93\test-lib-prism_server`
+
+Caused by:
+    The system cannot find the file specified. (os error 2)
+
+Stack backtrace:
+   0: git_midx_writer_dump
+   1: git_midx_writer_dump
+   2: git_midx_writer_dump
+   3: git_midx_writer_dump
+   4: git_filter_source_repo
+   5: git_filter_source_repo
+   6: git_filter_source_repo
+   7: git_filter_source_repo
+   8: git_filter_source_repo
+   9: git_filter_source_repo
+  10: git_filter_source_repo
+  11: git_libgit2_prerelease
+  12: <unknown>
+  13: <unknown>
+  14: <unknown>
+  15: <unknown>
+  16: git_midx_writer_dump
+  17: git_filter_source_repo
+  18: git_midx_writer_dump
+  19: BaseThreadInitThunk
+  20: RtlUserThreadStart
+   0.220551100s  INFO prepare_target{force=false package_id=prism-server v0.1.0 (C:\Dev\RustSandbox\Prism\crates\prism-server) target="prism-server"}: cargo::core::compiler::fingerprint: fingerprint error for prism-server v0.1.0 (C:\Dev\RustSandbox\Prism\crates\prism-server)/Check { test: false }/TargetInner { name: "prism-server", doc: true, ..: with_path("C:\\Dev\\RustSandbox\\Prism\\crates\\prism-server\\src\\main.rs", Edition2021) }
+   0.220563300s  INFO prepare_target{force=false package_id=prism-server v0.1.0 (C:\Dev\RustSandbox\Prism\crates\prism-server) target="prism-server"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Dev\RustSandbox\Prism\target\debug\.fingerprint\prism-server-90f9235944913648\bin-prism-server`
+
+Caused by:
+    The system cannot find the file specified. (os error 2)
+
+Stack backtrace:
+   0: git_midx_writer_dump
+   1: git_midx_writer_dump
+   2: git_midx_writer_dump
+   3: git_midx_writer_dump
+   4: git_filter_source_repo
+   5: git_filter_source_repo
+   6: git_filter_source_repo
+   7: git_filter_source_repo
+   8: git_filter_source_repo
+   9: git_filter_source_repo
+  10: git_filter_source_repo
+  11: git_libgit2_prerelease
+  12: <unknown>
+  13: <unknown>
+  14: <unknown>
+  15: <unknown>
+  16: git_midx_writer_dump
+  17: git_filter_source_repo
+  18: git_midx_writer_dump
+  19: BaseThreadInitThunk
+  20: RtlUserThreadStart
+   0.221040400s  INFO prepare_target{force=false package_id=prism-server v0.1.0 (C:\Dev\RustSandbox\Prism\crates\prism-server) target="prism-server"}: cargo::core::compiler::fingerprint: fingerprint error for prism-server v0.1.0 (C:\Dev\RustSandbox\Prism\crates\prism-server)/Check { test: true }/TargetInner { name: "prism-server", doc: true, ..: with_path("C:\\Dev\\RustSandbox\\Prism\\crates\\prism-server\\src\\main.rs", Edition2021) }
+   0.221052600s  INFO prepare_target{force=false package_id=prism-server v0.1.0 (C:\Dev\RustSandbox\Prism\crates\prism-server) target="prism-server"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Dev\RustSandbox\Prism\target\debug\.fingerprint\prism-server-ea7f2cf9ee100a11\test-bin-prism-server`
+
+Caused by:
+    The system cannot find the file specified. (os error 2)
+
+Stack backtrace:
+   0: git_midx_writer_dump
+   1: git_midx_writer_dump
+   2: git_midx_writer_dump
+   3: git_midx_writer_dump
+   4: git_filter_source_repo
+   5: git_filter_source_repo
+   6: git_filter_source_repo
+   7: git_filter_source_repo
+   8: git_filter_source_repo
+   9: git_filter_source_repo
+  10: git_filter_source_repo
+  11: git_libgit2_prerelease
+  12: <unknown>
+  13: <unknown>
+  14: <unknown>
+  15: <unknown>
+  16: git_midx_writer_dump
+  17: git_filter_source_repo
+  18: git_midx_writer_dump
+  19: BaseThreadInitThunk
+  20: RtlUserThreadStart
+    Checking windows-sys v0.61.2
+    Checking aho-corasick v1.1.4
+    Checking regex-syntax v0.8.8
+    Checking fastrand v2.3.0
+    Checking predicates-core v1.0.9
+    Checking float-cmp v0.10.0
+    Checking bstr v1.12.1
+    Checking crossbeam-utils v0.8.21
+    Checking normalize-line-endings v0.3.0
+    Checking termtree v0.5.1
+    Checking difflib v0.4.0
+    Checking anstyle v1.0.13
+    Checking fragile v2.0.1
+    Checking downcast v0.11.0
+    Checking doc-comment v0.3.4
+    Checking predicates-tree v1.0.12
+    Checking crossbeam-epoch v0.9.18
+    Checking crossbeam-deque v0.8.6
+    Checking regex-automata v0.4.13
+    Checking mio v1.1.1
+    Checking tempfile v3.23.0
+    Checking nu-ansi-term v0.50.3
+    Checking winapi-util v0.1.11
+    Checking same-file v1.0.6
+    Checking walkdir v2.5.0
+    Checking tokio v1.48.0
+    Checking matchers v0.2.0
+    Checking regex v1.12.2
+    Checking globset v0.4.18
+    Checking tracing-subscriber v0.3.22
+    Checking ignore v0.4.25
+    Checking predicates v3.1.3
+    Checking mockall v0.12.1
+    Checking globwalk v0.9.1
+    Checking assert_fs v1.1.3
+    Checking prism-core v0.1.0 (C:\Dev\RustSandbox\Prism\crates\prism-core)
+    Checking hyper v1.8.1
+    Checking tower v0.5.2
+    Checking hyper-util v0.1.19
+    Checking axum v0.7.9
+    Checking prism-render v0.1.0 (C:\Dev\RustSandbox\Prism\crates\prism-render)
+    Checking prism-parsers v0.1.0 (C:\Dev\RustSandbox\Prism\crates\prism-parsers)
+    Checking prism-sandbox v0.1.0 (C:\Dev\RustSandbox\Prism\crates\prism-sandbox)
+    Checking prism-cli v0.1.0 (C:\Dev\RustSandbox\Prism\crates\prism-cli)
+    Checking prism-server v0.1.0 (C:\Dev\RustSandbox\Prism\crates\prism-server)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 6.14s

@@ -1,0 +1,29 @@
+[package]
+name = "prism-sandbox"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+description = "WebAssembly sandbox for secure parser execution"
+keywords = ["sandbox", "wasm", "security", "isolation"]
+categories = ["wasm", "parser-implementations"]
+
+[dependencies]
+# Internal dependencies
+prism-core = { workspace = true }
+
+# Error handling
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[features]
+default = []

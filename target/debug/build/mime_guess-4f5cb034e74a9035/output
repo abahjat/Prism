@@ -1,0 +1,1 @@
+cargo:rustc-env=MIME_TYPES_GENERATED_PATH=c:\Dev\RustSandbox\Prism\target\debug\build\mime_guess-4f5cb034e74a9035\out\mime_types_generated.rs

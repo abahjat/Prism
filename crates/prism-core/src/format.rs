@@ -12,10 +12,13 @@
 //! ```rust
 //! use prism_core::format::{detect_format, Format};
 //!
-//! let data = include_bytes!("../tests/fixtures/sample.pdf");
-//! let format = detect_format(data, Some("sample.pdf"));
+//! // PDF file signature
+//! let data = b"%PDF-1.4 test content";
+//! let result = detect_format(data, Some("sample.pdf"));
 //!
-//! assert!(matches!(format, Some(Format::Pdf)));
+//! assert!(result.is_some());
+//! let result = result.unwrap();
+//! assert_eq!(result.format.mime_type, "application/pdf");
 //! ```
 
 use serde::{Deserialize, Serialize};

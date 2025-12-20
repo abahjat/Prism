@@ -1,0 +1,47 @@
+[package]
+name = "prism-cli"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+description = "Command-line interface for Prism document processing"
+keywords = ["cli", "document", "conversion", "pdf", "office"]
+categories = ["command-line-utilities"]
+
+[[bin]]
+name = "prism"
+path = "src/main.rs"
+
+[dependencies]
+# Internal dependencies
+prism-core = { workspace = true }
+prism-parsers = { workspace = true }
+prism-render = { workspace = true }
+
+# Async runtime
+tokio = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Error handling
+anyhow = { workspace = true }
+
+# Logging & Tracing
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+# Utilities
+bytes = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+assert_fs = { workspace = true }
+predicates = { workspace = true }
+
+[features]
+default = []
