@@ -1,0 +1,151 @@
+{
+    // ===========================================
+    // EDITOR SETTINGS
+    // ===========================================
+    "editor.formatOnSave": true,
+    "editor.formatOnPaste": false,
+    "editor.tabSize": 4,
+    "editor.insertSpaces": true,
+    "editor.rulers": [100],
+    "editor.bracketPairColorization.enabled": true,
+    "editor.guides.bracketPairs": "active",
+    "editor.inlayHints.enabled": "onUnlessPressed",
+    "editor.semanticHighlighting.enabled": true,
+    "editor.minimap.enabled": false,
+
+    // ===========================================
+    // RUST-ANALYZER SETTINGS
+    // ===========================================
+    
+    // Use clippy for checking (more comprehensive than cargo check)
+    "rust-analyzer.check.command": "clippy",
+    "rust-analyzer.check.extraArgs": ["--", "-W", "clippy::all"],
+    
+    // Enable all features for better analysis
+    "rust-analyzer.cargo.allFeatures": true,
+    "rust-analyzer.cargo.buildScripts.enable": true,
+    
+    // Proc macro support (needed for serde, async-trait, etc.)
+    "rust-analyzer.procMacro.enable": true,
+    "rust-analyzer.procMacro.attributes.enable": true,
+    
+    // Inlay hints (type annotations, parameter names)
+    "rust-analyzer.inlayHints.parameterHints.enable": true,
+    "rust-analyzer.inlayHints.typeHints.enable": true,
+    "rust-analyzer.inlayHints.chainingHints.enable": true,
+    "rust-analyzer.inlayHints.closureReturnTypeHints.enable": "with_block",
+    "rust-analyzer.inlayHints.lifetimeElisionHints.enable": "skip_trivial",
+    
+    // Code lens (Run | Debug buttons above tests/main)
+    "rust-analyzer.lens.enable": true,
+    "rust-analyzer.lens.run.enable": true,
+    "rust-analyzer.lens.debug.enable": true,
+    "rust-analyzer.lens.implementations.enable": true,
+    "rust-analyzer.lens.references.adt.enable": true,
+    "rust-analyzer.lens.references.method.enable": true,
+    
+    // Hover information
+    "rust-analyzer.hover.documentation.enable": true,
+    "rust-analyzer.hover.documentation.keywords.enable": true,
+    
+    // Completion
+    "rust-analyzer.completion.autoimport.enable": true,
+    "rust-analyzer.completion.postfix.enable": true,
+    
+    // Diagnostics
+    "rust-analyzer.diagnostics.enable": true,
+    "rust-analyzer.diagnostics.experimental.enable": true,
+
+    // ===========================================
+    // FILE ASSOCIATIONS
+    // ===========================================
+    "files.associations": {
+        "*.toml": "toml",
+        "Cargo.lock": "toml",
+        ".rustfmt.toml": "toml",
+        "clippy.toml": "toml"
+    },
+
+    // ===========================================
+    // FILE EXCLUSIONS (Performance)
+    // ===========================================
+    "files.watcherExclude": {
+        "**/target/**": true,
+        "**/.git/objects/**": true,
+        "**/.git/subtree-cache/**": true,
+        "**/node_modules/**": true
+    },
+    "files.exclude": {
+        "**/target": false,
+        "**/.git": true
+    },
+    "search.exclude": {
+        "**/target": true,
+        "**/node_modules": true,
+        "**/*.lock": true
+    },
+
+    // ===========================================
+    // LANGUAGE-SPECIFIC SETTINGS
+    // ===========================================
+    "[rust]": {
+        "editor.defaultFormatter": "rust-lang.rust-analyzer",
+        "editor.formatOnSave": true,
+        "editor.tabSize": 4
+    },
+    "[toml]": {
+        "editor.defaultFormatter": "tamasfe.even-better-toml",
+        "editor.formatOnSave": true
+    },
+    "[json]": {
+        "editor.defaultFormatter": "vscode.json-language-features",
+        "editor.formatOnSave": true
+    },
+    "[markdown]": {
+        "editor.wordWrap": "on",
+        "editor.formatOnSave": false
+    },
+    "[python]": {
+        "editor.tabSize": 4,
+        "editor.formatOnSave": true
+    },
+    "[typescript]": {
+        "editor.tabSize": 2,
+        "editor.formatOnSave": true
+    },
+
+    // ===========================================
+    // TERMINAL SETTINGS
+    // ===========================================
+    "terminal.integrated.defaultProfile.windows": "PowerShell",
+    "terminal.integrated.env.windows": {
+        "RUST_BACKTRACE": "1"
+    },
+    "terminal.integrated.env.linux": {
+        "RUST_BACKTRACE": "1"
+    },
+    "terminal.integrated.env.osx": {
+        "RUST_BACKTRACE": "1"
+    },
+
+    // ===========================================
+    // TESTING
+    // ===========================================
+    "rust-analyzer.runnables.extraArgs": [],
+    "testing.automaticallyOpenPeekView": "never",
+
+    // ===========================================
+    // ERROR LENS (if extension installed)
+    // ===========================================
+    "errorLens.enabled": true,
+    "errorLens.enabledDiagnosticLevels": ["error", "warning"],
+    "errorLens.exclude": ["never (read|used)"],
+
+    // ===========================================
+    // CRATES (if extension installed)
+    // ===========================================
+    "crates.listPreReleases": false,
+    "crates.errorDecorator": "❌",
+    "crates.compatibleDecorator": "✅",
+    "crates.incompatibleDecorator": "⚠️"
+}

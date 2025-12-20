@@ -1,0 +1,191 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        // ===========================================
+        // SERVER
+        // ===========================================
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "🚀 Run Server",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=prism-server",
+                    "--package=prism-server"
+                ],
+                "filter": {
+                    "name": "prism-server",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "RUST_LOG": "debug",
+                "RUST_BACKTRACE": "1"
+            }
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "🐛 Debug Server",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=prism-server",
+                    "--package=prism-server"
+                ],
+                "filter": {
+                    "name": "prism-server",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "RUST_LOG": "trace",
+                "RUST_BACKTRACE": "full"
+            },
+            "sourceLanguages": ["rust"]
+        },
+
+        // ===========================================
+        // CLI
+        // ===========================================
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "🖥️ Run CLI (detect)",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=prism-cli",
+                    "--package=prism-cli"
+                ],
+                "filter": {
+                    "name": "prism-cli",
+                    "kind": "bin"
+                }
+            },
+            "args": ["detect", "${file}"],
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "RUST_LOG": "info"
+            }
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "🖥️ Run CLI (convert)",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=prism-cli",
+                    "--package=prism-cli"
+                ],
+                "filter": {
+                    "name": "prism-cli",
+                    "kind": "bin"
+                }
+            },
+            "args": ["convert", "${file}", "-o", "output.pdf"],
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "RUST_LOG": "info"
+            }
+        },
+
+        // ===========================================
+        // TESTS
+        // ===========================================
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "🧪 Test prism-core",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--lib",
+                    "--package=prism-core"
+                ],
+                "filter": {
+                    "name": "prism-core",
+                    "kind": "lib"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "RUST_BACKTRACE": "1"
+            }
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "🧪 Test prism-parsers",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--lib",
+                    "--package=prism-parsers"
+                ],
+                "filter": {
+                    "name": "prism-parsers",
+                    "kind": "lib"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "RUST_BACKTRACE": "1"
+            }
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "🧪 Test Current File",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--package=${command:currentPackage}"
+                ]
+            },
+            "args": ["${selectedText}"],
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "RUST_BACKTRACE": "1"
+            }
+        },
+
+        // ===========================================
+        // BENCHMARKS
+        // ===========================================
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "📊 Run Benchmarks",
+            "cargo": {
+                "args": [
+                    "bench",
+                    "--no-run",
+                    "--package=prism-core"
+                ]
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        }
+    ],
+    "compounds": [
+        {
+            "name": "🧪 Run All Tests",
+            "configurations": [
+                "🧪 Test prism-core",
+                "🧪 Test prism-parsers"
+            ]
+        }
+    ]
+}

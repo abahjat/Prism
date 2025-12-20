@@ -1,0 +1,66 @@
+{
+    "recommendations": [
+        // ===========================================
+        // ESSENTIAL FOR RUST
+        // ===========================================
+        "rust-lang.rust-analyzer",      // Rust language support
+        "vadimcn.vscode-lldb",          // Debugger for Rust (Linux/Mac)
+        "ms-vscode.cpptools",           // Debugger for Rust (Windows)
+        "tamasfe.even-better-toml",     // TOML support (Cargo.toml)
+        "serayuzgur.crates",            // Cargo.toml dependency management
+        "fill-labs.dependi",            // Dependency update checker
+
+        // ===========================================
+        // CODE QUALITY
+        // ===========================================
+        "usernamehw.errorlens",         // Inline error display
+        "streetsidesoftware.code-spell-checker", // Spell checking
+        
+        // ===========================================
+        // PRODUCTIVITY
+        // ===========================================
+        "eamodio.gitlens",              // Git integration
+        "mhutchie.git-graph",           // Git graph visualization
+        "gruntfuggly.todo-tree",        // TODO/FIXME tracking
+        "wayou.vscode-todo-highlight",  // Highlight TODOs
+        "christian-kohler.path-intellisense", // Path autocomplete
+        "aaron-bond.better-comments",   // Comment highlighting
+        
+        // ===========================================
+        // TESTING
+        // ===========================================
+        "hbenl.vscode-test-explorer",   // Test explorer UI
+        "swellaby.vscode-rust-test-adapter", // Rust test adapter
+
+        // ===========================================
+        // DOCUMENTATION
+        // ===========================================
+        "bierner.markdown-preview-github-styles", // Markdown preview
+        "yzhang.markdown-all-in-one",   // Markdown tools
+        
+        // ===========================================
+        // API DEVELOPMENT
+        // ===========================================
+        "humao.rest-client",            // REST API testing
+        "42crunch.vscode-openapi",      // OpenAPI/Swagger support
+        
+        // ===========================================
+        // CONTAINERS & DEVOPS
+        // ===========================================
+        "ms-azuretools.vscode-docker",  // Docker support
+        "ms-vscode-remote.remote-containers", // Dev containers
+        "redhat.vscode-yaml",           // YAML support (K8s, CI)
+        
+        // ===========================================
+        // OPTIONAL BUT NICE
+        // ===========================================
+        "pkief.material-icon-theme",    // File icons
+        "zhuangtongfa.material-theme",  // Theme (One Dark Pro)
+        "IBM.output-colorizer",         // Colorize output/logs
+        "mechatroner.rainbow-csv"       // CSV highlighting
+    ],
+    "unwantedRecommendations": [
+        "rust-lang.rust",               // Deprecated, use rust-analyzer
+        "kalitaalexey.vscode-rust"      // Deprecated
+    ]
+}

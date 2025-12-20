@@ -1,0 +1,74 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/prism-core",
+    "crates/prism-parsers",
+    "crates/prism-render",
+    "crates/prism-sandbox",
+    "crates/prism-server",
+    "crates/prism-cli",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["Prism Team"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/your-org/prism"
+rust-version = "1.75"
+
+[workspace.dependencies]
+# Async runtime
+tokio = { version = "1.35", features = ["full"] }
+async-trait = "0.1"
+futures = "0.3"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Error handling
+thiserror = "1.0"
+anyhow = "1.0"
+
+# Logging & Tracing
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# Web framework
+axum = { version = "0.7", features = ["multipart", "macros"] }
+tower = "0.4"
+tower-http = { version = "0.5", features = ["cors", "trace", "limit"] }
+
+# Utilities
+uuid = { version = "1.6", features = ["v4", "serde"] }
+bytes = "1.5"
+chrono = { version = "0.4", features = ["serde"] }
+mime = "0.3"
+mime_guess = "2.0"
+
+# Testing
+mockall = "0.12"
+tempfile = "3.9"
+assert_fs = "1.1"
+predicates = "3.0"
+
+# Internal crates
+prism-core = { path = "crates/prism-core" }
+prism-parsers = { path = "crates/prism-parsers" }
+prism-render = { path = "crates/prism-render" }
+prism-sandbox = { path = "crates/prism-sandbox" }
+
+[profile.dev]
+opt-level = 0
+debug = true
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = true
+
+[profile.bench]
+opt-level = 3
+debug = false

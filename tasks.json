@@ -1,0 +1,270 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        // ===========================================
+        // BUILD TASKS
+        // ===========================================
+        {
+            "label": "cargo build",
+            "type": "cargo",
+            "command": "build",
+            "problemMatcher": ["$rustc"],
+            "group": "build"
+        },
+        {
+            "label": "cargo build (release)",
+            "type": "cargo",
+            "command": "build",
+            "args": ["--release"],
+            "problemMatcher": ["$rustc"],
+            "group": "build"
+        },
+        {
+            "label": "cargo build (all features)",
+            "type": "cargo",
+            "command": "build",
+            "args": ["--all-features"],
+            "problemMatcher": ["$rustc"],
+            "group": "build"
+        },
+
+        // ===========================================
+        // TEST TASKS
+        // ===========================================
+        {
+            "label": "cargo test",
+            "type": "cargo",
+            "command": "test",
+            "problemMatcher": ["$rustc"],
+            "group": {
+                "kind": "test",
+                "isDefault": true
+            }
+        },
+        {
+            "label": "cargo test (current package)",
+            "type": "cargo",
+            "command": "test",
+            "args": ["--package", "${input:packageName}"],
+            "problemMatcher": ["$rustc"],
+            "group": "test"
+        },
+        {
+            "label": "cargo test (with output)",
+            "type": "cargo",
+            "command": "test",
+            "args": ["--", "--nocapture"],
+            "problemMatcher": ["$rustc"],
+            "group": "test"
+        },
+
+        // ===========================================
+        // CHECK & LINT TASKS
+        // ===========================================
+        {
+            "label": "cargo check",
+            "type": "cargo",
+            "command": "check",
+            "problemMatcher": ["$rustc"],
+            "group": "build"
+        },
+        {
+            "label": "cargo clippy",
+            "type": "cargo",
+            "command": "clippy",
+            "args": ["--all-targets", "--all-features", "--", "-D", "warnings"],
+            "problemMatcher": ["$rustc"],
+            "group": "build"
+        },
+        {
+            "label": "cargo clippy (fix)",
+            "type": "cargo",
+            "command": "clippy",
+            "args": ["--fix", "--allow-dirty", "--allow-staged"],
+            "problemMatcher": ["$rustc"],
+            "group": "build"
+        },
+        {
+            "label": "cargo fmt",
+            "type": "cargo",
+            "command": "fmt",
+            "problemMatcher": [],
+            "group": "build"
+        },
+        {
+            "label": "cargo fmt (check)",
+            "type": "cargo",
+            "command": "fmt",
+            "args": ["--check"],
+            "problemMatcher": [],
+            "group": "build"
+        },
+
+        // ===========================================
+        // DOCUMENTATION
+        // ===========================================
+        {
+            "label": "cargo doc",
+            "type": "cargo",
+            "command": "doc",
+            "args": ["--no-deps", "--open"],
+            "problemMatcher": [],
+            "group": "build"
+        },
+        {
+            "label": "cargo doc (all)",
+            "type": "cargo",
+            "command": "doc",
+            "args": ["--all-features", "--document-private-items"],
+            "problemMatcher": [],
+            "group": "build"
+        },
+
+        // ===========================================
+        // RUN TASKS
+        // ===========================================
+        {
+            "label": "Run Server (dev)",
+            "type": "cargo",
+            "command": "run",
+            "args": ["--package", "prism-server"],
+            "env": {
+                "RUST_LOG": "debug"
+            },
+            "problemMatcher": ["$rustc"],
+            "group": "build"
+        },
+        {
+            "label": "Run Server (release)",
+            "type": "cargo",
+            "command": "run",
+            "args": ["--package", "prism-server", "--release"],
+            "env": {
+                "RUST_LOG": "info"
+            },
+            "problemMatcher": ["$rustc"],
+            "group": "build"
+        },
+        {
+            "label": "Run CLI",
+            "type": "cargo",
+            "command": "run",
+            "args": ["--package", "prism-cli", "--", "${input:cliArgs}"],
+            "problemMatcher": ["$rustc"],
+            "group": "build"
+        },
+
+        // ===========================================
+        // WATCH TASKS
+        // ===========================================
+        {
+            "label": "cargo watch (check)",
+            "type": "shell",
+            "command": "cargo",
+            "args": ["watch", "-x", "check"],
+            "problemMatcher": ["$rustc"],
+            "isBackground": true,
+            "group": "build"
+        },
+        {
+            "label": "cargo watch (test)",
+            "type": "shell",
+            "command": "cargo",
+            "args": ["watch", "-x", "test"],
+            "problemMatcher": ["$rustc"],
+            "isBackground": true,
+            "group": "test"
+        },
+        {
+            "label": "cargo watch (run server)",
+            "type": "shell",
+            "command": "cargo",
+            "args": ["watch", "-x", "run --package prism-server"],
+            "problemMatcher": ["$rustc"],
+            "isBackground": true,
+            "group": "build"
+        },
+
+        // ===========================================
+        // SECURITY & AUDIT
+        // ===========================================
+        {
+            "label": "cargo audit",
+            "type": "shell",
+            "command": "cargo",
+            "args": ["audit"],
+            "problemMatcher": [],
+            "group": "build"
+        },
+        {
+            "label": "cargo deny check",
+            "type": "shell",
+            "command": "cargo",
+            "args": ["deny", "check"],
+            "problemMatcher": [],
+            "group": "build"
+        },
+
+        // ===========================================
+        // BENCHMARKS
+        // ===========================================
+        {
+            "label": "cargo bench",
+            "type": "cargo",
+            "command": "bench",
+            "problemMatcher": [],
+            "group": "test"
+        },
+
+        // ===========================================
+        // CLEAN
+        // ===========================================
+        {
+            "label": "cargo clean",
+            "type": "cargo",
+            "command": "clean",
+            "problemMatcher": [],
+            "group": "build"
+        },
+
+        // ===========================================
+        // COMPOSITE TASKS
+        // ===========================================
+        {
+            "label": "Full Check (fmt + clippy + test)",
+            "dependsOn": ["cargo fmt (check)", "cargo clippy", "cargo test"],
+            "dependsOrder": "sequence",
+            "problemMatcher": [],
+            "group": "build"
+        },
+        {
+            "label": "Pre-commit Check",
+            "dependsOn": ["cargo fmt", "cargo clippy (fix)", "cargo test"],
+            "dependsOrder": "sequence",
+            "problemMatcher": [],
+            "group": "build"
+        }
+    ],
+    "inputs": [
+        {
+            "id": "packageName",
+            "description": "Package name",
+            "type": "pickString",
+            "options": [
+                "prism-core",
+                "prism-parsers",
+                "prism-render",
+                "prism-sandbox",
+                "prism-server",
+                "prism-cli"
+            ],
+            "default": "prism-core"
+        },
+        {
+            "id": "cliArgs",
+            "description": "CLI arguments",
+            "type": "promptString",
+            "default": "detect ./test.pdf"
+        }
+    ]
+}
