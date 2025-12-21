@@ -559,15 +559,16 @@ fn detect_office_in_zip(data: &[u8]) -> Option<Format> {
 
     let content_types = b"[Content_Types].xml";
     if data.windows(content_types.len()).any(|w| w == content_types) {
-        // Check for specific document types
-        if data.windows(4).any(|w| w == b"word") {
-            return Some(Format::docx());
+        // Check for specific document types - order matters, check most specific first
+        // Look for directory names which are more reliable
+        if data.windows(9).any(|w| w == b"ppt/slides") || data.windows(3).any(|w| w == b"ppt") {
+            return Some(Format::pptx());
         }
-        if data.windows(2).any(|w| w == b"xl") {
+        if data.windows(9).any(|w| w == b"xl/workbook") || data.windows(13).any(|w| w == b"xl/worksheets") {
             return Some(Format::xlsx());
         }
-        if data.windows(3).any(|w| w == b"ppt") {
-            return Some(Format::pptx());
+        if data.windows(10).any(|w| w == b"word/document") || data.windows(4).any(|w| w == b"word") {
+            return Some(Format::docx());
         }
     }
 

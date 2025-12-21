@@ -79,12 +79,15 @@ impl DocxParser {
 
             // Extract text from <w:t> tags
             if let Some(start_idx) = trimmed.find("<w:t>") {
-                if let Some(end_idx) = trimmed.find("</w:t>") {
-                    let text = &trimmed[start_idx + 5..end_idx];
+                let text_start = start_idx + 5;
+                if let Some(end_idx) = trimmed[text_start..].find("</w:t>") {
+                    // Found closing tag after opening tag
+                    let text = &trimmed[text_start..text_start + end_idx];
                     current_text.push_str(text);
                     in_text_tag = false;
                 } else {
-                    let text = &trimmed[start_idx + 5..];
+                    // No closing tag on this line
+                    let text = &trimmed[text_start..];
                     current_text.push_str(text);
                     in_text_tag = true;
                 }
@@ -100,8 +103,9 @@ impl DocxParser {
 
             // Handle <w:t xml:space="preserve"> tags
             if let Some(start_idx) = trimmed.find("<w:t xml:space=\"preserve\">") {
-                if let Some(end_idx) = trimmed.find("</w:t>") {
-                    let text = &trimmed[start_idx + 27..end_idx];
+                let text_start = start_idx + 27;
+                if let Some(end_idx) = trimmed[text_start..].find("</w:t>") {
+                    let text = &trimmed[text_start..text_start + end_idx];
                     current_text.push_str(text);
                 }
             }
