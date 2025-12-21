@@ -62,7 +62,7 @@ pub mod text;
 
 // Re-export commonly used types
 pub use registry::ParserRegistry;
-pub use image::PngParser;
+pub use image::{JpegParser, PngParser};
 pub use office::{DocParser, DocxParser, PptParser, PptxParser, XlsParser, XlsxParser};
 pub use text::{
     CsvParser, JsonParser, LogParser, MarkdownParser, TextParser, XmlParser,

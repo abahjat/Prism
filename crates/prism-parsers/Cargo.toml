@@ -35,7 +35,7 @@ uuid = { workspace = true }
 bytes = { workspace = true }
 
 # Image processing
-image = { version = "0.24", default-features = false, features = ["png"] }
+image = { version = "0.24", default-features = false, features = ["png", "jpeg"] }
 
 # Office parsing (modern)
 calamine = { version = "0.25", features = ["dates"] }

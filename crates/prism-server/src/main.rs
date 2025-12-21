@@ -40,8 +40,9 @@ impl AppState {
     fn new() -> Self {
         let mut registry = ParserRegistry::new();
 
-        // Register available parsers
+        // Register image parsers
         registry.register(Arc::new(prism_parsers::PngParser::new()));
+        registry.register(Arc::new(prism_parsers::JpegParser::new()));
 
         // Register Office parsers (modern)
         registry.register(Arc::new(prism_parsers::DocxParser::new()));
