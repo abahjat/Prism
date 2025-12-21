@@ -56,11 +56,21 @@
 #![allow(clippy::module_name_repetitions)]
 
 pub mod registry;
+pub mod image;
+pub mod office;
+pub mod text;
+
+// Re-export commonly used types
+pub use registry::ParserRegistry;
+pub use image::PngParser;
+pub use office::{DocParser, DocxParser, PptParser, PptxParser, XlsParser, XlsxParser};
+pub use text::{
+    CsvParser, JsonParser, LogParser, MarkdownParser, TextParser, XmlParser,
+};
 
 // Individual parser modules (to be implemented)
 // pub mod office;
 // pub mod pdf;
-// pub mod image;
 // pub mod email;
 // pub mod archive;
 // pub mod cad;

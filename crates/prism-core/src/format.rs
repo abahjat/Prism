@@ -131,6 +131,114 @@ impl Format {
             is_container: false,
         }
     }
+
+    /// Create a new plain text format instance
+    #[must_use]
+    pub fn text() -> Self {
+        Self {
+            mime_type: "text/plain".to_string(),
+            extension: "txt".to_string(),
+            family: FormatFamily::Text,
+            name: "Plain Text".to_string(),
+            is_container: false,
+        }
+    }
+
+    /// Create a new JSON format instance
+    #[must_use]
+    pub fn json() -> Self {
+        Self {
+            mime_type: "application/json".to_string(),
+            extension: "json".to_string(),
+            family: FormatFamily::Text,
+            name: "JSON".to_string(),
+            is_container: false,
+        }
+    }
+
+    /// Create a new XML format instance
+    #[must_use]
+    pub fn xml() -> Self {
+        Self {
+            mime_type: "application/xml".to_string(),
+            extension: "xml".to_string(),
+            family: FormatFamily::Text,
+            name: "XML".to_string(),
+            is_container: false,
+        }
+    }
+
+    /// Create a new CSV format instance
+    #[must_use]
+    pub fn csv() -> Self {
+        Self {
+            mime_type: "text/csv".to_string(),
+            extension: "csv".to_string(),
+            family: FormatFamily::Text,
+            name: "CSV".to_string(),
+            is_container: false,
+        }
+    }
+
+    /// Create a new Markdown format instance
+    #[must_use]
+    pub fn markdown() -> Self {
+        Self {
+            mime_type: "text/markdown".to_string(),
+            extension: "md".to_string(),
+            family: FormatFamily::Text,
+            name: "Markdown".to_string(),
+            is_container: false,
+        }
+    }
+
+    /// Create a new log file format instance
+    #[must_use]
+    pub fn log() -> Self {
+        Self {
+            mime_type: "text/plain".to_string(),
+            extension: "log".to_string(),
+            family: FormatFamily::Text,
+            name: "Log File".to_string(),
+            is_container: false,
+        }
+    }
+
+    /// Create a new DOC format instance (Word 97-2003)
+    #[must_use]
+    pub fn doc() -> Self {
+        Self {
+            mime_type: "application/msword".to_string(),
+            extension: "doc".to_string(),
+            family: FormatFamily::Office,
+            name: "Microsoft Word 97-2003".to_string(),
+            is_container: true,
+        }
+    }
+
+    /// Create a new XLS format instance (Excel 97-2003)
+    #[must_use]
+    pub fn xls() -> Self {
+        Self {
+            mime_type: "application/vnd.ms-excel".to_string(),
+            extension: "xls".to_string(),
+            family: FormatFamily::Office,
+            name: "Microsoft Excel 97-2003".to_string(),
+            is_container: true,
+        }
+    }
+
+    /// Create a new PPT format instance (PowerPoint 97-2003)
+    #[must_use]
+    pub fn ppt() -> Self {
+        Self {
+            mime_type: "application/vnd.ms-powerpoint".to_string(),
+            extension: "ppt".to_string(),
+            family: FormatFamily::Office,
+            name: "Microsoft PowerPoint 97-2003".to_string(),
+            is_container: true,
+        }
+    }
 }
 
 /// Format families for categorization
@@ -346,10 +454,18 @@ static EXTENSION_MAP: &[(&str, fn() -> Format)] = &[
     ("docx", Format::docx),
     ("xlsx", Format::xlsx),
     ("pptx", Format::pptx),
+    ("doc", Format::doc),
+    ("xls", Format::xls),
+    ("ppt", Format::ppt),
     ("png", Format::png),
     ("jpg", Format::jpeg),
     ("jpeg", Format::jpeg),
-    // Add more as needed...
+    ("txt", Format::text),
+    ("json", Format::json),
+    ("xml", Format::xml),
+    ("csv", Format::csv),
+    ("md", Format::markdown),
+    ("log", Format::log),
 ];
 
 /// Detect the format of a document from its content

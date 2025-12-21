@@ -34,6 +34,17 @@ tracing = { workspace = true }
 uuid = { workspace = true }
 bytes = { workspace = true }
 
+# Image processing
+image = { version = "0.24", default-features = false, features = ["png"] }
+
+# Office parsing (modern)
+calamine = { version = "0.25", features = ["dates"] }
+zip = "0.6"
+quick-xml = { version = "0.31", features = ["serialize"] }
+
+# Office parsing (legacy - OLE2/CFB)
+cfb = "0.7"  # Compound File Binary format reader
+
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
 tempfile = { workspace = true }
