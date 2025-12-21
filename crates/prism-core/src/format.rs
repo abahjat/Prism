@@ -492,6 +492,16 @@ pub fn detect_format(data: &[u8], filename: Option<&str>) -> Option<DetectionRes
                 });
             }
         }
+        // If it's OLE2/CFB, check if it's a legacy Office document
+        if result.format.mime_type == "application/x-cfb" {
+            if let Some(office_format) = detect_office_in_ole(data, filename) {
+                return Some(DetectionResult {
+                    format: office_format,
+                    confidence: 0.95,
+                    method: DetectionMethod::ContainerInspection,
+                });
+            }
+        }
         return Some(result);
     }
 
@@ -546,7 +556,7 @@ fn detect_by_extension(filename: &str) -> Option<DetectionResult> {
 fn detect_office_in_zip(data: &[u8]) -> Option<Format> {
     // Simple check: look for "[Content_Types].xml" which is present in OOXML
     // In a real implementation, you'd actually parse the ZIP
-    
+
     let content_types = b"[Content_Types].xml";
     if data.windows(content_types.len()).any(|w| w == content_types) {
         // Check for specific document types
@@ -559,6 +569,38 @@ fn detect_office_in_zip(data: &[u8]) -> Option<Format> {
         if data.windows(3).any(|w| w == b"ppt") {
             return Some(Format::pptx());
         }
+    }
+
+    None
+}
+
+/// Detect specific Office format in OLE2/CFB files (DOC, XLS, PPT)
+fn detect_office_in_ole(data: &[u8], filename: Option<&str>) -> Option<Format> {
+    // First try extension-based detection if filename is available
+    if let Some(filename) = filename {
+        let ext = filename.rsplit('.').next()?.to_lowercase();
+        match ext.as_str() {
+            "doc" => return Some(Format::doc()),
+            "xls" => return Some(Format::xls()),
+            "ppt" => return Some(Format::ppt()),
+            _ => {}
+        }
+    }
+
+    // Look for stream names in the OLE2 structure
+    // Word documents have "WordDocument" stream
+    if data.windows(12).any(|w| w == b"WordDocument") {
+        return Some(Format::doc());
+    }
+
+    // Excel documents have "Workbook" or "Book" stream
+    if data.windows(8).any(|w| w == b"Workbook") || data.windows(4).any(|w| w == b"Book") {
+        return Some(Format::xls());
+    }
+
+    // PowerPoint documents have "PowerPoint Document" or "Current User" stream
+    if data.windows(18).any(|w| w == b"PowerPoint Document") || data.windows(12).any(|w| w == b"Current User") {
+        return Some(Format::ppt());
     }
 
     None
