@@ -1,0 +1,13 @@
+This is a sample text file for testing the Prism text parser.
+
+It supports multiple lines and will wrap text properly when rendered as HTML.
+
+Here's a very long line that should demonstrate text wrapping capabilities: Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.
+
+Features:
+- Supports .txt, .log, .json, .xml, .csv, .md and other text formats
+- Preserves line breaks and formatting
+- Wraps long lines automatically
+- Uses monospace font for readability
+
+End of test file.

@@ -1,0 +1,19 @@
+{
+  "name": "Prism Document Processor",
+  "version": "0.1.0",
+  "formats_supported": [
+    "PNG",
+    "XLSX",
+    "TXT",
+    "JSON",
+    "XML",
+    "LOG"
+  ],
+  "features": {
+    "text_parsing": true,
+    "image_parsing": true,
+    "office_parsing": true,
+    "html_rendering": true
+  },
+  "description": "A comprehensive document processing SDK for Rust"
+}
