@@ -1,6 +1,6 @@
 //! DOCX (Microsoft Word) parser
 //!
-//! Parses DOCX files into the Unified Document Model.
+//! Parses DOCX files into the Unified Document Model with formatting preservation.
 
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -22,6 +22,7 @@ use zip::ZipArchive;
 /// DOCX parser
 ///
 /// Parses Microsoft Word DOCX files into the Unified Document Model.
+/// Preserves text formatting including bold, italic, underline, font, size, and color.
 #[derive(Debug, Clone)]
 pub struct DocxParser;
 
@@ -60,15 +61,29 @@ impl DocxParser {
         false
     }
 
-    /// Extract text from document.xml using proper XML parsing
-    fn extract_text_from_xml(xml_content: &str) -> Vec<String> {
-        let mut paragraphs = Vec::new();
-        let mut current_paragraph = String::new();
+    /// Extract text and formatting from document.xml using proper XML parsing
+    fn extract_formatted_text(xml_content: &str) -> Vec<TextBlock> {
+        let mut blocks = Vec::new();
+        let mut current_runs = Vec::new();
+        let mut current_text = String::new();
+
         let mut in_paragraph = false;
+        let mut in_run = false;
         let mut in_text = false;
+        let mut in_run_properties = false;
+
+        // Current run formatting state
+        let mut is_bold = false;
+        let mut is_italic = false;
+        let mut is_underline = false;
+        let mut font_size: Option<f64> = None;
+        let mut font_family: Option<String> = None;
+        let mut color: Option<String> = None;
+
+        let mut paragraph_count = 0;
 
         let mut reader = Reader::from_str(xml_content);
-        reader.trim_text(true);
+        reader.trim_text(false); // Don't trim to preserve spaces
 
         let mut buf = Vec::new();
 
@@ -76,32 +91,178 @@ impl DocxParser {
             match reader.read_event_into(&mut buf) {
                 Ok(Event::Start(e)) | Ok(Event::Empty(e)) => {
                     let name = e.name();
-                    // Check for paragraph start (w:p)
+
+                    // Paragraph start
                     if name.as_ref() == b"w:p" {
+                        paragraph_count += 1;
                         // Save previous paragraph if it has content
-                        if in_paragraph && !current_paragraph.trim().is_empty() {
-                            paragraphs.push(current_paragraph.clone());
+                        if in_paragraph && !current_runs.is_empty() {
+                            blocks.push(TextBlock {
+                                runs: current_runs.clone(),
+                                paragraph_style: None,
+                                bounds: prism_core::document::Rect::default(),
+                            });
+                            current_runs.clear();
                         }
-                        current_paragraph.clear();
                         in_paragraph = true;
                     }
-                    // Check for text element (w:t)
+                    // Run start (text run with formatting)
+                    else if name.as_ref() == b"w:r" {
+                        // Save previous run if it has text
+                        if in_run && !current_text.is_empty() {
+                            let style = TextStyle {
+                                font_family: font_family.clone(),
+                                font_size,
+                                bold: is_bold,
+                                italic: is_italic,
+                                underline: is_underline,
+                                strikethrough: false,
+                                color: color.clone(),
+                                background_color: None,
+                            };
+                            current_runs.push(TextRun {
+                                text: current_text.clone(),
+                                style,
+                                bounds: None,
+                                char_positions: None,
+                            });
+                            current_text.clear();
+                        }
+                        in_run = true;
+                        // Reset styling for new run
+                        is_bold = false;
+                        is_italic = false;
+                        is_underline = false;
+                        font_size = None;
+                        font_family = None;
+                        color = None;
+                    }
+                    // Run properties
+                    else if name.as_ref() == b"w:rPr" {
+                        in_run_properties = true;
+                    }
+                    // Bold
+                    else if name.as_ref() == b"w:b" && in_run_properties {
+                        is_bold = true;
+                    }
+                    // Italic
+                    else if name.as_ref() == b"w:i" && in_run_properties {
+                        is_italic = true;
+                    }
+                    // Underline
+                    else if name.as_ref() == b"w:u" && in_run_properties {
+                        is_underline = true;
+                    }
+                    // Font size (w:sz val="24" means 12pt - value is in half-points)
+                    else if name.as_ref() == b"w:sz" && in_run_properties {
+                        for attr in e.attributes().flatten() {
+                            if attr.key.as_ref() == b"w:val" {
+                                if let Ok(val) = String::from_utf8(attr.value.to_vec()) {
+                                    if let Ok(half_points) = val.parse::<f64>() {
+                                        font_size = Some(half_points / 2.0);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    // Font family
+                    else if name.as_ref() == b"w:rFonts" && in_run_properties {
+                        for attr in e.attributes().flatten() {
+                            if attr.key.as_ref() == b"w:ascii" {
+                                if let Ok(val) = String::from_utf8(attr.value.to_vec()) {
+                                    font_family = Some(val);
+                                }
+                            }
+                        }
+                    }
+                    // Color
+                    else if name.as_ref() == b"w:color" && in_run_properties {
+                        for attr in e.attributes().flatten() {
+                            if attr.key.as_ref() == b"w:val" {
+                                if let Ok(val) = String::from_utf8(attr.value.to_vec()) {
+                                    if val != "auto" {
+                                        color = Some(format!("#{}", val));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    // Text element
                     else if name.as_ref() == b"w:t" {
                         in_text = true;
                     }
                 }
                 Ok(Event::End(e)) => {
                     let name = e.name();
+
                     if name.as_ref() == b"w:p" {
+                        // Save run if it has text
+                        if in_run && !current_text.is_empty() {
+                            let style = TextStyle {
+                                font_family: font_family.clone(),
+                                font_size,
+                                bold: is_bold,
+                                italic: is_italic,
+                                underline: is_underline,
+                                strikethrough: false,
+                                color: color.clone(),
+                                background_color: None,
+                            };
+                            current_runs.push(TextRun {
+                                text: current_text.clone(),
+                                style,
+                                bounds: None,
+                                char_positions: None,
+                            });
+                            current_text.clear();
+                        }
+
+                        // Save paragraph
+                        if !current_runs.is_empty() {
+                            blocks.push(TextBlock {
+                                runs: current_runs.clone(),
+                                paragraph_style: None,
+                                bounds: prism_core::document::Rect::default(),
+                            });
+                            current_runs.clear();
+                        }
                         in_paragraph = false;
-                    } else if name.as_ref() == b"w:t" {
+                        in_run = false;
+                    }
+                    else if name.as_ref() == b"w:r" {
+                        // Save run when it ends
+                        if !current_text.is_empty() {
+                            let style = TextStyle {
+                                font_family: font_family.clone(),
+                                font_size,
+                                bold: is_bold,
+                                italic: is_italic,
+                                underline: is_underline,
+                                strikethrough: false,
+                                color: color.clone(),
+                                background_color: None,
+                            };
+                            current_runs.push(TextRun {
+                                text: current_text.clone(),
+                                style,
+                                bounds: None,
+                                char_positions: None,
+                            });
+                            current_text.clear();
+                        }
+                        in_run = false;
+                    }
+                    else if name.as_ref() == b"w:rPr" {
+                        in_run_properties = false;
+                    }
+                    else if name.as_ref() == b"w:t" {
                         in_text = false;
                     }
                 }
                 Ok(Event::Text(e)) => {
-                    if in_text && in_paragraph {
+                    if in_text && in_run {
                         if let Ok(text) = e.unescape() {
-                            current_paragraph.push_str(&text);
+                            current_text.push_str(&text);
                         }
                     }
                 }
@@ -115,12 +276,36 @@ impl DocxParser {
             buf.clear();
         }
 
-        // Add final paragraph if it has content
-        if !current_paragraph.trim().is_empty() {
-            paragraphs.push(current_paragraph);
+        // Add final elements if needed
+        if in_run && !current_text.is_empty() {
+            let style = TextStyle {
+                font_family,
+                font_size,
+                bold: is_bold,
+                italic: is_italic,
+                underline: is_underline,
+                strikethrough: false,
+                color,
+                background_color: None,
+            };
+            current_runs.push(TextRun {
+                text: current_text,
+                style,
+                bounds: None,
+                char_positions: None,
+            });
         }
 
-        paragraphs
+        if !current_runs.is_empty() {
+            blocks.push(TextBlock {
+                runs: current_runs,
+                paragraph_style: None,
+                bounds: prism_core::document::Rect::default(),
+            });
+        }
+
+        debug!("Found {} w:p tags, extracted {} text blocks with formatting", paragraph_count, blocks.len());
+        blocks
     }
 }
 
@@ -175,33 +360,16 @@ impl Parser for DocxParser {
 
         debug!("Successfully read document.xml, size: {} bytes", document_xml.len());
 
-        // Extract paragraphs from XML
-        let paragraphs = Self::extract_text_from_xml(&document_xml);
-        debug!("Extracted {} paragraphs from document", paragraphs.len());
+        // Extract text blocks with formatting
+        let text_blocks = Self::extract_formatted_text(&document_xml);
+        debug!("Extracted {} text blocks from document", text_blocks.len());
 
         // Create pages with text blocks
         let mut pages = Vec::new();
         let mut content_blocks = Vec::new();
 
-        for (idx, paragraph_text) in paragraphs.iter().enumerate() {
-            if paragraph_text.is_empty() {
-                continue;
-            }
-
-            let text_run = TextRun {
-                text: paragraph_text.clone(),
-                style: TextStyle::default(),
-                bounds: None,
-                char_positions: None,
-            };
-
-            let text_block = TextBlock {
-                runs: vec![text_run],
-                paragraph_style: None,
-                bounds: prism_core::document::Rect::default(),
-            };
-
-            content_blocks.push(ContentBlock::Text(text_block));
+        for (idx, text_block) in text_blocks.iter().enumerate() {
+            content_blocks.push(ContentBlock::Text(text_block.clone()));
 
             // Create a new page every 50 paragraphs (rough pagination)
             if (idx + 1) % 50 == 0 {
@@ -255,7 +423,7 @@ impl Parser for DocxParser {
             metadata.title = Some(filename);
         }
         metadata.add_custom("format", "DOCX");
-        metadata.add_custom("paragraph_count", paragraphs.len() as i64);
+        metadata.add_custom("paragraph_count", text_blocks.len() as i64);
 
         // Build document
         let mut document = Document::builder().metadata(metadata).build();
@@ -264,7 +432,7 @@ impl Parser for DocxParser {
         info!(
             "Successfully parsed DOCX with {} pages, {} paragraphs",
             document.page_count(),
-            paragraphs.len()
+            text_blocks.len()
         );
 
         Ok(document)
@@ -300,21 +468,18 @@ mod tests {
     }
 
     #[test]
-    fn test_extract_text() {
+    fn test_extract_formatted_text() {
         let xml = r#"
             <w:p>
-                <w:r><w:t>Hello</w:t></w:r>
-                <w:r><w:t> World</w:t></w:r>
-            </w:p>
-            <w:p>
-                <w:r><w:t>Second paragraph</w:t></w:r>
+                <w:r><w:rPr><w:b/></w:rPr><w:t>Bold text</w:t></w:r>
+                <w:r><w:t> Normal text</w:t></w:r>
             </w:p>
         "#;
 
-        let paragraphs = DocxParser::extract_text_from_xml(xml);
-        assert_eq!(paragraphs.len(), 2);
-        assert!(paragraphs[0].contains("Hello"));
-        assert!(paragraphs[0].contains("World"));
-        assert!(paragraphs[1].contains("Second paragraph"));
+        let blocks = DocxParser::extract_formatted_text(xml);
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].runs.len(), 2);
+        assert!(blocks[0].runs[0].style.bold);
+        assert!(!blocks[0].runs[1].style.bold);
     }
 }

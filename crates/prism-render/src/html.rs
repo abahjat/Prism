@@ -57,6 +57,55 @@ impl HtmlRenderer {
         Self { config }
     }
 
+    /// Render a text run with its formatting
+    fn render_text_run(&self, run: &prism_core::document::TextRun) -> String {
+        let mut html = html_escape(&run.text);
+        let style = &run.style;
+
+        // Build inline styles
+        let mut styles = Vec::new();
+
+        if let Some(ref font_family) = style.font_family {
+            styles.push(format!("font-family: {}", html_escape(font_family)));
+        }
+
+        if let Some(font_size) = style.font_size {
+            styles.push(format!("font-size: {}pt", font_size));
+        }
+
+        if let Some(ref color) = style.color {
+            styles.push(format!("color: {}", html_escape(color)));
+        }
+
+        if let Some(ref bg_color) = style.background_color {
+            styles.push(format!("background-color: {}", html_escape(bg_color)));
+        }
+
+        // Apply font weight/style/decoration
+        if style.bold {
+            html = format!("<strong>{}</strong>", html);
+        }
+
+        if style.italic {
+            html = format!("<em>{}</em>", html);
+        }
+
+        if style.underline {
+            html = format!("<u>{}</u>", html);
+        }
+
+        if style.strikethrough {
+            html = format!("<s>{}</s>", html);
+        }
+
+        // Wrap in span with inline styles if needed
+        if !styles.is_empty() {
+            html = format!(r#"<span style="{}">{}</span>"#, styles.join("; "), html);
+        }
+
+        html
+    }
+
     /// Render all pages in the document
     fn render_pages(&self, document: &Document) -> String {
         document
@@ -139,18 +188,15 @@ impl HtmlRenderer {
     fn render_content_block(&self, document: &Document, block: &ContentBlock) -> String {
         match block {
             ContentBlock::Text(text_block) => {
-                let text = text_block
+                // Render each text run with its formatting
+                let formatted_text = text_block
                     .runs
                     .iter()
-                    .map(|run| &run.text)
-                    .cloned()
+                    .map(|run| self.render_text_run(run))
                     .collect::<Vec<_>>()
                     .join("");
 
-                format!(
-                    r#"<div class="text-content">{}</div>"#,
-                    html_escape(&text)
-                )
+                format!(r#"<div class="text-content">{}</div>"#, formatted_text)
             }
             ContentBlock::Image(image_block) => {
                 // Find the image resource by ID
