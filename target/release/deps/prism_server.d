@@ -1,7 +1,0 @@
-C:\Dev\RustSandbox\Prism\target\release\deps\prism_server.d: crates\prism-server\src\main.rs
-
-C:\Dev\RustSandbox\Prism\target\release\deps\prism_server.exe: crates\prism-server\src\main.rs
-
-crates\prism-server\src\main.rs:
-
-# env-dep:CARGO_PKG_VERSION=0.1.0

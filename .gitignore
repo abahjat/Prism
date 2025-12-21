@@ -1,1 +1,29 @@
-Cargo.lock
+# Rust build artifacts
+/target/
+**/*.rs.bk
+*.pdb
+*.d
+*.rlib
+*.rmeta
+*.exe
+*.dll
+*.so
+*.dylib
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Claude Code settings
+.claude/
+
+# Log files
+*.log
+nul
+
+# OS specific
+Thumbs.db
