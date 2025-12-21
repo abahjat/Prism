@@ -13,6 +13,8 @@ use prism_core::{
     metadata::Metadata,
     parser::{ParseContext, Parser, ParserFeature, ParserMetadata},
 };
+use quick_xml::events::Event;
+use quick_xml::Reader;
 use std::io::Cursor;
 use tracing::{debug, info};
 use zip::ZipArchive;
@@ -58,62 +60,64 @@ impl DocxParser {
         false
     }
 
-    /// Extract text from document.xml
+    /// Extract text from document.xml using proper XML parsing
     fn extract_text_from_xml(xml_content: &str) -> Vec<String> {
         let mut paragraphs = Vec::new();
-        let mut current_text = String::new();
+        let mut current_paragraph = String::new();
+        let mut in_paragraph = false;
+        let mut in_text = false;
 
-        // Simple XML parsing - look for <w:t> tags which contain text
-        let mut in_text_tag = false;
+        let mut reader = Reader::from_str(xml_content);
+        reader.trim_text(true);
 
-        for line in xml_content.lines() {
-            let trimmed = line.trim();
+        let mut buf = Vec::new();
 
-            // Check for paragraph start
-            if trimmed.contains("<w:p>") || trimmed.contains("<w:p ") {
-                if !current_text.is_empty() {
-                    paragraphs.push(current_text.clone());
-                    current_text.clear();
+        loop {
+            match reader.read_event_into(&mut buf) {
+                Ok(Event::Start(e)) | Ok(Event::Empty(e)) => {
+                    let name = e.name();
+                    // Check for paragraph start (w:p)
+                    if name.as_ref() == b"w:p" {
+                        // Save previous paragraph if it has content
+                        if in_paragraph && !current_paragraph.trim().is_empty() {
+                            paragraphs.push(current_paragraph.clone());
+                        }
+                        current_paragraph.clear();
+                        in_paragraph = true;
+                    }
+                    // Check for text element (w:t)
+                    else if name.as_ref() == b"w:t" {
+                        in_text = true;
+                    }
                 }
+                Ok(Event::End(e)) => {
+                    let name = e.name();
+                    if name.as_ref() == b"w:p" {
+                        in_paragraph = false;
+                    } else if name.as_ref() == b"w:t" {
+                        in_text = false;
+                    }
+                }
+                Ok(Event::Text(e)) => {
+                    if in_text && in_paragraph {
+                        if let Ok(text) = e.unescape() {
+                            current_paragraph.push_str(&text);
+                        }
+                    }
+                }
+                Ok(Event::Eof) => break,
+                Err(e) => {
+                    debug!("XML parsing error at position {}: {:?}", reader.buffer_position(), e);
+                    break;
+                }
+                _ => {}
             }
-
-            // Extract text from <w:t> tags
-            if let Some(start_idx) = trimmed.find("<w:t>") {
-                let text_start = start_idx + 5;
-                if let Some(end_idx) = trimmed[text_start..].find("</w:t>") {
-                    // Found closing tag after opening tag
-                    let text = &trimmed[text_start..text_start + end_idx];
-                    current_text.push_str(text);
-                    in_text_tag = false;
-                } else {
-                    // No closing tag on this line
-                    let text = &trimmed[text_start..];
-                    current_text.push_str(text);
-                    in_text_tag = true;
-                }
-            } else if in_text_tag {
-                if let Some(end_idx) = trimmed.find("</w:t>") {
-                    let text = &trimmed[..end_idx];
-                    current_text.push_str(text);
-                    in_text_tag = false;
-                } else {
-                    current_text.push_str(trimmed);
-                }
-            }
-
-            // Handle <w:t xml:space="preserve"> tags
-            if let Some(start_idx) = trimmed.find("<w:t xml:space=\"preserve\">") {
-                let text_start = start_idx + 27;
-                if let Some(end_idx) = trimmed[text_start..].find("</w:t>") {
-                    let text = &trimmed[text_start..text_start + end_idx];
-                    current_text.push_str(text);
-                }
-            }
+            buf.clear();
         }
 
-        // Add final paragraph
-        if !current_text.is_empty() {
-            paragraphs.push(current_text);
+        // Add final paragraph if it has content
+        if !current_paragraph.trim().is_empty() {
+            paragraphs.push(current_paragraph);
         }
 
         paragraphs
