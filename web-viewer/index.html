@@ -10,7 +10,7 @@
     <div class="container">
         <header>
             <h1>📄 Prism Document Viewer</h1>
-            <p class="subtitle">Universal document viewer supporting images, spreadsheets, and text files</p>
+            <p class="subtitle">Universal document viewer supporting Office documents, images, and text files</p>
         </header>
 
         <div class="upload-section">
@@ -18,9 +18,13 @@
                 <div class="upload-icon">📁</div>
                 <h2>Select a file to view</h2>
                 <p class="supported-formats">
-                    Supported formats: PNG, XLSX, TXT, JSON, XML, LOG, CSV, MD
+                    <strong>12 Supported Formats:</strong><br>
+                    <span class="format-group"><strong>Images:</strong> PNG</span><br>
+                    <span class="format-group"><strong>Modern Office:</strong> DOCX, XLSX, PPTX</span><br>
+                    <span class="format-group"><strong>Legacy Office:</strong> DOC, XLS, PPT</span><br>
+                    <span class="format-group"><strong>Text:</strong> TXT, JSON, XML, CSV, Markdown, LOG</span>
                 </p>
-                <input type="file" id="fileInput" accept=".png,.xlsx,.xls,.txt,.log,.json,.xml,.csv,.md,.markdown" hidden>
+                <input type="file" id="fileInput" accept=".png,.docx,.xlsx,.pptx,.doc,.xls,.ppt,.txt,.log,.json,.xml,.csv,.md,.markdown" hidden>
                 <button class="btn-primary" id="selectFileBtn">Choose File</button>
                 <p class="drag-drop-hint">or drag and drop a file here</p>
             </div>

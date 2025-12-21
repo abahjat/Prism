@@ -72,6 +72,13 @@ header h1 {
     color: #666;
     margin-bottom: 2rem;
     font-size: 0.95rem;
+    line-height: 1.8;
+}
+
+.format-group {
+    display: inline-block;
+    margin: 0.3rem 0;
+    color: #555;
 }
 
 .drag-drop-hint {
