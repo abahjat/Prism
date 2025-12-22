@@ -463,17 +463,8 @@ impl Renderer for HtmlRenderer {
 </body>
 </html>"#,
             html_escape(title),
-            // Conditionally include header for non-embedded content
-            if has_embedded {
-                String::new()
-            } else {
-                format!(
-                    r#"<h1>{}</h1>
-        <p>Document with {} pages</p>"#,
-                    html_escape(title),
-                    document.page_count()
-                )
-            },
+            // No header - removed filename and page count
+            String::new(),
             self.render_pages(document)
         );
 

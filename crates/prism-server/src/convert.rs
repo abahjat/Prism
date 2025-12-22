@@ -84,11 +84,11 @@ pub async fn convert(
         format_result.format.mime_type
     );
 
-    // Check if parser exists
+    // Check if parser exists and can handle this specific file
     let has_parser = state.parser_registry.has_parser(&format_result.format);
     debug!("Parser available for {}: {}", format_result.format.mime_type, has_parser);
 
-    match state.parser_registry.get_parser(&format_result.format) {
+    match state.parser_registry.get_parser_for_data(&format_result.format, &file_data) {
         Some(parser) => {
             // Parser available - perform conversion
             info!(

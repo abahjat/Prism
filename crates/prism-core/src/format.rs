@@ -661,19 +661,8 @@ fn detect_office_in_zip(data: &[u8]) -> Option<Format> {
 }
 
 /// Detect specific Office format in OLE2/CFB files (DOC, XLS, PPT, MSG)
+/// Note: This function should only be called if magic bytes already confirmed OLE2/CFB format
 fn detect_office_in_ole(data: &[u8], filename: Option<&str>) -> Option<Format> {
-    // First try extension-based detection if filename is available
-    if let Some(filename) = filename {
-        let ext = filename.rsplit('.').next()?.to_lowercase();
-        match ext.as_str() {
-            "doc" => return Some(Format::doc()),
-            "xls" => return Some(Format::xls()),
-            "ppt" => return Some(Format::ppt()),
-            "msg" => return Some(Format::msg()),
-            _ => {}
-        }
-    }
-
     // Look for stream names in the OLE2 structure
     // Word documents have "WordDocument" stream
     if data.windows(12).any(|w| w == b"WordDocument") {
@@ -688,6 +677,15 @@ fn detect_office_in_ole(data: &[u8], filename: Option<&str>) -> Option<Format> {
     // PowerPoint documents have "PowerPoint Document" or "Current User" stream
     if data.windows(18).any(|w| w == b"PowerPoint Document") || data.windows(12).any(|w| w == b"Current User") {
         return Some(Format::ppt());
+    }
+
+    // MSG files don't have a distinctive stream name that's easy to detect,
+    // so use extension as fallback (but only if we already know it's OLE2)
+    if let Some(filename) = filename {
+        let ext = filename.rsplit('.').next()?.to_lowercase();
+        if ext == "msg" {
+            return Some(Format::msg());
+        }
     }
 
     None

@@ -45,6 +45,30 @@ impl ParserRegistry {
         self.parsers.get(&format.mime_type).cloned()
     }
 
+    /// Get a parser for the given format and data
+    ///
+    /// This method checks if the parser can actually handle the specific file
+    /// by calling can_parse() before returning it.
+    ///
+    /// # Arguments
+    ///
+    /// * `format` - The document format
+    /// * `data` - The file data to verify the parser can handle
+    ///
+    /// # Returns
+    ///
+    /// The registered parser for this format if it can parse the data
+    #[must_use]
+    pub fn get_parser_for_data(&self, format: &Format, data: &[u8]) -> Option<Arc<dyn Parser>> {
+        self.parsers.get(&format.mime_type).and_then(|parser| {
+            if parser.can_parse(data) {
+                Some(parser.clone())
+            } else {
+                None
+            }
+        })
+    }
+
     /// Get all registered parsers
     #[must_use]
     pub fn all_parsers(&self) -> Vec<Arc<dyn Parser>> {
