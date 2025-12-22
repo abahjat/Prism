@@ -366,6 +366,9 @@ impl Renderer for HtmlRenderer {
             .as_deref()
             .unwrap_or("Untitled Document");
 
+        // Check if this is a single-page document with embedded viewer
+        let has_embedded = document.pages.len() == 1 && self.has_embedded_viewer(&document.pages[0]);
+
         let html = format!(
             r#"<!DOCTYPE html>
 <html lang="en">
@@ -438,15 +441,23 @@ impl Renderer for HtmlRenderer {
 </head>
 <body>
     <div class="container">
-        <h1>{}</h1>
-        <p>Document with {} pages</p>
+        {}
         {}
     </div>
 </body>
 </html>"#,
             html_escape(title),
-            html_escape(title),
-            document.page_count(),
+            // Conditionally include header for non-embedded content
+            if has_embedded {
+                String::new()
+            } else {
+                format!(
+                    r#"<h1>{}</h1>
+        <p>Document with {} pages</p>"#,
+                    html_escape(title),
+                    document.page_count()
+                )
+            },
             self.render_pages(document)
         );
 
