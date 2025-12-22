@@ -33,9 +33,10 @@ tracing = { workspace = true }
 # Utilities
 uuid = { workspace = true }
 bytes = { workspace = true }
+base64 = "0.22"
 
-# Image processing
-image = { version = "0.24", default-features = false, features = ["png", "jpeg"] }
+# Image processing (use 0.25 to match pdfium-render)
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "tiff"] }
 
 # Office parsing (modern)
 calamine = { version = "0.25", features = ["dates"] }
@@ -44,6 +45,9 @@ quick-xml = { version = "0.31", features = ["serialize"] }
 
 # Office parsing (legacy - OLE2/CFB)
 cfb = "0.7"  # Compound File Binary format reader
+
+# PDF parsing
+lopdf = "0.38"  # For metadata extraction and basic parsing
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }

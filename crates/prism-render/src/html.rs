@@ -188,6 +188,73 @@ impl HtmlRenderer {
     fn render_content_block(&self, document: &Document, block: &ContentBlock) -> String {
         match block {
             ContentBlock::Text(text_block) => {
+                // Check if this is embedded PDF data
+                if text_block.runs.len() == 1 {
+                    let run = &text_block.runs[0];
+                    if run.text.starts_with("__PDF_DATA__:") {
+                        // Extract PDF base64 data
+                        let pdf_data = &run.text[13..];  // Skip "__PDF_DATA__:" prefix
+                        return format!(
+                            r#"<div class="pdf-viewer-container">
+                                <canvas id="pdf-canvas" style="width: 100%; border: 1px solid #ccc;"></canvas>
+                                <div class="pdf-controls" style="margin-top: 10px; text-align: center;">
+                                    <button onclick="prevPage()" style="margin: 0 5px;">Previous</button>
+                                    <span id="page-info">Page <span id="current-page">1</span> of <span id="total-pages">1</span></span>
+                                    <button onclick="nextPage()" style="margin: 0 5px;">Next</button>
+                                </div>
+                                <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+                                <script>
+                                    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+                                    const pdfData = atob('{}');
+                                    const loadingTask = pdfjsLib.getDocument({{data: Uint8Array.from(pdfData, c => c.charCodeAt(0))}});
+                                    let pdfDoc = null;
+                                    let pageNum = 1;
+                                    let rendering = false;
+
+                                    loadingTask.promise.then(pdf => {{
+                                        pdfDoc = pdf;
+                                        document.getElementById('total-pages').textContent = pdf.numPages;
+                                        renderPage(pageNum);
+                                    }});
+
+                                    function renderPage(num) {{
+                                        rendering = true;
+                                        pdfDoc.getPage(num).then(page => {{
+                                            const canvas = document.getElementById('pdf-canvas');
+                                            const ctx = canvas.getContext('2d');
+                                            const viewport = page.getViewport({{scale: 1.5}});
+
+                                            canvas.height = viewport.height;
+                                            canvas.width = viewport.width;
+
+                                            page.render({{
+                                                canvasContext: ctx,
+                                                viewport: viewport
+                                            }}).promise.then(() => {{
+                                                rendering = false;
+                                                document.getElementById('current-page').textContent = num;
+                                            }});
+                                        }});
+                                    }}
+
+                                    function nextPage() {{
+                                        if (pageNum >= pdfDoc.numPages || rendering) return;
+                                        pageNum++;
+                                        renderPage(pageNum);
+                                    }}
+
+                                    function prevPage() {{
+                                        if (pageNum <= 1 || rendering) return;
+                                        pageNum--;
+                                        renderPage(pageNum);
+                                    }}
+                                </script>
+                            </div>"#,
+                            pdf_data
+                        );
+                    }
+                }
+
                 // Render each text run with its formatting
                 let formatted_text = text_block
                     .runs

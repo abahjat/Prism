@@ -59,7 +59,7 @@ uploadBox.addEventListener('drop', (e) => {
 // Check if server is running
 async function checkServerStatus() {
     try {
-        const response = await fetch(`${API_BASE_URL}/health`);
+        const response = await fetch(`${API_BASE_URL}/api/health`);
         if (response.ok) {
             serverStatus.textContent = 'Online ✓';
             serverStatus.classList.add('online');
@@ -91,7 +91,7 @@ async function handleFile(file) {
         const formData = new FormData();
         formData.append('file', file);
 
-        const response = await fetch(`${API_BASE_URL}/convert`, {
+        const response = await fetch(`${API_BASE_URL}/api/convert`, {
             method: 'POST',
             body: formData,
         });

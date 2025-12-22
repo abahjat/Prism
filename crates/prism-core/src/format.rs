@@ -132,6 +132,18 @@ impl Format {
         }
     }
 
+    /// Create a new TIFF format instance
+    #[must_use]
+    pub fn tiff() -> Self {
+        Self {
+            mime_type: "image/tiff".to_string(),
+            extension: "tif".to_string(),
+            family: FormatFamily::Image,
+            name: "TIFF Image".to_string(),
+            is_container: false,
+        }
+    }
+
     /// Create a new plain text format instance
     #[must_use]
     pub fn text() -> Self {
@@ -200,6 +212,18 @@ impl Format {
             extension: "log".to_string(),
             family: FormatFamily::Text,
             name: "Log File".to_string(),
+            is_container: false,
+        }
+    }
+
+    /// Create a new HTML format instance
+    #[must_use]
+    pub fn html() -> Self {
+        Self {
+            mime_type: "text/html".to_string(),
+            extension: "html".to_string(),
+            family: FormatFamily::Text,
+            name: "HTML".to_string(),
             is_container: false,
         }
     }
@@ -390,25 +414,13 @@ static SIGNATURES: &[FormatSignature] = &[
     FormatSignature {
         bytes: &[0x49, 0x49, 0x2A, 0x00],
         offset: 0,
-        format: || Format {
-            mime_type: "image/tiff".to_string(),
-            extension: "tiff".to_string(),
-            family: FormatFamily::Image,
-            name: "TIFF Image".to_string(),
-            is_container: false,
-        },
+        format: Format::tiff,
     },
     // TIFF (big-endian)
     FormatSignature {
         bytes: &[0x4D, 0x4D, 0x00, 0x2A],
         offset: 0,
-        format: || Format {
-            mime_type: "image/tiff".to_string(),
-            extension: "tiff".to_string(),
-            family: FormatFamily::Image,
-            name: "TIFF Image".to_string(),
-            is_container: false,
-        },
+        format: Format::tiff,
     },
     // OLE Compound File (DOC, XLS, PPT, MSG)
     FormatSignature {
@@ -460,12 +472,16 @@ static EXTENSION_MAP: &[(&str, fn() -> Format)] = &[
     ("png", Format::png),
     ("jpg", Format::jpeg),
     ("jpeg", Format::jpeg),
+    ("tif", Format::tiff),
+    ("tiff", Format::tiff),
     ("txt", Format::text),
     ("json", Format::json),
     ("xml", Format::xml),
     ("csv", Format::csv),
     ("md", Format::markdown),
     ("log", Format::log),
+    ("html", Format::html),
+    ("htm", Format::html),
 ];
 
 /// Detect the format of a document from its content
@@ -623,6 +639,8 @@ pub fn format_by_mime(mime_type: &str) -> Option<Format> {
         }
         "image/png" => Some(Format::png()),
         "image/jpeg" => Some(Format::jpeg()),
+        "image/tiff" => Some(Format::tiff()),
+        "text/html" => Some(Format::html()),
         _ => None,
     }
 }

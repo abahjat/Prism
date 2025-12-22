@@ -58,14 +58,16 @@
 pub mod registry;
 pub mod image;
 pub mod office;
+pub mod pdf;
 pub mod text;
 
 // Re-export commonly used types
 pub use registry::ParserRegistry;
-pub use image::{JpegParser, PngParser};
+pub use image::{JpegParser, PngParser, TiffParser};
 pub use office::{DocParser, DocxParser, PptParser, PptxParser, XlsParser, XlsxParser};
+pub use pdf::PdfParser;
 pub use text::{
-    CsvParser, JsonParser, LogParser, MarkdownParser, TextParser, XmlParser,
+    CsvParser, HtmlParser, JsonParser, LogParser, MarkdownParser, TextParser, XmlParser,
 };
 
 // Individual parser modules (to be implemented)

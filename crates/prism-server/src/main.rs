@@ -20,6 +20,7 @@ use serde::Serialize;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tower_http::cors::CorsLayer;
+use tower_http::services::ServeDir;
 use tracing::{info, Level};
 
 use config::ServerConfig;
@@ -40,9 +41,13 @@ impl AppState {
     fn new() -> Self {
         let mut registry = ParserRegistry::new();
 
+        // Register PDF parser
+        registry.register(Arc::new(prism_parsers::PdfParser::new()));
+
         // Register image parsers
         registry.register(Arc::new(prism_parsers::PngParser::new()));
         registry.register(Arc::new(prism_parsers::JpegParser::new()));
+        registry.register(Arc::new(prism_parsers::TiffParser::new()));
 
         // Register Office parsers (modern)
         registry.register(Arc::new(prism_parsers::DocxParser::new()));
@@ -56,6 +61,7 @@ impl AppState {
 
         // Register text-based parsers
         registry.register(Arc::new(prism_parsers::TextParser::new()));
+        registry.register(Arc::new(prism_parsers::HtmlParser::new()));
         registry.register(Arc::new(prism_parsers::JsonParser::new()));
         registry.register(Arc::new(prism_parsers::XmlParser::new()));
         registry.register(Arc::new(prism_parsers::CsvParser::new()));
@@ -157,14 +163,19 @@ async fn main() -> anyhow::Result<()> {
     // Initialize app state
     let state = AppState::new();
 
-    // Build router
-    let app = Router::new()
+    // Build router with API routes
+    let api_router = Router::new()
         .route("/health", get(health))
         .route("/version", get(version))
         .route("/convert", post(convert::convert))
         .layer(DefaultBodyLimit::max(5 * 1024 * 1024 * 1024)) // 5GB limit
-        .layer(CorsLayer::permissive())
         .with_state(state);
+
+    // Combine API routes with static file serving
+    let app = Router::new()
+        .nest("/api", api_router)
+        .nest_service("/", ServeDir::new("web-viewer"))
+        .layer(CorsLayer::permissive());
 
     // Start server
     let addr = SocketAddr::from(([127, 0, 0, 1], 8080));
