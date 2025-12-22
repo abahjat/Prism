@@ -68,6 +68,13 @@ impl AppState {
         registry.register(Arc::new(prism_parsers::MarkdownParser::new()));
         registry.register(Arc::new(prism_parsers::LogParser::new()));
 
+        // Register email parsers
+        registry.register(Arc::new(prism_parsers::EmlParser::new()));
+        registry.register(Arc::new(prism_parsers::MsgParser::new()));
+        registry.register(Arc::new(prism_parsers::MboxParser::new()));
+        registry.register(Arc::new(prism_parsers::VcfParser::new()));
+        registry.register(Arc::new(prism_parsers::IcsParser::new()));
+
         info!("Registered {} parsers", registry.count());
 
         // Log registered MIME types for debugging

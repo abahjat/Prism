@@ -129,12 +129,28 @@ impl HtmlRenderer {
 
     /// Render all pages in the document
     fn render_pages(&self, document: &Document) -> String {
+        // Check if this is an email or contact format (no page concept)
+        let is_email_format = document
+            .metadata
+            .custom
+            .get("format")
+            .and_then(|v| {
+                if let prism_core::metadata::MetadataValue::String(s) = v {
+                    Some(s.as_str())
+                } else {
+                    None
+                }
+            })
+            .map(|f| matches!(f, "EML" | "MSG" | "MBOX" | "VCF" | "ICS"))
+            .unwrap_or(false);
+
         // Check if this is a single-page document with embedded viewer
-        if document.pages.len() == 1 && self.has_embedded_viewer(&document.pages[0]) {
+        if is_email_format || (document.pages.len() == 1 && self.has_embedded_viewer(&document.pages[0])) {
             // Render content directly without page wrapper
-            document.pages[0]
-                .content
+            document
+                .pages
                 .iter()
+                .flat_map(|page| &page.content)
                 .map(|block| self.render_content_block(document, block))
                 .collect::<Vec<_>>()
                 .join("\n")

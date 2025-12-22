@@ -263,6 +263,66 @@ impl Format {
             is_container: true,
         }
     }
+
+    /// Create a new EML format instance (Email Message)
+    #[must_use]
+    pub fn eml() -> Self {
+        Self {
+            mime_type: "message/rfc822".to_string(),
+            extension: "eml".to_string(),
+            family: FormatFamily::Email,
+            name: "Email Message".to_string(),
+            is_container: false,
+        }
+    }
+
+    /// Create a new MSG format instance (Outlook Message)
+    #[must_use]
+    pub fn msg() -> Self {
+        Self {
+            mime_type: "application/vnd.ms-outlook".to_string(),
+            extension: "msg".to_string(),
+            family: FormatFamily::Email,
+            name: "Outlook Message".to_string(),
+            is_container: false,
+        }
+    }
+
+    /// Create a new MBOX format instance (Email Mailbox)
+    #[must_use]
+    pub fn mbox() -> Self {
+        Self {
+            mime_type: "application/mbox".to_string(),
+            extension: "mbox".to_string(),
+            family: FormatFamily::Email,
+            name: "Email Mailbox".to_string(),
+            is_container: true,
+        }
+    }
+
+    /// Create a new VCF format instance (vCard Contact)
+    #[must_use]
+    pub fn vcf() -> Self {
+        Self {
+            mime_type: "text/vcard".to_string(),
+            extension: "vcf".to_string(),
+            family: FormatFamily::Contact,
+            name: "vCard Contact".to_string(),
+            is_container: false,
+        }
+    }
+
+    /// Create a new ICS format instance (iCalendar)
+    #[must_use]
+    pub fn ics() -> Self {
+        Self {
+            mime_type: "text/calendar".to_string(),
+            extension: "ics".to_string(),
+            family: FormatFamily::Email,
+            name: "iCalendar".to_string(),
+            is_container: false,
+        }
+    }
 }
 
 /// Format families for categorization
@@ -274,6 +334,8 @@ pub enum FormatFamily {
     Office,
     /// Email formats (MSG, EML, PST)
     Email,
+    /// Contact formats (VCF, vCard)
+    Contact,
     /// Image formats
     Image,
     /// Archive formats (ZIP, RAR, etc.)
@@ -300,6 +362,7 @@ impl FormatFamily {
             FormatFamily::Document => "Document",
             FormatFamily::Office => "Office",
             FormatFamily::Email => "Email",
+            FormatFamily::Contact => "Contact",
             FormatFamily::Image => "Image",
             FormatFamily::Archive => "Archive",
             FormatFamily::Cad => "CAD",
@@ -482,6 +545,12 @@ static EXTENSION_MAP: &[(&str, fn() -> Format)] = &[
     ("log", Format::log),
     ("html", Format::html),
     ("htm", Format::html),
+    ("eml", Format::eml),
+    ("msg", Format::msg),
+    ("mbox", Format::mbox),
+    ("vcf", Format::vcf),
+    ("vcard", Format::vcf),
+    ("ics", Format::ics),
 ];
 
 /// Detect the format of a document from its content
@@ -591,7 +660,7 @@ fn detect_office_in_zip(data: &[u8]) -> Option<Format> {
     None
 }
 
-/// Detect specific Office format in OLE2/CFB files (DOC, XLS, PPT)
+/// Detect specific Office format in OLE2/CFB files (DOC, XLS, PPT, MSG)
 fn detect_office_in_ole(data: &[u8], filename: Option<&str>) -> Option<Format> {
     // First try extension-based detection if filename is available
     if let Some(filename) = filename {
@@ -600,6 +669,7 @@ fn detect_office_in_ole(data: &[u8], filename: Option<&str>) -> Option<Format> {
             "doc" => return Some(Format::doc()),
             "xls" => return Some(Format::xls()),
             "ppt" => return Some(Format::ppt()),
+            "msg" => return Some(Format::msg()),
             _ => {}
         }
     }

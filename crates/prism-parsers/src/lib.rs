@@ -56,6 +56,7 @@
 #![allow(clippy::module_name_repetitions)]
 
 pub mod registry;
+pub mod email;
 pub mod image;
 pub mod office;
 pub mod pdf;
@@ -63,6 +64,7 @@ pub mod text;
 
 // Re-export commonly used types
 pub use registry::ParserRegistry;
+pub use email::{EmlParser, IcsParser, MboxParser, MsgParser, VcfParser};
 pub use image::{JpegParser, PngParser, TiffParser};
 pub use office::{DocParser, DocxParser, PptParser, PptxParser, XlsParser, XlsxParser};
 pub use pdf::PdfParser;

@@ -33,10 +33,12 @@ tracing = { workspace = true }
 # Utilities
 uuid = { workspace = true }
 bytes = { workspace = true }
+chrono = { workspace = true }
 base64 = "0.22"
 
 # Image processing (use 0.25 to match pdfium-render)
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "tiff"] }
+tiff = "0.10"  # Direct TIFF support for multi-page handling
 
 # Office parsing (modern)
 calamine = { version = "0.25", features = ["dates"] }
@@ -48,6 +50,10 @@ cfb = "0.7"  # Compound File Binary format reader
 
 # PDF parsing
 lopdf = "0.38"  # For metadata extraction and basic parsing
+
+# Email parsing
+mail-parser = "0.9"  # EML/MBOX email parsing
+ical = "0.11"  # VCF/vCard parsing
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }

@@ -885,6 +885,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ical"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9b7cab7543a8b7729a19e2c04309f902861293dcdae6558dfbeb634454d279f6"
+dependencies = [
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "ignore"
 version = "0.4.25"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1066,6 +1075,15 @@ dependencies = [
  "time",
  "ttf-parser",
  "weezl",
+]
+
+[[package]]
+name = "mail-parser"
+version = "0.9.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "93c3b9e5d8b17faf573330bbc43b37d6e918c0a3bf8a88e7d0a220ebc84af9fc"
+dependencies = [
+ "encoding_rs",
 ]
 
 [[package]]
@@ -1461,14 +1479,18 @@ dependencies = [
  "bytes",
  "calamine",
  "cfb",
+ "chrono",
+ "ical",
  "image",
  "lopdf",
+ "mail-parser",
  "prism-core",
  "quick-xml",
  "serde",
  "serde_json",
  "tempfile",
  "thiserror 1.0.69",
+ "tiff",
  "tokio",
  "tracing",
  "uuid",
