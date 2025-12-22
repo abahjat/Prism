@@ -106,15 +106,48 @@ impl HtmlRenderer {
         html
     }
 
+    /// Check if content contains embedded special viewers (PDF, single images)
+    fn has_embedded_viewer(&self, page: &prism_core::document::Page) -> bool {
+        // Check if this is a single-block page with PDF data or single image
+        if page.content.len() == 1 {
+            match &page.content[0] {
+                ContentBlock::Text(text_block) => {
+                    // Check for PDF embed marker
+                    if text_block.runs.len() == 1 {
+                        return text_block.runs[0].text.starts_with("__PDF_DATA__:");
+                    }
+                }
+                ContentBlock::Image(_) => {
+                    // Single image doesn't need page wrapper
+                    return true;
+                }
+                _ => {}
+            }
+        }
+        false
+    }
+
     /// Render all pages in the document
     fn render_pages(&self, document: &Document) -> String {
-        document
-            .pages
-            .iter()
-            .enumerate()
-            .map(|(i, page)| self.render_page(document, page, i + 1))
-            .collect::<Vec<_>>()
-            .join("\n")
+        // Check if this is a single-page document with embedded viewer
+        if document.pages.len() == 1 && self.has_embedded_viewer(&document.pages[0]) {
+            // Render content directly without page wrapper
+            document.pages[0]
+                .content
+                .iter()
+                .map(|block| self.render_content_block(document, block))
+                .collect::<Vec<_>>()
+                .join("\n")
+        } else {
+            // Render with page wrappers for multi-page or regular content
+            document
+                .pages
+                .iter()
+                .enumerate()
+                .map(|(i, page)| self.render_page(document, page, i + 1))
+                .collect::<Vec<_>>()
+                .join("\n")
+        }
     }
 
     /// Render a single page
