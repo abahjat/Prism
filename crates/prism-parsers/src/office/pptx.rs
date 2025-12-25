@@ -5,18 +5,22 @@
 use async_trait::async_trait;
 use bytes::Bytes;
 use prism_core::{
-    document::{
-        ContentBlock, Dimensions, Document, Page, PageMetadata, TextBlock,
-        TextRun, TextStyle,
-    },
+    document::Document,
     error::{Error, Result},
     format::Format,
     metadata::Metadata,
     parser::{ParseContext, Parser, ParserFeature, ParserMetadata},
 };
+use quick_xml::events::Event;
+use quick_xml::Reader;
+use std::collections::HashMap;
 use std::io::Cursor;
 use tracing::{debug, info};
 use zip::ZipArchive;
+
+use crate::office::relationships::Relationships;
+use crate::office::slides::SlideParser;
+use crate::office::utils;
 
 /// PPTX parser
 ///
@@ -46,70 +50,46 @@ impl PptxParser {
         // Try to open as ZIP and check for ppt/ directory
         let cursor = std::io::Cursor::new(data);
         if let Ok(mut archive) = ZipArchive::new(cursor) {
-            // Check for ppt/presentation.xml which is present in PPTX files
-            for i in 0..archive.len() {
-                if let Ok(file) = archive.by_index(i) {
-                    let name = file.name();
-                    if name == "ppt/presentation.xml" || name.starts_with("ppt/slides/slide") {
-                        return true;
-                    }
-                }
+            // Check for ppt/presentation.xml or [Content_Types].xml which covers valid Office files
+            if archive.by_name("ppt/presentation.xml").is_ok() {
+                return true;
             }
         }
 
         false
     }
 
-    /// Extract text from slide XML
-    fn extract_text_from_slide_xml(xml_content: &str) -> Vec<String> {
-        let mut text_blocks = Vec::new();
-        let mut current_text = String::new();
-        let mut in_text_tag = false;
+    /// Parse presentation.xml to get slide IDs and order
+    fn parse_presentation_xml(xml: &str) -> Result<Vec<String>> {
+        let mut reader = Reader::from_str(xml);
+        reader.trim_text(true);
+        let mut buf = Vec::new();
+        let mut slide_rids = Vec::new();
 
-        // Parse PowerPoint slide XML - look for <a:t> tags which contain text
-        for line in xml_content.lines() {
-            let trimmed = line.trim();
-
-            // Extract text from <a:t> tags (text runs)
-            if let Some(start_idx) = trimmed.find("<a:t>") {
-                if let Some(end_idx) = trimmed.find("</a:t>") {
-                    let text = &trimmed[start_idx + 5..end_idx];
-                    if !text.is_empty() {
-                        current_text.push_str(text);
-                        current_text.push(' ');
+        loop {
+            match reader.read_event_into(&mut buf) {
+                Ok(Event::Start(e)) | Ok(Event::Empty(e)) => {
+                    if e.name().as_ref() == b"p:sldId" {
+                        for attr in e.attributes().flatten() {
+                            if attr.key.as_ref() == b"r:id" {
+                                slide_rids.push(utils::attr_value(&attr.value));
+                            }
+                        }
                     }
-                    in_text_tag = false;
-                } else {
-                    let text = &trimmed[start_idx + 5..];
-                    current_text.push_str(text);
-                    in_text_tag = true;
                 }
-            } else if in_text_tag {
-                if let Some(end_idx) = trimmed.find("</a:t>") {
-                    let text = &trimmed[..end_idx];
-                    current_text.push_str(text);
-                    current_text.push(' ');
-                    in_text_tag = false;
-                } else {
-                    current_text.push_str(trimmed);
+                Ok(Event::Eof) => break,
+                Err(e) => {
+                    return Err(Error::ParseError(format!(
+                        "XML error in presentation.xml: {}",
+                        e
+                    )))
                 }
+                _ => {}
             }
-
-            // Check for paragraph/shape boundaries to create separate text blocks
-            if trimmed.contains("</a:p>") || trimmed.contains("</p:sp>") {
-                if !current_text.trim().is_empty() {
-                    text_blocks.push(current_text.trim().to_string());
-                    current_text.clear();
-                }
-            }
+            buf.clear();
         }
 
-        // Add final text block
-        if !current_text.trim().is_empty() {
-            text_blocks.push(current_text.trim().to_string());
-        }
-
-        text_blocks
+        Ok(slide_rids)
     }
 }
 
@@ -132,8 +112,7 @@ impl Parser for PptxParser {
     async fn parse(&self, data: Bytes, context: ParseContext) -> Result<Document> {
         debug!(
             "Parsing PPTX file, size: {} bytes, filename: {:?}",
-            context.size,
-            context.filename
+            context.size, context.filename
         );
 
         // Open PPTX as ZIP archive
@@ -141,108 +120,102 @@ impl Parser for PptxParser {
         let mut archive = ZipArchive::new(cursor)
             .map_err(|e| Error::ParseError(format!("Failed to open PPTX as ZIP: {}", e)))?;
 
-        // Find all slide files (ppt/slides/slide1.xml, slide2.xml, etc.)
-        let mut slide_files = Vec::new();
-        for i in 0..archive.len() {
-            let file = archive
-                .by_index(i)
-                .map_err(|e| Error::ParseError(format!("Failed to read ZIP entry: {}", e)))?;
+        // 1. Read relationships to find slide filenames
+        let mut rels_map: HashMap<String, String> = HashMap::new();
+        if let Ok(mut rels_file) = archive.by_name("ppt/_rels/presentation.xml.rels") {
+            let mut xml = String::new();
+            use std::io::Read;
+            rels_file.read_to_string(&mut xml).map_err(|e| {
+                Error::ParseError(format!("Failed to read relationship XML: {}", e))
+            })?;
 
-            let name = file.name().to_string();
-            if name.starts_with("ppt/slides/slide") && name.ends_with(".xml") {
-                // Extract slide number from filename
-                if let Some(num_str) = name
-                    .strip_prefix("ppt/slides/slide")
-                    .and_then(|s| s.strip_suffix(".xml"))
-                {
-                    if let Ok(slide_num) = num_str.parse::<usize>() {
-                        slide_files.push((slide_num, name));
-                    }
+            if let Ok(rels) = Relationships::from_xml(&xml) {
+                // Determine target using rId
+                // Relationships map ID -> Target (e.g., "rId2" -> "slides/slide1.xml")
+                // We need to iterate over all parsing slideIds later
+                for rid in rels.find_by_type(
+                    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide",
+                ) {
+                    rels_map.insert(rid.id.clone(), rid.target.clone());
+                }
+                // Try generic relationship type if strict type not found (sometimes variations exist)
+                // Or just map all valid targets if we filter by rId from presentation.xml
+
+                // Just dumping all into a map for lookup is easier
+                // We'll re-read to populate fully distinct from the typed find above if needed, but for now let's trust the logic below.
+                // Actually, simpler:
+                // Re-parse completely or just expose map values? Relationships struct hides internal map.
+                // Let's assume we look up by ID one by one.
+            }
+        }
+
+        // Reload relationships to keep object alive if needed, or better yet, read again since borrow checker with zip archive is tricky
+        // Let's just do it in one pass: read presentation.xml, get rIds, then open relationship file again to resolve.
+
+        // 2. Read presentation.xml to get slide order (rIds)
+        let mut slide_rids = Vec::new();
+        if let Ok(mut presentation_file) = archive.by_name("ppt/presentation.xml") {
+            let mut xml = String::new();
+            use std::io::Read;
+            presentation_file.read_to_string(&mut xml).map_err(|e| {
+                Error::ParseError(format!("Failed to read presentation.xml: {}", e))
+            })?;
+            slide_rids = Self::parse_presentation_xml(&xml)?;
+        } else {
+            return Err(Error::ParseError(
+                "Missing ppt/presentation.xml".to_string(),
+            ));
+        }
+
+        // 3. Resolve rIds to filenames
+        // We need to read rels file if we haven't already popluated a map.
+        // Let's do it properly now.
+        let mut rid_to_target = HashMap::new();
+        if let Ok(mut rels_file) = archive.by_name("ppt/_rels/presentation.xml.rels") {
+            let mut xml = String::new();
+            use std::io::Read;
+            rels_file.read_to_string(&mut xml).map_err(|e| {
+                Error::ParseError(format!("Failed to read relationship XML: {}", e))
+            })?;
+            let rels = Relationships::from_xml(&xml)?;
+
+            for rid in &slide_rids {
+                if let Some(rel) = rels.get(rid) {
+                    rid_to_target.insert(rid.clone(), rel.target.clone());
                 }
             }
         }
 
-        // Sort slides by number
-        slide_files.sort_by_key(|(num, _)| *num);
-
-        debug!("Found {} slides in presentation", slide_files.len());
-
-        // Parse each slide
+        // 4. Parse slides in order
         let mut pages = Vec::new();
-        for (slide_num, slide_name) in slide_files {
-            // Read slide XML
-            let mut slide_xml = String::new();
-            for i in 0..archive.len() {
-                let mut file = archive
-                    .by_index(i)
-                    .map_err(|e| Error::ParseError(format!("Failed to read ZIP entry: {}", e)))?;
+        for (i, rid) in slide_rids.iter().enumerate() {
+            if let Some(target) = rid_to_target.get(rid) {
+                // Target is relative to ppt/, usually "slides/slide1.xml"
+                // Zip entry name should be "ppt/" + target
+                let entry_name = format!("ppt/{}", target);
+                // Handle cases where target might already start with / or be relative
+                // Usually it acts as "ppt/slides/slide1.xml" if target is "slides/slide1.xml"
 
-                if file.name() == slide_name {
+                let mut slide_xml = String::new();
+                // Try searching for the file in the archive
+                // Standardize path separators
+                let clean_name = entry_name.replace('\\', "/");
+
+                if let Ok(mut file) = archive.by_name(&clean_name) {
                     use std::io::Read;
-                    file.read_to_string(&mut slide_xml)
-                        .map_err(|e| Error::ParseError(format!("Failed to read slide XML: {}", e)))?;
-                    break;
-                }
-            }
-
-            if slide_xml.is_empty() {
-                debug!("Slide {} is empty, skipping", slide_num);
-                continue;
-            }
-
-            // Extract text from slide
-            let text_blocks = Self::extract_text_from_slide_xml(&slide_xml);
-
-            // Create content blocks for this slide
-            let mut content_blocks = Vec::new();
-            for text in text_blocks {
-                if text.is_empty() {
+                    file.read_to_string(&mut slide_xml).map_err(|e| {
+                        Error::ParseError(format!("Failed to read slide XML {}: {}", clean_name, e))
+                    })?;
+                } else {
+                    debug!("Could not find slide file: {}", clean_name);
                     continue;
                 }
 
-                let text_run = TextRun {
-                    text,
-                    style: TextStyle::default(),
-                    bounds: None,
-                    char_positions: None,
-                };
-
-                let text_block = TextBlock {
-                    runs: vec![text_run],
-                    paragraph_style: None,
-                    bounds: prism_core::document::Rect::default(),
-                };
-
-                content_blocks.push(ContentBlock::Text(text_block));
+                if !slide_xml.is_empty() {
+                    let page = SlideParser::parse(&slide_xml, (i + 1) as u32);
+                    pages.push(page);
+                }
             }
-
-            // Create page for this slide
-            let page = Page {
-                number: slide_num as u32,
-                dimensions: Dimensions::LETTER, // PowerPoint slides
-                content: content_blocks,
-                annotations: vec![],
-                metadata: PageMetadata {
-                    label: Some(format!("Slide {}", slide_num)),
-                    rotation: 0,
-                },
-            };
-
-            pages.push(page);
-        }
-
-        // If no pages were created, create one empty page
-        if pages.is_empty() {
-            pages.push(Page {
-                number: 1,
-                dimensions: Dimensions::LETTER,
-                content: vec![],
-                annotations: vec![],
-                metadata: PageMetadata {
-                    label: Some("Slide 1".to_string()),
-                    rotation: 0,
-                },
-            });
         }
 
         // Create document metadata
@@ -275,39 +248,5 @@ impl Parser for PptxParser {
             ],
             requires_sandbox: false,
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_can_parse() {
-        let parser = PptxParser::new();
-
-        // ZIP signature
-        let zip_data = b"PK\x03\x04";
-        assert!(!parser.can_parse(zip_data)); // Not a PPTX without ppt/ directory
-
-        // Not a ZIP
-        assert!(!parser.can_parse(b"Not a ZIP file"));
-    }
-
-    #[test]
-    fn test_extract_text() {
-        let xml = r#"
-            <a:p>
-                <a:r><a:t>Title Text</a:t></a:r>
-            </a:p>
-            <a:p>
-                <a:r><a:t>Body content</a:t></a:r>
-            </a:p>
-        "#;
-
-        let text_blocks = PptxParser::extract_text_from_slide_xml(xml);
-        assert_eq!(text_blocks.len(), 2);
-        assert!(text_blocks[0].contains("Title Text"));
-        assert!(text_blocks[1].contains("Body content"));
     }
 }

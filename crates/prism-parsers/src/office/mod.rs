@@ -4,10 +4,16 @@
 //! and legacy Office binary formats.
 
 pub mod docx;
+pub mod excel_styles;
 pub mod legacy;
 pub mod pptx;
-pub mod xlsx;
+pub mod relationships;
+pub mod shapes;
+pub mod slides;
+pub mod styles;
+pub mod tables;
 pub mod utils;
+pub mod xlsx;
 
 // Re-export parsers
 pub use docx::DocxParser;

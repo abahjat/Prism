@@ -74,6 +74,21 @@ pub fn index_to_excel_column(mut index: usize) -> String {
     col
 }
 
+/// Helper to get attribute value as string
+pub fn attr_value(value: &[u8]) -> String {
+    String::from_utf8_lossy(value).into_owned()
+}
+
+/// Helper to get optional attribute value from event
+pub fn attr_value_opt(event: &quick_xml::events::BytesStart<'_>, key: &[u8]) -> Option<String> {
+    for attr in event.attributes().flatten() {
+        if attr.key.as_ref() == key {
+            return Some(attr_value(&attr.value));
+        }
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

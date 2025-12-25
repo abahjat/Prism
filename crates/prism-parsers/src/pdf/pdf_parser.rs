@@ -10,9 +10,9 @@ use prism_core::{
     error::{Error, Result},
     format::Format,
     metadata::Metadata,
-    parser::{Parser, ParseContext, ParserFeature, ParserMetadata},
+    parser::{ParseContext, Parser, ParserFeature, ParserMetadata},
 };
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 /// PDF document parser
 #[derive(Debug, Clone)]
@@ -96,7 +96,7 @@ impl Parser for PdfParser {
 
         // Embed PDF as base64
         let pdf_base64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &data);
-        
+
         let text_run = TextRun {
             text: format!("__PDF_DATA__:{}", pdf_base64),
             style: TextStyle::default(),
@@ -106,7 +106,10 @@ impl Parser for PdfParser {
 
         let page = Page {
             number: 1,
-            dimensions: Dimensions { width: 612.0, height: 792.0 },
+            dimensions: Dimensions {
+                width: 612.0,
+                height: 792.0,
+            },
             content: vec![ContentBlock::Text(TextBlock {
                 runs: vec![text_run],
                 paragraph_style: None,
@@ -128,7 +131,10 @@ impl Parser for PdfParser {
         document.pages = vec![page];
         document.metadata = metadata;
 
-        info!("Prepared PDF with {} pages for client rendering", page_count);
+        info!(
+            "Prepared PDF with {} pages for client rendering",
+            page_count
+        );
         Ok(document)
     }
 

@@ -116,9 +116,7 @@ impl Document {
     /// Get the total word count
     #[must_use]
     pub fn word_count(&self) -> usize {
-        self.extract_text()
-            .split_whitespace()
-            .count()
+        self.extract_text().split_whitespace().count()
     }
 }
 
@@ -252,10 +250,16 @@ pub struct Dimensions {
 
 impl Dimensions {
     /// Standard US Letter size (8.5" x 11")
-    pub const LETTER: Self = Self { width: 612.0, height: 792.0 };
+    pub const LETTER: Self = Self {
+        width: 612.0,
+        height: 792.0,
+    };
 
     /// Standard A4 size (210mm x 297mm)
-    pub const A4: Self = Self { width: 595.28, height: 841.89 };
+    pub const A4: Self = Self {
+        width: 595.28,
+        height: 841.89,
+    };
 
     /// Create custom dimensions
     #[must_use]
@@ -502,6 +506,9 @@ pub struct TableCell {
 
     /// Number of rows this cell spans
     pub row_span: usize,
+
+    /// Background color (hex or named)
+    pub background_color: Option<String>,
 }
 
 impl TableCell {
@@ -590,7 +597,12 @@ impl Rect {
     /// Create a new rectangle
     #[must_use]
     pub fn new(x: f64, y: f64, width: f64, height: f64) -> Self {
-        Self { x, y, width, height }
+        Self {
+            x,
+            y,
+            width,
+            height,
+        }
     }
 
     /// Check if this rect contains a point
@@ -887,11 +899,11 @@ mod tests {
     #[test]
     fn test_text_extraction() {
         let mut page = Page::new(1, Dimensions::LETTER);
-        
+
         let mut text_block = TextBlock::new(Rect::default());
         text_block.add_run(TextRun::new("Hello, "));
         text_block.add_run(TextRun::new("World!"));
-        
+
         page.add_content(ContentBlock::Text(text_block));
 
         assert_eq!(page.extract_text(), "Hello, World!");
@@ -911,7 +923,7 @@ mod tests {
     #[test]
     fn test_rect_contains() {
         let rect = Rect::new(10.0, 10.0, 100.0, 50.0);
-        
+
         assert!(rect.contains(Point::new(50.0, 30.0)));
         assert!(rect.contains(Point::new(10.0, 10.0)));
         assert!(!rect.contains(Point::new(5.0, 30.0)));

@@ -4,10 +4,12 @@
 
 use async_trait::async_trait;
 use bytes::Bytes;
-use calamine::{open_workbook_auto_from_rs, Reader};
+use calamine::Reader;
 use cfb::CompoundFile;
 use prism_core::{
-    document::{ContentBlock, Dimensions, Document, Page, PageMetadata, TextBlock, TextRun, TextStyle},
+    document::{
+        ContentBlock, Dimensions, Document, Page, PageMetadata, TextBlock, TextRun, TextStyle,
+    },
     error::{Error, Result},
     format::Format,
     metadata::Metadata,
@@ -67,7 +69,10 @@ impl DocParser {
         }
 
         if text_parts.is_empty() {
-            text_parts.push("Unable to extract text from DOC file. Legacy format requires full parser.".to_string());
+            text_parts.push(
+                "Unable to extract text from DOC file. Legacy format requires full parser."
+                    .to_string(),
+            );
         }
 
         Ok(text_parts)
@@ -110,8 +115,7 @@ impl Parser for DocParser {
     async fn parse(&self, data: Bytes, context: ParseContext) -> Result<Document> {
         debug!(
             "Parsing DOC file, size: {} bytes, filename: {:?}",
-            context.size,
-            context.filename
+            context.size, context.filename
         );
 
         let text_parts = Self::extract_text_from_doc(&data)?;
@@ -228,8 +232,7 @@ impl Parser for XlsParser {
     async fn parse(&self, data: Bytes, context: ParseContext) -> Result<Document> {
         debug!(
             "Parsing XLS file, size: {} bytes, filename: {:?}",
-            context.size,
-            context.filename
+            context.size, context.filename
         );
 
         // Try using calamine which supports XLS format
@@ -386,8 +389,7 @@ impl Parser for PptParser {
     async fn parse(&self, data: Bytes, context: ParseContext) -> Result<Document> {
         debug!(
             "Parsing PPT file, size: {} bytes, filename: {:?}",
-            context.size,
-            context.filename
+            context.size, context.filename
         );
 
         let cursor = Cursor::new(data.as_ref());
@@ -409,7 +411,10 @@ impl Parser for PptParser {
         }
 
         if text_parts.is_empty() {
-            text_parts.push("Unable to extract text from PPT file. Legacy format requires full parser.".to_string());
+            text_parts.push(
+                "Unable to extract text from PPT file. Legacy format requires full parser."
+                    .to_string(),
+            );
         }
 
         let mut content_blocks = Vec::new();
