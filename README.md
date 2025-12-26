@@ -447,12 +447,12 @@ We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for deta
 
 ## 📝 License
 
-Licensed under either of:
+Prism is dual-licensed under:
 
-- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
-- MIT license ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
+- **AGPL-3.0**: For open source projects and internal use where source availability is acceptable ([LICENSE](LICENSE)).
+- **Commercial**: For proprietary/closed-source applications ([LICENSE_COMMERCIAL](LICENSE_COMMERCIAL)).
 
-at your option.
+See [DUAL_LICENSING.md](DUAL_LICENSING.md) for a detailed guide on which license you need.
 
 ## 🙏 Acknowledgments
 
@@ -465,9 +465,9 @@ Prism is inspired by and aims to be a modern alternative to:
 ## 📞 Support
 
 - **Documentation**: [docs.prism.dev](https://docs.prism.dev) (planned)
-- **Issues**: [GitHub Issues](https://github.com/your-org/prism/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/your-org/prism/discussions)
-- **Discord**: [Join our community](https://discord.gg/prism) (planned)
+- **Issues**: [GitHub Issues](https://github.com/abahjat/prism/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/abahjat/prism/discussions)
+- **Discord**: [Join our community](https://discord.gg/bD6SdpU7)
 
 ## 🌟 Status
 
