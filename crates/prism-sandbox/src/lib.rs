@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! # Prism Sandbox
 //!
 //! WebAssembly-based sandboxing for secure parser execution.

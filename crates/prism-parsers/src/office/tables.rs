@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 use crate::office::utils;
 use prism_core::document::{ContentBlock, Rect, TableBlock, TableCell, TableRow, TextBlock};
 use prism_core::error::{Error, Result};
@@ -139,6 +140,8 @@ pub fn parse_table<R: BufRead>(reader: &mut Reader<R>) -> Result<TableBlock> {
         bounds: Rect::default(),
         rows,
         column_count: 0, // TODO: Calculate from max cells
+        style: prism_core::document::ShapeStyle::default(),
+        rotation: 0.0,
     })
 }
 
@@ -175,45 +178,13 @@ pub fn parse_drawingml_table<R: BufRead>(reader: &mut Reader<R>) -> Result<Table
                         cell_content.clear();
                     }
                     b"a:txBody" => {
-                        // Use the shape text parser effectively here by extracting text
-                        // Simplified text extraction for now
-                        let mut cell_text = String::new();
-                        let mut body_depth = 1;
-                        let mut inner_buf = Vec::new();
-                        loop {
-                            match reader.read_event_into(&mut inner_buf) {
-                                Ok(Event::Text(e)) => {
-                                    if let Ok(text) = e.unescape() {
-                                        cell_text.push_str(&text);
-                                        cell_text.push(' ');
-                                    }
-                                }
-                                Ok(Event::Start(e)) => {
-                                    if e.name().as_ref() == b"a:p" {
-                                        if !cell_text.is_empty() {
-                                            cell_text.push('\n');
-                                        }
-                                    }
-                                    body_depth += 1;
-                                }
-                                Ok(Event::End(_)) => {
-                                    body_depth -= 1;
-                                    if body_depth == 0 {
-                                        break;
-                                    }
-                                }
-                                Ok(Event::Eof) => break,
-                                Err(_) => break,
-                                _ => {}
-                            }
-                            inner_buf.clear();
-                        }
-
-                        if !cell_text.trim().is_empty() {
+                        let text_runs =
+                            crate::office::shapes::parse_text_body(reader, &mut buf, b"a:txBody");
+                        if !text_runs.is_empty() {
                             let mut block = TextBlock::new(Rect::default());
-                            block.add_run(prism_core::document::TextRun::new(
-                                cell_text.trim().to_string(),
-                            ));
+                            for run in text_runs {
+                                block.add_run(run);
+                            }
                             cell_content.push(ContentBlock::Text(block));
                         }
                     }
@@ -255,5 +226,7 @@ pub fn parse_drawingml_table<R: BufRead>(reader: &mut Reader<R>) -> Result<Table
         bounds: Rect::default(),
         rows,
         column_count: 0,
+        style: prism_core::document::ShapeStyle::default(),
+        rotation: 0.0,
     })
 }

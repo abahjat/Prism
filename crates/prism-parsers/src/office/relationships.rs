@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 use crate::office::utils;
 use prism_core::error::{Error, Result};
 use quick_xml::events::Event;
@@ -15,7 +16,7 @@ pub struct Relationship {
 /// Store for document relationships
 #[derive(Debug, Clone, Default)]
 pub struct Relationships {
-    map: HashMap<String, Relationship>,
+    pub map: HashMap<String, Relationship>,
 }
 
 impl Relationships {
@@ -81,7 +82,10 @@ impl Relationships {
     }
 
     /// Find relationships by type
-    pub fn find_by_type<'a>(&'a self, rel_type: &'a str) -> impl Iterator<Item = &'a Relationship> {
+    pub fn find_by_type<'a>(
+        &'a self,
+        rel_type: &'a str,
+    ) -> impl Iterator<Item = &'a Relationship> + 'a {
         self.map.values().filter(move |r| r.rel_type == rel_type)
     }
 }

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! # Format Detection
 //!
 //! Utilities for detecting document formats from file content.
@@ -98,9 +99,8 @@ impl Format {
     #[must_use]
     pub fn pptx() -> Self {
         Self {
-            mime_type:
-                "application/vnd.openxmlformats-officedocument.presentationml.presentation"
-                    .to_string(),
+            mime_type: "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+                .to_string(),
             extension: "pptx".to_string(),
             family: FormatFamily::Office,
             name: "Microsoft PowerPoint (PPTX)".to_string(),
@@ -323,6 +323,41 @@ impl Format {
             is_container: false,
         }
     }
+    /// Create a new ZIP format instance
+    #[must_use]
+    pub fn zip() -> Self {
+        Self {
+            mime_type: "application/zip".to_string(),
+            extension: "zip".to_string(),
+            family: FormatFamily::Archive,
+            name: "ZIP Archive".to_string(),
+            is_container: true,
+        }
+    }
+
+    /// Create a new TAR format instance
+    #[must_use]
+    pub fn tar() -> Self {
+        Self {
+            mime_type: "application/x-tar".to_string(),
+            extension: "tar".to_string(),
+            family: FormatFamily::Archive,
+            name: "TAR Archive".to_string(),
+            is_container: true,
+        }
+    }
+
+    /// Create a new GZIP format instance
+    #[must_use]
+    pub fn gzip() -> Self {
+        Self {
+            mime_type: "application/gzip".to_string(),
+            extension: "gz".to_string(),
+            family: FormatFamily::Archive,
+            name: "GZIP Compressed File".to_string(),
+            is_container: false, // It's a compressor, but effectively behaves like single-file container
+        }
+    }
 }
 
 /// Format families for categorization
@@ -442,13 +477,19 @@ static SIGNATURES: &[FormatSignature] = &[
     FormatSignature {
         bytes: &[0x50, 0x4B, 0x03, 0x04],
         offset: 0,
-        format: || Format {
-            mime_type: "application/zip".to_string(),
-            extension: "zip".to_string(),
-            family: FormatFamily::Archive,
-            name: "ZIP Archive".to_string(),
-            is_container: true,
-        },
+        format: Format::zip,
+    },
+    // TAR (USTAR)
+    FormatSignature {
+        bytes: &[0x75, 0x73, 0x74, 0x61, 0x72], // "ustar"
+        offset: 257,
+        format: Format::tar,
+    },
+    // GZIP
+    FormatSignature {
+        bytes: &[0x1F, 0x8B],
+        offset: 0,
+        format: Format::gzip,
     },
     // GIF
     FormatSignature {
@@ -551,6 +592,11 @@ static EXTENSION_MAP: &[(&str, fn() -> Format)] = &[
     ("vcf", Format::vcf),
     ("vcard", Format::vcf),
     ("ics", Format::ics),
+    ("zip", Format::zip),
+    ("tar", Format::tar),
+    ("gz", Format::gzip),
+    ("gzip", Format::gzip),
+    ("tgz", Format::gzip), // Often treated as gzip then tar
 ];
 
 /// Detect the format of a document from its content
@@ -619,10 +665,7 @@ fn detect_by_magic(data: &[u8]) -> Option<DetectionResult> {
 
 /// Detect format by file extension
 fn detect_by_extension(filename: &str) -> Option<DetectionResult> {
-    let ext = filename
-        .rsplit('.')
-        .next()?
-        .to_lowercase();
+    let ext = filename.rsplit('.').next()?.to_lowercase();
 
     for (extension, format_fn) in EXTENSION_MAP {
         if ext == *extension {
@@ -643,16 +686,22 @@ fn detect_office_in_zip(data: &[u8]) -> Option<Format> {
     // In a real implementation, you'd actually parse the ZIP
 
     let content_types = b"[Content_Types].xml";
-    if data.windows(content_types.len()).any(|w| w == content_types) {
+    if data
+        .windows(content_types.len())
+        .any(|w| w == content_types)
+    {
         // Check for specific document types - order matters, check most specific first
         // Look for directory names which are more reliable
         if data.windows(9).any(|w| w == b"ppt/slides") || data.windows(3).any(|w| w == b"ppt") {
             return Some(Format::pptx());
         }
-        if data.windows(9).any(|w| w == b"xl/workbook") || data.windows(13).any(|w| w == b"xl/worksheets") {
+        if data.windows(9).any(|w| w == b"xl/workbook")
+            || data.windows(13).any(|w| w == b"xl/worksheets")
+        {
             return Some(Format::xlsx());
         }
-        if data.windows(10).any(|w| w == b"word/document") || data.windows(4).any(|w| w == b"word") {
+        if data.windows(10).any(|w| w == b"word/document") || data.windows(4).any(|w| w == b"word")
+        {
             return Some(Format::docx());
         }
     }
@@ -675,7 +724,9 @@ fn detect_office_in_ole(data: &[u8], filename: Option<&str>) -> Option<Format> {
     }
 
     // PowerPoint documents have "PowerPoint Document" or "Current User" stream
-    if data.windows(18).any(|w| w == b"PowerPoint Document") || data.windows(12).any(|w| w == b"Current User") {
+    if data.windows(18).any(|w| w == b"PowerPoint Document")
+        || data.windows(12).any(|w| w == b"Current User")
+    {
         return Some(Format::ppt());
     }
 
@@ -699,9 +750,7 @@ pub fn format_by_mime(mime_type: &str) -> Option<Format> {
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document" => {
             Some(Format::docx())
         }
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" => {
-            Some(Format::xlsx())
-        }
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" => Some(Format::xlsx()),
         "application/vnd.openxmlformats-officedocument.presentationml.presentation" => {
             Some(Format::pptx())
         }
@@ -717,13 +766,13 @@ pub fn format_by_mime(mime_type: &str) -> Option<Format> {
 #[must_use]
 pub fn format_by_extension(extension: &str) -> Option<Format> {
     let ext = extension.trim_start_matches('.').to_lowercase();
-    
+
     for (e, format_fn) in EXTENSION_MAP {
         if ext == *e {
             return Some(format_fn());
         }
     }
-    
+
     None
 }
 
@@ -735,7 +784,7 @@ mod tests {
     fn test_detect_pdf() {
         let data = b"%PDF-1.4 test content";
         let result = detect_format(data, None);
-        
+
         assert!(result.is_some());
         let result = result.unwrap();
         assert_eq!(result.format.mime_type, "application/pdf");
@@ -747,7 +796,7 @@ mod tests {
     fn test_detect_png() {
         let data = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00];
         let result = detect_format(&data, None);
-        
+
         assert!(result.is_some());
         let result = result.unwrap();
         assert_eq!(result.format.mime_type, "image/png");
@@ -756,7 +805,7 @@ mod tests {
     #[test]
     fn test_detect_by_extension() {
         let result = detect_format(b"unknown content", Some("document.pdf"));
-        
+
         assert!(result.is_some());
         let result = result.unwrap();
         assert_eq!(result.format.mime_type, "application/pdf");

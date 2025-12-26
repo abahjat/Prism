@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! VCF (vCard) parser
 //!
 //! Parses .VCF/.VCARD files (virtual contact cards) into the Unified Document Model.
@@ -7,11 +8,13 @@ use bytes::Bytes;
 use ical::parser::vcard::component::VcardContact;
 use ical::VcardParser;
 use prism_core::{
-    document::{ContentBlock, Dimensions, Document, Page, TextBlock, TextRun, TextStyle},
+    document::{
+        ContentBlock, Dimensions, Document, Page, Rect, ShapeStyle, TextBlock, TextRun, TextStyle,
+    },
     error::{Error, Result},
     format::Format,
     metadata::Metadata,
-    parser::{Parser, ParseContext, ParserFeature, ParserMetadata},
+    parser::{ParseContext, Parser, ParserFeature, ParserMetadata},
 };
 use std::io::Cursor;
 use tracing::{debug, info};
@@ -178,14 +181,11 @@ impl Parser for VcfParser {
             }
 
             let text_block = TextBlock {
+                bounds: Rect::new(0.0, 0.0, 0.0, 0.0), // No layout info in VCF
                 runs: text_runs,
-                bounds: prism_core::document::Rect {
-                    x: 0.0,
-                    y: 0.0,
-                    width: Dimensions::LETTER.width,
-                    height: Dimensions::LETTER.height,
-                },
                 paragraph_style: None,
+                style: ShapeStyle::default(),
+                rotation: 0.0,
             };
 
             let page = Page {
@@ -214,7 +214,10 @@ impl Parser for VcfParser {
         document.pages = pages;
         document.metadata = metadata;
 
-        info!("Successfully parsed VCF with {} contact(s)", document.pages.len());
+        info!(
+            "Successfully parsed VCF with {} contact(s)",
+            document.pages.len()
+        );
 
         Ok(document)
     }

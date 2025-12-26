@@ -1,14 +1,17 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! PNG image parser
 
 use async_trait::async_trait;
 use bytes::Bytes;
 use image::ImageFormat;
 use prism_core::{
-    document::{ContentBlock, Dimensions, Document, ImageBlock, ImageResource, Page, Rect},
+    document::{
+        ContentBlock, Dimensions, Document, ImageBlock, ImageResource, Page, Rect, ShapeStyle,
+    },
     error::{Error, Result},
     format::Format,
     metadata::Metadata,
-    parser::{Parser, ParseContext, ParserFeature, ParserMetadata},
+    parser::{ParseContext, Parser, ParserFeature, ParserMetadata},
 };
 use std::io::Cursor;
 use tracing::debug;
@@ -59,22 +62,18 @@ impl Parser for PngParser {
     async fn parse(&self, data: Bytes, context: ParseContext) -> Result<Document> {
         debug!(
             "Parsing PNG image, size: {} bytes, filename: {:?}",
-            context.size,
-            context.filename
+            context.size, context.filename
         );
 
         // Validate PNG signature
         if !self.can_parse(&data) {
-            return Err(Error::ParseError(
-                "Invalid PNG signature".to_string(),
-            ));
+            return Err(Error::ParseError("Invalid PNG signature".to_string()));
         }
 
         // Decode PNG image to get dimensions
         let cursor = Cursor::new(&data);
-        let img = image::load(cursor, ImageFormat::Png).map_err(|e| {
-            Error::ParseError(format!("Failed to decode PNG: {}", e))
-        })?;
+        let img = image::load(cursor, ImageFormat::Png)
+            .map_err(|e| Error::ParseError(format!("Failed to decode PNG: {}", e)))?;
 
         let width = img.width();
         let height = img.height();
@@ -96,19 +95,13 @@ impl Parser for PngParser {
 
         // Create image block
         let image_block = ImageBlock {
-            bounds: Rect {
-                x: 0.0,
-                y: 0.0,
-                width: width as f64,
-                height: height as f64,
-            },
+            bounds: Rect::new(0.0, 0.0, width as f64, height as f64),
             resource_id: resource_id.clone(),
-            alt_text: context.filename.clone(),
-            format: Some("PNG".to_string()),
-            original_size: Some(Dimensions {
-                width: width as f64,
-                height: height as f64,
-            }),
+            alt_text: None,
+            format: Some("image/png".to_string()),
+            original_size: Some(Dimensions::new(width as f64, height as f64)),
+            style: ShapeStyle::default(),
+            rotation: 0.0,
         };
 
         // Create single page with the image

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 use crate::office::utils;
 use prism_core::document::{ParagraphStyle, TextAlignment, TextStyle};
 use prism_core::error::{Error, Result};

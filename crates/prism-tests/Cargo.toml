@@ -1,0 +1,15 @@
+[package]
+name = "prism-tests"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+prism-core = { path = "../prism-core" }
+prism-parsers = { path = "../prism-parsers" }
+tokio = { workspace = true, features = ["full"] }
+walkdir = "2.4"
+anyhow = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+bytes = { workspace = true }

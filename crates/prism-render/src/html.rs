@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! HTML5 renderer for Prism documents.
 
 use async_trait::async_trait;
@@ -145,7 +146,9 @@ impl HtmlRenderer {
             .unwrap_or(false);
 
         // Check if this is a single-page document with embedded viewer
-        if is_email_format || (document.pages.len() == 1 && self.has_embedded_viewer(&document.pages[0])) {
+        if is_email_format
+            || (document.pages.len() == 1 && self.has_embedded_viewer(&document.pages[0]))
+        {
             // Render content directly without page wrapper
             document
                 .pages
@@ -167,25 +170,70 @@ impl HtmlRenderer {
     }
 
     /// Render a single page
-    fn render_page(&self, document: &Document, page: &prism_core::document::Page, page_num: usize) -> String {
+    fn render_page(
+        &self,
+        document: &Document,
+        page: &prism_core::document::Page,
+        page_num: usize,
+    ) -> String {
+        // Use page dimensions for the container
+        let width = page.dimensions.width;
+        let height = page.dimensions.height;
+
+        let mut background_style = String::from("background-color: white;");
+        let mut skip_first_block = false;
+
+        // Check if first block is a background image candidate (covers full slide)
+        if let Some(ContentBlock::Image(img_block)) = page.content.first() {
+            // Check if bounds match page dimensions (allow small epsilon)
+            if (img_block.bounds.width - width).abs() < 0.1
+                && (img_block.bounds.height - height).abs() < 0.1
+                && img_block.bounds.x.abs() < 0.1
+                && img_block.bounds.y.abs() < 0.1
+            {
+                if let Some(img_resource) = document
+                    .resources
+                    .images
+                    .iter()
+                    .find(|img| img.id == img_block.resource_id)
+                {
+                    if let Some(ref data) = img_resource.data {
+                        let base64_data = general_purpose::STANDARD.encode(data);
+                        // Assumes mime_type is available on ImageResource
+                        background_style = format!(
+                            "background-image: url('data:{};base64,{}'); background-size: cover; background-position: center;",
+                            img_resource.mime_type, base64_data
+                        );
+                        skip_first_block = true;
+                    }
+                }
+            }
+        }
+
         let content = page
             .content
             .iter()
-            .map(|block| self.render_content_block(document, block))
+            .enumerate()
+            .filter(|(i, _)| !skip_first_block || *i > 0)
+            .map(|(_, block)| self.render_content_block(document, block))
             .collect::<Vec<_>>()
             .join("\n");
 
         format!(
-            r#"<div class="page">
-        <h2>Page {}</h2>
+            r#"<div class="page" style="width: {}pt; height: {}pt; position: relative; overflow: hidden; {}">
+        <div class="page-number" style="display: none;">Page {}</div>
         {}
     </div>"#,
-            page_num, content
+            width, height, background_style, page_num, content
         )
     }
 
     /// Render a table block
-    fn render_table(&self, document: &Document, table: &prism_core::document::TableBlock) -> String {
+    fn render_table(
+        &self,
+        document: &Document,
+        table: &prism_core::document::TableBlock,
+    ) -> String {
         let mut html = String::from(r#"<table class="data-table">"#);
 
         // Render table rows
@@ -230,7 +278,16 @@ impl HtmlRenderer {
         }
 
         html.push_str("</table>");
-        html
+
+        // Wrap table in absolute div if it has bounds
+        if table.bounds.width > 0.0 && table.bounds.height > 0.0 {
+            format!(
+                r#"<div style="position: absolute; left: {}pt; top: {}pt; width: {}pt; height: {}pt;">{}</div>"#,
+                table.bounds.x, table.bounds.y, table.bounds.width, table.bounds.height, html
+            )
+        } else {
+            html
+        }
     }
 
     /// Render a content block
@@ -238,118 +295,263 @@ impl HtmlRenderer {
         match block {
             ContentBlock::Text(text_block) => {
                 // Check if this is embedded PDF data
-                if text_block.runs.len() == 1 {
-                    let run = &text_block.runs[0];
-                    if run.text.starts_with("__PDF_DATA__:") {
-                        // Extract PDF base64 data
-                        let pdf_data = &run.text[13..];  // Skip "__PDF_DATA__:" prefix
-                        return format!(
-                            r#"<div class="pdf-viewer-container">
-                                <canvas id="pdf-canvas" style="width: 100%; border: 1px solid #ccc;"></canvas>
-                                <div class="pdf-controls" style="margin-top: 10px; text-align: center;">
-                                    <button onclick="prevPage()" style="margin: 0 5px;">Previous</button>
-                                    <span id="page-info">Page <span id="current-page">1</span> of <span id="total-pages">1</span></span>
-                                    <button onclick="nextPage()" style="margin: 0 5px;">Next</button>
-                                </div>
-                                <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-                                <script>
-                                    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-                                    const pdfData = atob('{}');
-                                    const loadingTask = pdfjsLib.getDocument({{data: Uint8Array.from(pdfData, c => c.charCodeAt(0))}});
-                                    let pdfDoc = null;
-                                    let pageNum = 1;
-                                    let rendering = false;
-
-                                    loadingTask.promise.then(pdf => {{
-                                        pdfDoc = pdf;
-                                        document.getElementById('total-pages').textContent = pdf.numPages;
-                                        renderPage(pageNum);
-                                    }});
-
-                                    function renderPage(num) {{
-                                        rendering = true;
-                                        pdfDoc.getPage(num).then(page => {{
-                                            const canvas = document.getElementById('pdf-canvas');
-                                            const ctx = canvas.getContext('2d');
-                                            const viewport = page.getViewport({{scale: 1.5}});
-
-                                            canvas.height = viewport.height;
-                                            canvas.width = viewport.width;
-
-                                            page.render({{
-                                                canvasContext: ctx,
-                                                viewport: viewport
-                                            }}).promise.then(() => {{
-                                                rendering = false;
-                                                document.getElementById('current-page').textContent = num;
-                                            }});
-                                        }});
-                                    }}
-
-                                    function nextPage() {{
-                                        if (pageNum >= pdfDoc.numPages || rendering) return;
-                                        pageNum++;
-                                        renderPage(pageNum);
-                                    }}
-
-                                    function prevPage() {{
-                                        if (pageNum <= 1 || rendering) return;
-                                        pageNum--;
-                                        renderPage(pageNum);
-                                    }}
-                                </script>
-                            </div>"#,
-                            pdf_data
-                        );
-                    }
-                }
-
-                // Render each text run with its formatting
-                let formatted_text = text_block
-                    .runs
-                    .iter()
-                    .map(|run| self.render_text_run(run))
-                    .collect::<Vec<_>>()
-                    .join("");
-
-                format!(r#"<div class="text-content">{}</div>"#, formatted_text)
-            }
-            ContentBlock::Image(image_block) => {
-                // Find the image resource by ID
-                if let Some(img_resource) = document
-                    .resources
-                    .images
-                    .iter()
-                    .find(|img| img.id == image_block.resource_id)
+                if text_block.runs.len() == 1
+                    && text_block.runs[0].text.starts_with("__PDF_DATA__:")
                 {
-                    // Base64 encode the image data if available
-                    if let Some(ref data) = img_resource.data {
-                        let base64_data = general_purpose::STANDARD.encode(data);
-                        let alt_text = image_block.alt_text.as_deref().unwrap_or("Image");
-
-                        return format!(
-                            r#"<img src="data:{};base64,{}" alt="{}" />"#,
-                            html_escape(&img_resource.mime_type),
-                            base64_data,
-                            html_escape(alt_text)
-                        );
-                    }
+                    return self.render_pdf_viewer(&text_block.runs[0].text);
                 }
+                self.render_text_block(text_block)
+            }
+            ContentBlock::Image(image_block) => self.render_image_block(document, image_block),
+            ContentBlock::Table(table_block) => self.render_table(document, table_block),
+            ContentBlock::Vector(vector_block) => self.render_vector(document, vector_block),
+            ContentBlock::Container(container_block) => {
+                self.render_container(document, container_block)
+            }
+        }
+    }
 
+    /// Render embedded PDF viewer
+    fn render_pdf_viewer(&self, text: &str) -> String {
+        let pdf_data = &text[13..]; // Skip "__PDF_DATA__:" prefix
+        format!(
+            r#"<div class="pdf-viewer-container">
+                <canvas id="pdf-canvas" style="width: 100%; border: 1px solid #ccc;"></canvas>
+                <div class="pdf-controls" style="margin-top: 10px; text-align: center;">
+                    <button onclick="prevPage()" style="margin: 0 5px;">Previous</button>
+                    <span id="page-info">Page <span id="current-page">1</span> of <span id="total-pages">1</span></span>
+                    <button onclick="nextPage()" style="margin: 0 5px;">Next</button>
+                </div>
+                <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+                <script>
+                    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+                    const pdfData = atob('{pdf_data}');
+                    const loadingTask = pdfjsLib.getDocument({{data: Uint8Array.from(pdfData, c => c.charCodeAt(0))}});
+                    let pdfDoc = null;
+                    let pageNum = 1;
+                    let rendering = false;
+
+                    loadingTask.promise.then(pdf => {{
+                        pdfDoc = pdf;
+                        document.getElementById('total-pages').textContent = pdf.numPages;
+                        renderPage(pageNum);
+                    }});
+
+                    function renderPage(num) {{
+                        rendering = true;
+                        pdfDoc.getPage(num).then(page => {{
+                            const canvas = document.getElementById('pdf-canvas');
+                            const ctx = canvas.getContext('2d');
+                            const viewport = page.getViewport({{scale: 1.5}});
+
+                            canvas.height = viewport.height;
+                            canvas.width = viewport.width;
+
+                            page.render({{
+                                canvasContext: ctx,
+                                viewport: viewport
+                            }}).promise.then(() => {{
+                                rendering = false;
+                                document.getElementById('current-page').textContent = num;
+                            }});
+                        }});
+                    }}
+
+                    function nextPage() {{
+                        if (pageNum >= pdfDoc.numPages || rendering) return;
+                        pageNum++;
+                        renderPage(pageNum);
+                    }}
+
+                    function prevPage() {{
+                        if (pageNum <= 1 || rendering) return;
+                        pageNum--;
+                        renderPage(pageNum);
+                    }}
+                </script>
+            </div>"#
+        )
+    }
+
+    /// Render a text block
+    fn render_text_block(&self, text_block: &prism_core::document::TextBlock) -> String {
+        // Render each text run with its formatting
+        let formatted_text = text_block
+            .runs
+            .iter()
+            .map(|run| self.render_text_run(run))
+            .collect::<Vec<_>>()
+            .join("");
+
+        // Determine positioning style
+        let pos_style = if text_block.bounds.width > 0.0 && text_block.bounds.height > 0.0 {
+            format!(
+                "position: absolute; left: {}pt; top: {}pt; width: {}pt; height: {}pt;",
+                text_block.bounds.x,
+                text_block.bounds.y,
+                text_block.bounds.width,
+                text_block.bounds.height
+            )
+        } else {
+            String::from("position: relative; margin-bottom: 1em;")
+        };
+
+        // Apply rotation if needed
+        let transform_style = if text_block.rotation != 0.0 {
+            format!(
+                "transform: rotate({}deg); transform-origin: center;",
+                text_block.rotation
+            )
+        } else {
+            String::new()
+        };
+
+        // Apply styles (background, border) from the shape
+        let mut shape_styles = Vec::new();
+        if let Some(ref bg) = text_block.style.fill_color {
+            shape_styles.push(format!("background-color: {};", html_escape(bg)));
+        }
+
+        if let Some(ref stroke) = text_block.style.stroke_color {
+            shape_styles.push(format!(
+                "border: {}pt solid {};",
+                text_block.style.stroke_width.unwrap_or(1.0),
+                html_escape(stroke)
+            ));
+        }
+
+        format!(
+            r#"<div class="text-content" style="{pos_style} {transform_style} {}">{formatted_text}</div>"#,
+            shape_styles.join(" ")
+        )
+    }
+
+    /// Render an image block
+    fn render_image_block(
+        &self,
+        document: &Document,
+        image_block: &prism_core::document::ImageBlock,
+    ) -> String {
+        let img_tag = {
+            // Find the image resource by ID
+            if let Some(img_resource) = document
+                .resources
+                .images
+                .iter()
+                .find(|img| img.id == image_block.resource_id)
+            {
+                // Base64 encode the image data if available
+                if let Some(ref data) = img_resource.data {
+                    let base64_data = general_purpose::STANDARD.encode(data);
+                    let alt_text = image_block.alt_text.as_deref().unwrap_or("Image");
+
+                    format!(
+                        r#"<img src="data:{};base64,{base64_data}" alt="{}" style="width: 100%; height: 100%;" />"#,
+                        html_escape(&img_resource.mime_type),
+                        html_escape(alt_text)
+                    )
+                } else {
+                    String::from("<p><em>[Image data missing]</em></p>")
+                }
+            } else {
                 // Fallback if resource not found
                 String::from("<p><em>[Image not found]</em></p>")
             }
-            ContentBlock::Table(table_block) => {
-                self.render_table(document, table_block)
+        };
+
+        // Position wrapper
+        if image_block.bounds.width > 0.0 && image_block.bounds.height > 0.0 {
+            format!(
+                r#"<div class="image-container" style="position: absolute; left: {}pt; top: {}pt; width: {}pt; height: {}pt;">{img_tag}</div>"#,
+                image_block.bounds.x,
+                image_block.bounds.y,
+                image_block.bounds.width,
+                image_block.bounds.height
+            )
+        } else {
+            format!(r#"<div class="image-container">{img_tag}</div>"#)
+        }
+    }
+
+    /// Render a vector block
+    fn render_vector(
+        &self,
+        _document: &Document,
+        vector: &prism_core::document::VectorBlock,
+    ) -> String {
+        let mut paths_svg = String::new();
+        for path in &vector.paths {
+            let mut d = String::new();
+            for cmd in &path.commands {
+                use prism_core::document::PathCommand::*;
+                match cmd {
+                    MoveTo(p) => d.push_str(&format!("M {} {} ", p.x, p.y)),
+                    LineTo(p) => d.push_str(&format!("L {} {} ", p.x, p.y)),
+                    CurveTo { cp1, cp2, end } => d.push_str(&format!(
+                        "C {} {} {} {} {} {} ",
+                        cp1.x, cp1.y, cp2.x, cp2.y, end.x, end.y
+                    )),
+                    QuadTo { cp, end } => {
+                        d.push_str(&format!("Q {} {} {} {} ", cp.x, cp.y, end.x, end.y))
+                    }
+                    Close => d.push_str("Z "),
+                }
             }
-            ContentBlock::Vector(_) => {
-                // TODO: Implement vector rendering
-                String::from("<p><em>[Vector rendering not yet implemented]</em></p>")
-            }
-            ContentBlock::Container(_) => {
-                // TODO: Implement container rendering
-                String::from("<p><em>[Container rendering not yet implemented]</em></p>")
-            }
+
+            let fill = path.fill.as_deref().unwrap_or("none");
+            let stroke = path.stroke.as_deref().unwrap_or("none");
+            let stroke_width = path.stroke_width.unwrap_or(0.0);
+
+            paths_svg.push_str(&format!(
+                r#"<path d="{}" fill="{}" stroke="{}" stroke-width="{}" />"#,
+                d.trim(),
+                html_escape(fill),
+                html_escape(stroke),
+                stroke_width
+            ));
+        }
+
+        // Wrap in SVG
+        let svg = format!(
+            r#"<svg viewBox="0 0 {} {}" width="100%" height="100%" preserveAspectRatio="none">{}</svg>"#,
+            vector.bounds.width, vector.bounds.height, paths_svg
+        );
+
+        // Position wrapper
+        if vector.bounds.width > 0.0 && vector.bounds.height > 0.0 {
+            format!(
+                r#"<div class="vector-block" style="position: absolute; left: {}pt; top: {}pt; width: {}pt; height: {}pt;">{}</div>"#,
+                vector.bounds.x, vector.bounds.y, vector.bounds.width, vector.bounds.height, svg
+            )
+        } else {
+            format!(r#"<div class="vector-block">{}</div>"#, svg)
+        }
+    }
+
+    /// Render a container block
+    fn render_container(
+        &self,
+        document: &Document,
+        container: &prism_core::document::ContainerBlock,
+    ) -> String {
+        let content = container
+            .children
+            .iter()
+            .map(|b| self.render_content_block(document, b))
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        if container.bounds.width > 0.0 && container.bounds.height > 0.0 {
+            format!(
+                r#"<div class="container-block" style="position: absolute; left: {}pt; top: {}pt; width: {}pt; height: {}pt;">{}</div>"#,
+                container.bounds.x,
+                container.bounds.y,
+                container.bounds.width,
+                container.bounds.height,
+                content
+            )
+        } else {
+            format!(r#"<div class="container-block">{}</div>"#, content)
         }
     }
 }
@@ -383,7 +585,8 @@ impl Renderer for HtmlRenderer {
             .unwrap_or("Untitled Document");
 
         // Check if this is a single-page document with embedded viewer
-        let has_embedded = document.pages.len() == 1 && self.has_embedded_viewer(&document.pages[0]);
+        let has_embedded =
+            document.pages.len() == 1 && self.has_embedded_viewer(&document.pages[0]);
 
         let html = format!(
             r#"<!DOCTYPE html>
@@ -504,7 +707,7 @@ mod tests {
             .build();
 
         let context = RenderContext {
-            options: Default::default(),
+            options: prism_core::render::RenderOptions::default(),
             filename: None,
         };
 
@@ -543,7 +746,7 @@ mod tests {
             .build();
 
         let context = RenderContext {
-            options: Default::default(),
+            options: prism_core::render::RenderOptions::default(),
             filename: None,
         };
 
@@ -551,6 +754,7 @@ mod tests {
         assert!(result.is_ok());
 
         let html = String::from_utf8(result.unwrap().to_vec()).unwrap();
-        assert!(html.contains("2 pages"));
+        assert!(html.contains("Page 1"));
+        assert!(html.contains("Page 2"));
     }
 }

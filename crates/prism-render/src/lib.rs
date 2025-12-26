@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! # Prism Render
 //!
 //! Rendering engine for converting Prism documents (UDM) to various output formats.

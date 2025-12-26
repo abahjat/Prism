@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! Excel styles parser
 //!
 //! Parses styles.xml to extract fonts, fills, borders, and cell formatting (XFs).

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! Utility functions for Office format parsing
 
 use prism_core::error::{Error, Result};

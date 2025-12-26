@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! # Prism CLI
 //!
 //! Command-line interface for Prism document processing.

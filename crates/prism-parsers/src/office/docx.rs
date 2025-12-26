@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! DOCX (Microsoft Word) parser
 //!
 //! Parses DOCX files into the Unified Document Model with high fidelity.
@@ -238,6 +239,8 @@ impl Parser for DocxParser {
                                     runs: current_paragraph_runs.clone(),
                                     paragraph_style: current_paragraph_style.clone(),
                                     bounds: Rect::default(),
+                                    style: prism_core::document::ShapeStyle::default(),
+                                    rotation: 0.0,
                                 };
                                 current_page_content.push(ContentBlock::Text(block));
 

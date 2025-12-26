@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! PDF document parser
 //!
 //! Parses PDF files by embedding raw PDF data for client-side rendering with PDF.js
@@ -113,7 +114,9 @@ impl Parser for PdfParser {
             content: vec![ContentBlock::Text(TextBlock {
                 runs: vec![text_run],
                 paragraph_style: None,
-                bounds: Rect::default(),
+                bounds: prism_core::document::Rect::default(),
+                style: prism_core::document::ShapeStyle::default(),
+                rotation: 0.0,
             })],
             metadata: Default::default(),
             annotations: Vec::new(),

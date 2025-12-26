@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! # Unified Document Model (UDM)
 //!
 //! The UDM is the core intermediate representation that all document formats
@@ -312,6 +313,17 @@ pub enum ContentBlock {
     Container(ContainerBlock),
 }
 
+/// Visual style for a shape or block
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ShapeStyle {
+    /// Fill color (hex or named)
+    pub fill_color: Option<String>,
+    /// Stroke/Border color
+    pub stroke_color: Option<String>,
+    /// Stroke width in points
+    pub stroke_width: Option<f64>,
+}
+
 /// A block of text content
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TextBlock {
@@ -323,6 +335,14 @@ pub struct TextBlock {
 
     /// Paragraph style reference
     pub paragraph_style: Option<String>,
+
+    /// Visual style of the text box container
+    #[serde(default)]
+    pub style: ShapeStyle,
+
+    /// Rotation in degrees
+    #[serde(default)]
+    pub rotation: f64,
 }
 
 impl TextBlock {
@@ -333,6 +353,8 @@ impl TextBlock {
             bounds,
             runs: Vec::new(),
             paragraph_style: None,
+            style: ShapeStyle::default(),
+            rotation: 0.0,
         }
     }
 
@@ -437,6 +459,14 @@ pub struct ImageBlock {
 
     /// Original dimensions (before scaling)
     pub original_size: Option<Dimensions>,
+
+    /// Visual style of the image container
+    #[serde(default)]
+    pub style: ShapeStyle,
+
+    /// Rotation in degrees
+    #[serde(default)]
+    pub rotation: f64,
 }
 
 /// A table block
@@ -450,6 +480,14 @@ pub struct TableBlock {
 
     /// Number of columns
     pub column_count: usize,
+
+    /// Visual style of the table container
+    #[serde(default)]
+    pub style: ShapeStyle,
+
+    /// Rotation in degrees
+    #[serde(default)]
+    pub rotation: f64,
 }
 
 impl TableBlock {
@@ -460,6 +498,8 @@ impl TableBlock {
             bounds,
             rows: Vec::new(),
             column_count,
+            style: ShapeStyle::default(),
+            rotation: 0.0,
         }
     }
 

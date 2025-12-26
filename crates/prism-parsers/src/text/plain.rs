@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! Plain text file parser
 //!
 //! Parses plain text files (.txt, .log, .json, .xml, .csv, .md, etc.) into the Unified Document Model.
@@ -6,7 +7,10 @@
 use async_trait::async_trait;
 use bytes::Bytes;
 use prism_core::{
-    document::{ContentBlock, Dimensions, Document, Page, PageMetadata, TextBlock, TextRun, TextStyle},
+    document::{
+        ContentBlock, Dimensions, Document, Page, PageMetadata, Rect, ShapeStyle, TextBlock,
+        TextRun, TextStyle,
+    },
     error::{Error, Result},
     format::Format,
     metadata::Metadata,
@@ -57,7 +61,10 @@ impl TextParser {
 
         // Additional heuristics: check for common text patterns
         // Reject if too many null bytes or control characters (except newlines, tabs)
-        let control_char_count = data.iter().filter(|&&b| b < 32 && b != b'\n' && b != b'\r' && b != b'\t').count();
+        let control_char_count = data
+            .iter()
+            .filter(|&&b| b < 32 && b != b'\n' && b != b'\r' && b != b'\t')
+            .count();
         let ratio = control_char_count as f64 / data.len() as f64;
 
         // If more than 10% are non-text control characters, probably binary
@@ -146,8 +153,7 @@ impl Parser for TextParser {
     async fn parse(&self, data: Bytes, context: ParseContext) -> Result<Document> {
         debug!(
             "Parsing text file, size: {} bytes, filename: {:?}",
-            context.size,
-            context.filename
+            context.size, context.filename
         );
 
         // Convert bytes to UTF-8 string
@@ -168,14 +174,16 @@ impl Parser for TextParser {
 
         // Create text block with wrapping enabled (no specific bounds means it will wrap)
         let text_block = TextBlock {
-            bounds: prism_core::document::Rect {
+            bounds: Rect {
                 x: 0.0,
                 y: 0.0,
-                width: 0.0,  // 0 width signals to renderer to use full width with wrapping
+                width: 0.0, // 0 width signals to renderer to use full width with wrapping
                 height: 0.0,
             },
             runs: vec![text_run],
             paragraph_style: None,
+            style: ShapeStyle::default(),
+            rotation: 0.0,
         };
 
         // Create single page
@@ -199,16 +207,20 @@ impl Parser for TextParser {
         }
 
         metadata.add_custom("character_count", char_count as i64);
-        metadata.add_custom("line_count", data.iter().filter(|&&b| b == b'\n').count() as i64);
+        metadata.add_custom(
+            "line_count",
+            data.iter().filter(|&&b| b == b'\n').count() as i64,
+        );
 
         // Build document
-        let mut document = Document::builder()
-            .metadata(metadata)
-            .build();
+        let mut document = Document::builder().metadata(metadata).build();
 
         document.pages = vec![page];
 
-        info!("Successfully parsed text file with {} characters", context.size);
+        info!(
+            "Successfully parsed text file with {} characters",
+            context.size
+        );
 
         Ok(document)
     }

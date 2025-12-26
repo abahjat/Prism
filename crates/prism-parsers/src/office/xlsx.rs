@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! XLSX (Excel) parser
 //!
 //! Parses XLSX (Office Open XML Spreadsheet) files into the Unified Document Model.
@@ -232,6 +233,8 @@ impl Parser for XlsxParser {
                             },
                             runs: vec![text_run],
                             paragraph_style: None,
+                            style: prism_core::document::ShapeStyle::default(),
+                            rotation: 0.0,
                         })]
                     } else {
                         // Empty cell
@@ -261,7 +264,9 @@ impl Parser for XlsxParser {
                     height: row_count as f64 * 20.0, // Approximate row height
                 },
                 rows: table_rows,
-                column_count: col_count,
+                column_count: col_count as usize,
+                style: prism_core::document::ShapeStyle::default(),
+                rotation: 0.0,
             };
 
             // Create page for this sheet

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! Parser registry for managing and discovering format parsers.
 
 use prism_core::format::Format;
@@ -19,6 +20,19 @@ impl ParserRegistry {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Create a registry with all default parsers registered
+    #[must_use]
+    pub fn with_default_parsers() -> Self {
+        let mut registry = Self::new();
+
+        // Register archive parsers
+        registry.register(Arc::new(crate::archive::ArchiveParser::new(Format::zip())));
+        registry.register(Arc::new(crate::archive::ArchiveParser::new(Format::tar())));
+        registry.register(Arc::new(crate::archive::ArchiveParser::new(Format::gzip())));
+
+        registry
     }
 
     /// Register a parser for a specific format

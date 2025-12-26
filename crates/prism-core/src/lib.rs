@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! # Prism Core
 //!
 //! Core document model and traits for the Prism document processing SDK.
@@ -30,16 +31,17 @@
 pub mod document;
 pub mod error;
 pub mod format;
+pub mod license;
+pub mod metadata;
 pub mod parser;
 pub mod render;
-pub mod metadata;
 
 // Re-exports for convenience
-pub use document::{Document, Page, ContentBlock, TextBlock, ImageBlock, TableBlock};
+pub use document::{ContentBlock, Document, ImageBlock, Page, TableBlock, TextBlock};
 pub use error::{Error, Result};
-pub use format::{Format, FormatFamily, FormatSignature, detect_format};
-pub use parser::{Parser, ParseOptions, ParseContext};
+pub use format::{detect_format, Format, FormatFamily, FormatSignature};
 pub use metadata::Metadata;
+pub use parser::{ParseContext, ParseOptions, Parser};
 
 /// Prism SDK version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

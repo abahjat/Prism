@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! EML (Email Message) parser
 //!
 //! Parses .EML files (RFC 822/MIME email messages) into the Unified Document Model.
@@ -7,11 +8,13 @@ use bytes::Bytes;
 use chrono::DateTime;
 use mail_parser::MessageParser;
 use prism_core::{
-    document::{ContentBlock, Dimensions, Document, Page, TextBlock, TextRun, TextStyle},
+    document::{
+        ContentBlock, Dimensions, Document, Page, ShapeStyle, TextBlock, TextRun, TextStyle,
+    },
     error::{Error, Result},
     format::Format,
     metadata::Metadata,
-    parser::{Parser, ParseContext, ParserFeature, ParserMetadata},
+    parser::{ParseContext, Parser, ParserFeature, ParserMetadata},
 };
 use tracing::{debug, info};
 
@@ -83,10 +86,17 @@ impl Parser for EmlParser {
                 .first()
                 .map(|addr| {
                     if let Some(name) = &addr.name {
-                        let email = addr.address.as_ref().map(|a| a.to_string()).unwrap_or_default();
+                        let email = addr
+                            .address
+                            .as_ref()
+                            .map(|a| a.to_string())
+                            .unwrap_or_default();
                         format!("{} <{}>", name, email)
                     } else {
-                        addr.address.as_ref().map(|a| a.to_string()).unwrap_or_default()
+                        addr.address
+                            .as_ref()
+                            .map(|a| a.to_string())
+                            .unwrap_or_default()
                     }
                 })
                 .unwrap_or_default();
@@ -104,10 +114,17 @@ impl Parser for EmlParser {
                 .iter()
                 .map(|addr| {
                     if let Some(name) = &addr.name {
-                        let email = addr.address.as_ref().map(|a| a.to_string()).unwrap_or_default();
+                        let email = addr
+                            .address
+                            .as_ref()
+                            .map(|a| a.to_string())
+                            .unwrap_or_default();
                         format!("{} <{}>", name, email)
                     } else {
-                        addr.address.as_ref().map(|a| a.to_string()).unwrap_or_default()
+                        addr.address
+                            .as_ref()
+                            .map(|a| a.to_string())
+                            .unwrap_or_default()
                     }
                 })
                 .collect::<Vec<_>>()
@@ -155,6 +172,8 @@ impl Parser for EmlParser {
                 height: Dimensions::LETTER.height,
             },
             paragraph_style: None,
+            style: ShapeStyle::default(),
+            rotation: 0.0,
         };
 
         // Create page
@@ -215,7 +234,8 @@ mod tests {
     #[test]
     fn test_can_parse_eml() {
         let parser = EmlParser::new();
-        let eml_data = b"From: sender@example.com\r\nTo: recipient@example.com\r\nSubject: Test\r\n\r\nBody";
+        let eml_data =
+            b"From: sender@example.com\r\nTo: recipient@example.com\r\nSubject: Test\r\n\r\nBody";
         assert!(parser.can_parse(eml_data));
     }
 

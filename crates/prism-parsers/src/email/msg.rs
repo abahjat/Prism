@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! MSG (Outlook Message) parser
 //!
 //! Parses .MSG files (Microsoft Outlook message format) into the Unified Document Model.
@@ -251,14 +252,11 @@ impl Parser for MsgParser {
 
         // Create text block
         let text_block = TextBlock {
+            bounds: prism_core::document::Rect::new(0.0, 0.0, 0.0, 0.0), // No layout info in MSG
             runs: text_runs,
-            bounds: prism_core::document::Rect {
-                x: 0.0,
-                y: 0.0,
-                width: Dimensions::LETTER.width,
-                height: Dimensions::LETTER.height,
-            },
             paragraph_style: None,
+            style: prism_core::document::ShapeStyle::default(),
+            rotation: 0.0,
         };
 
         // Create page

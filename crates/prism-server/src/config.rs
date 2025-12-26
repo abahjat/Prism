@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! Server configuration
 
 use serde::{Deserialize, Serialize};

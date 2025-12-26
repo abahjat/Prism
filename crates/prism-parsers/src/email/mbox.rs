@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! MBOX (Email Mailbox) parser
 //!
 //! Parses .MBOX files (mailbox containing multiple emails) into the Unified Document Model.
@@ -6,11 +7,13 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use mail_parser::MessageParser;
 use prism_core::{
-    document::{ContentBlock, Dimensions, Document, Page, TextBlock, TextRun, TextStyle},
+    document::{
+        ContentBlock, Dimensions, Document, Page, Rect, ShapeStyle, TextBlock, TextRun, TextStyle,
+    },
     error::{Error, Result},
     format::Format,
     metadata::Metadata,
-    parser::{Parser, ParseContext, ParserFeature, ParserMetadata},
+    parser::{ParseContext, Parser, ParserFeature, ParserMetadata},
 };
 use tracing::{debug, info};
 
@@ -52,9 +55,19 @@ impl MboxParser {
                 .first()
                 .map(|addr| {
                     if let Some(name) = &addr.name {
-                        format!("{} <{}>", name, addr.address.as_ref().map(|a| a.to_string()).unwrap_or_default())
+                        format!(
+                            "{} <{}>",
+                            name,
+                            addr.address
+                                .as_ref()
+                                .map(|a| a.to_string())
+                                .unwrap_or_default()
+                        )
                     } else {
-                        addr.address.as_ref().map(|a| a.to_string()).unwrap_or_default()
+                        addr.address
+                            .as_ref()
+                            .map(|a| a.to_string())
+                            .unwrap_or_default()
                     }
                 })
                 .unwrap_or_default();
@@ -72,9 +85,19 @@ impl MboxParser {
                 .iter()
                 .map(|addr| {
                     if let Some(name) = &addr.name {
-                        format!("{} <{}>", name, addr.address.as_ref().map(|a| a.to_string()).unwrap_or_default())
+                        format!(
+                            "{} <{}>",
+                            name,
+                            addr.address
+                                .as_ref()
+                                .map(|a| a.to_string())
+                                .unwrap_or_default()
+                        )
                     } else {
-                        addr.address.as_ref().map(|a| a.to_string()).unwrap_or_default()
+                        addr.address
+                            .as_ref()
+                            .map(|a| a.to_string())
+                            .unwrap_or_default()
                     }
                 })
                 .collect::<Vec<_>>()
@@ -90,7 +113,8 @@ impl MboxParser {
         // Add empty line separator
         text_runs.push(TextRun {
             text: "
-".to_string(),
+"
+            .to_string(),
             style: Default::default(),
             bounds: None,
             char_positions: None,
@@ -178,14 +202,11 @@ impl Parser for MboxParser {
                 match self.parse_message(message_data.as_bytes()) {
                     Ok(text_runs) => {
                         let text_block = TextBlock {
+                            bounds: Rect::new(0.0, 0.0, 0.0, 0.0), // No layout info in MBOX
                             runs: text_runs,
-                            bounds: prism_core::document::Rect {
-                                x: 0.0,
-                                y: 0.0,
-                                width: Dimensions::LETTER.width,
-                                height: Dimensions::LETTER.height,
-                            },
                             paragraph_style: None,
+                            style: ShapeStyle::default(),
+                            rotation: 0.0,
                         };
 
                         let page = Page {
@@ -208,7 +229,9 @@ impl Parser for MboxParser {
         }
 
         if pages.is_empty() {
-            return Err(Error::ParseError("No valid messages found in MBOX".to_string()));
+            return Err(Error::ParseError(
+                "No valid messages found in MBOX".to_string(),
+            ));
         }
 
         // Create metadata
@@ -224,7 +247,10 @@ impl Parser for MboxParser {
         document.pages = pages;
         document.metadata = metadata;
 
-        info!("Successfully parsed MBOX with {} message(s)", document.pages.len());
+        info!(
+            "Successfully parsed MBOX with {} message(s)",
+            document.pages.len()
+        );
 
         Ok(document)
     }
@@ -249,7 +275,8 @@ mod tests {
     #[test]
     fn test_can_parse_mbox() {
         let parser = MboxParser::new();
-        let mbox_data = b"From sender@example.com Mon Jan 01 00:00:00 2024\r\nFrom: sender@example.com\r\n";
+        let mbox_data =
+            b"From sender@example.com Mon Jan 01 00:00:00 2024\r\nFrom: sender@example.com\r\n";
         assert!(parser.can_parse(mbox_data));
     }
 

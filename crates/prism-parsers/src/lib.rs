@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! # Prism Parsers
 //!
 //! Format parser implementations for the Prism document processing SDK.
@@ -55,22 +56,25 @@
 #![warn(clippy::pedantic)]
 #![allow(clippy::module_name_repetitions)]
 
-pub mod registry;
 pub mod email;
 pub mod image;
 pub mod office;
 pub mod pdf;
+pub mod registry;
 pub mod text;
 
 // Re-export commonly used types
-pub use registry::ParserRegistry;
+pub use archive::ArchiveParser;
 pub use email::{EmlParser, IcsParser, MboxParser, MsgParser, VcfParser};
 pub use image::{JpegParser, PngParser, TiffParser};
 pub use office::{DocParser, DocxParser, PptParser, PptxParser, XlsParser, XlsxParser};
 pub use pdf::PdfParser;
+pub use registry::ParserRegistry;
 pub use text::{
     CsvParser, HtmlParser, JsonParser, LogParser, MarkdownParser, TextParser, XmlParser,
 };
+
+pub mod archive;
 
 // Individual parser modules (to be implemented)
 // pub mod office;

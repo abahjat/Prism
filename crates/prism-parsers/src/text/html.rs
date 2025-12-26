@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! HTML file parser
 //!
 //! Parses HTML files into the Unified Document Model.
@@ -113,6 +114,8 @@ impl Parser for HtmlParser {
             runs: vec![text_run],
             paragraph_style: None,
             bounds: Rect::default(),
+            style: prism_core::document::ShapeStyle::default(),
+            rotation: 0.0,
         };
 
         // Create a single page with the HTML content
@@ -120,7 +123,7 @@ impl Parser for HtmlParser {
         let page = Page {
             number: 1,
             dimensions: Dimensions {
-                width: 850.0,  // Wider than standard to fit HTML content
+                width: 850.0, // Wider than standard to fit HTML content
                 height: 1100.0,
             },
             content: vec![ContentBlock::Text(text_block)],
@@ -165,7 +168,8 @@ mod tests {
     fn test_can_parse_html5() {
         let parser = HtmlParser::new();
 
-        let html = b"<!DOCTYPE html>\n<html><head><title>Test</title></head><body>Content</body></html>";
+        let html =
+            b"<!DOCTYPE html>\n<html><head><title>Test</title></head><body>Content</body></html>";
         assert!(parser.can_parse(html));
     }
 
@@ -173,7 +177,8 @@ mod tests {
     fn test_can_parse_html_with_case() {
         let parser = HtmlParser::new();
 
-        let html = b"<!doctype html>\n<HTML><HEAD><TITLE>Test</TITLE></HEAD><BODY>Content</BODY></HTML>";
+        let html =
+            b"<!doctype html>\n<HTML><HEAD><TITLE>Test</TITLE></HEAD><BODY>Content</BODY></HTML>";
         assert!(parser.can_parse(html));
     }
 
@@ -181,7 +186,8 @@ mod tests {
     fn test_can_parse_html_fragment() {
         let parser = HtmlParser::new();
 
-        let html = b"<html>\n<head><title>Test</title></head>\n<body><h1>Hello</h1></body>\n</html>";
+        let html =
+            b"<html>\n<head><title>Test</title></head>\n<body><h1>Hello</h1></body>\n</html>";
         assert!(parser.can_parse(html));
     }
 

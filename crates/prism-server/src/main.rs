@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! # Prism Server
 //!
 //! REST API server for Prism document processing.

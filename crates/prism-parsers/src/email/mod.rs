@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! Email format parsers
 //!
 //! Parsers for various email and contact formats:

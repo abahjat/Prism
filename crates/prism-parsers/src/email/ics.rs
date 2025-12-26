@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! ICS (iCalendar) parser
 //!
 //! Parses .ICS files (iCalendar format) into the Unified Document Model.
@@ -7,11 +8,13 @@ use bytes::Bytes;
 use ical::parser::ical::component::IcalCalendar;
 use ical::IcalParser;
 use prism_core::{
-    document::{ContentBlock, Dimensions, Document, Page, TextBlock, TextRun, TextStyle},
+    document::{
+        ContentBlock, Dimensions, Document, Page, Rect, ShapeStyle, TextBlock, TextRun, TextStyle,
+    },
     error::{Error, Result},
     format::Format,
     metadata::Metadata,
-    parser::{Parser, ParseContext, ParserFeature, ParserMetadata},
+    parser::{ParseContext, Parser, ParserFeature, ParserMetadata},
 };
 use std::io::Cursor;
 use tracing::{debug, info};
@@ -179,14 +182,11 @@ impl Parser for IcsParser {
             }
 
             let text_block = TextBlock {
+                bounds: Rect::new(0.0, 0.0, 0.0, 0.0), // No layout info in ICS
                 runs: text_runs,
-                bounds: prism_core::document::Rect {
-                    x: 0.0,
-                    y: 0.0,
-                    width: Dimensions::LETTER.width,
-                    height: Dimensions::LETTER.height,
-                },
                 paragraph_style: None,
+                style: ShapeStyle::default(),
+                rotation: 0.0,
             };
 
             let page = Page {
@@ -215,7 +215,10 @@ impl Parser for IcsParser {
         document.pages = pages;
         document.metadata = metadata;
 
-        info!("Successfully parsed ICS with {} calendar(s)", document.pages.len());
+        info!(
+            "Successfully parsed ICS with {} calendar(s)",
+            document.pages.len()
+        );
 
         Ok(document)
     }

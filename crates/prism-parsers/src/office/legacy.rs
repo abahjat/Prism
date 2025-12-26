@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! Legacy Office format parsers (DOC, XLS, PPT)
 //!
 //! Parses legacy Microsoft Office files that use OLE2/CFB format.
@@ -8,7 +9,8 @@ use calamine::Reader;
 use cfb::CompoundFile;
 use prism_core::{
     document::{
-        ContentBlock, Dimensions, Document, Page, PageMetadata, TextBlock, TextRun, TextStyle,
+        ContentBlock, Dimensions, Document, Page, PageMetadata, ShapeStyle, TextBlock, TextRun,
+        TextStyle,
     },
     error::{Error, Result},
     format::Format,
@@ -138,6 +140,8 @@ impl Parser for DocParser {
                 runs: vec![text_run],
                 paragraph_style: None,
                 bounds: prism_core::document::Rect::default(),
+                style: ShapeStyle::default(),
+                rotation: 0.0,
             };
 
             content_blocks.push(ContentBlock::Text(text_block));
@@ -267,6 +271,8 @@ impl Parser for XlsParser {
                                     runs: vec![text_run],
                                     paragraph_style: None,
                                     bounds: prism_core::document::Rect::default(),
+                                    style: ShapeStyle::default(),
+                                    rotation: 0.0,
                                 };
 
                                 content_blocks.push(ContentBlock::Text(text_block));
@@ -434,6 +440,8 @@ impl Parser for PptParser {
                 runs: vec![text_run],
                 paragraph_style: None,
                 bounds: prism_core::document::Rect::default(),
+                style: ShapeStyle::default(),
+                rotation: 0.0,
             };
 
             content_blocks.push(ContentBlock::Text(text_block));

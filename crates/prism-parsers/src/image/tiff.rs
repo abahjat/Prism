@@ -1,14 +1,17 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! TIFF image parser with multi-page support
 
 use async_trait::async_trait;
 use bytes::Bytes;
 use image::{ImageFormat, RgbaImage};
 use prism_core::{
-    document::{ContentBlock, Dimensions, Document, ImageBlock, ImageResource, Page, Rect},
+    document::{
+        ContentBlock, Dimensions, Document, ImageBlock, ImageResource, Page, Rect, ShapeStyle,
+    },
     error::{Error, Result},
     format::Format,
     metadata::Metadata,
-    parser::{Parser, ParseContext, ParserFeature, ParserMetadata},
+    parser::{ParseContext, Parser, ParserFeature, ParserMetadata},
 };
 use std::io::Cursor;
 use tiff::decoder::{Decoder, DecodingResult};
@@ -56,22 +59,18 @@ impl Parser for TiffParser {
     async fn parse(&self, data: Bytes, context: ParseContext) -> Result<Document> {
         debug!(
             "Parsing TIFF image, size: {} bytes, filename: {:?}",
-            context.size,
-            context.filename
+            context.size, context.filename
         );
 
         // Validate TIFF signature
         if !self.can_parse(&data) {
-            return Err(Error::ParseError(
-                "Invalid TIFF signature".to_string(),
-            ));
+            return Err(Error::ParseError("Invalid TIFF signature".to_string()));
         }
 
         // Create TIFF decoder
         let cursor = Cursor::new(&data[..]);
-        let mut decoder = Decoder::new(cursor).map_err(|e| {
-            Error::ParseError(format!("Failed to create TIFF decoder: {}", e))
-        })?;
+        let mut decoder = Decoder::new(cursor)
+            .map_err(|e| Error::ParseError(format!("Failed to create TIFF decoder: {}", e)))?;
 
         let mut pages = Vec::new();
         let mut image_resources = Vec::new();
@@ -80,9 +79,9 @@ impl Parser for TiffParser {
         // Iterate through all TIFF pages/directories
         loop {
             // Get dimensions for current page
-            let (width, height) = decoder.dimensions().map_err(|e| {
-                Error::ParseError(format!("Failed to get TIFF dimensions: {}", e))
-            })?;
+            let (width, height) = decoder
+                .dimensions()
+                .map_err(|e| Error::ParseError(format!("Failed to get TIFF dimensions: {}", e)))?;
 
             debug!("TIFF page {} dimensions: {}x{}", page_number, width, height);
 
@@ -103,99 +102,210 @@ impl Parser for TiffParser {
                             rgba_data.push(chunk[0]); // R
                             rgba_data.push(chunk[1]); // G
                             rgba_data.push(chunk[2]); // B
-                            rgba_data.push(255);      // A
+                            rgba_data.push(255); // A
                         }
-                        RgbaImage::from_raw(width, height, rgba_data)
-                            .ok_or_else(|| Error::ParseError(format!("Failed to create RGBA image from RGB U8 data for page {}", page_number)))?
+                        RgbaImage::from_raw(width, height, rgba_data).ok_or_else(|| {
+                            Error::ParseError(format!(
+                                "Failed to create RGBA image from RGB U8 data for page {}",
+                                page_number
+                            ))
+                        })?
                     } else if data.len() == pixel_count * 4 {
                         // Already RGBA
-                        RgbaImage::from_raw(width, height, data)
-                            .ok_or_else(|| Error::ParseError(format!("Failed to create RGBA image from RGBA U8 data for page {}", page_number)))?
+                        RgbaImage::from_raw(width, height, data).ok_or_else(|| {
+                            Error::ParseError(format!(
+                                "Failed to create RGBA image from RGBA U8 data for page {}",
+                                page_number
+                            ))
+                        })?
                     } else {
                         // Grayscale - convert to RGBA
-                        RgbaImage::from_raw(width, height, data.into_iter().flat_map(|p| [p, p, p, 255]).collect())
-                            .ok_or_else(|| Error::ParseError(format!("Failed to create RGBA image from grayscale U8 data for page {}", page_number)))?
+                        RgbaImage::from_raw(
+                            width,
+                            height,
+                            data.into_iter().flat_map(|p| [p, p, p, 255]).collect(),
+                        )
+                        .ok_or_else(|| {
+                            Error::ParseError(format!(
+                                "Failed to create RGBA image from grayscale U8 data for page {}",
+                                page_number
+                            ))
+                        })?
                     }
                 }
-                DecodingResult::U16(data) => {
-                    RgbaImage::from_raw(width, height, data.into_iter().flat_map(|p| {
-                        let byte = (p >> 8) as u8;
-                        [byte, byte, byte, 255]
-                    }).collect())
-                        .ok_or_else(|| Error::ParseError(format!("Failed to create RGBA image from U16 data for page {}", page_number)))?
-                }
-                DecodingResult::U32(data) => {
-                    RgbaImage::from_raw(width, height, data.into_iter().flat_map(|p| {
-                        let byte = (p >> 24) as u8;
-                        [byte, byte, byte, 255]
-                    }).collect())
-                        .ok_or_else(|| Error::ParseError(format!("Failed to create RGBA image from U32 data for page {}", page_number)))?
-                }
-                DecodingResult::U64(data) => {
-                    RgbaImage::from_raw(width, height, data.into_iter().flat_map(|p| {
-                        let byte = (p >> 56) as u8;
-                        [byte, byte, byte, 255]
-                    }).collect())
-                        .ok_or_else(|| Error::ParseError(format!("Failed to create RGBA image from U64 data for page {}", page_number)))?
-                }
-                DecodingResult::F16(data) => {
-                    RgbaImage::from_raw(width, height, data.into_iter().flat_map(|p| {
-                        let float_val = p.to_f32();
-                        let byte = (float_val.clamp(0.0, 1.0) * 255.0) as u8;
-                        [byte, byte, byte, 255]
-                    }).collect())
-                        .ok_or_else(|| Error::ParseError(format!("Failed to create RGBA image from F16 data for page {}", page_number)))?
-                }
-                DecodingResult::F32(data) => {
-                    RgbaImage::from_raw(width, height, data.into_iter().flat_map(|p| {
-                        let byte = (p.clamp(0.0, 1.0) * 255.0) as u8;
-                        [byte, byte, byte, 255]
-                    }).collect())
-                        .ok_or_else(|| Error::ParseError(format!("Failed to create RGBA image from F32 data for page {}", page_number)))?
-                }
-                DecodingResult::F64(data) => {
-                    RgbaImage::from_raw(width, height, data.into_iter().flat_map(|p| {
-                        let byte = (p.clamp(0.0, 1.0) * 255.0) as u8;
-                        [byte, byte, byte, 255]
-                    }).collect())
-                        .ok_or_else(|| Error::ParseError(format!("Failed to create RGBA image from F64 data for page {}", page_number)))?
-                }
-                DecodingResult::I8(data) => {
-                    RgbaImage::from_raw(width, height, data.into_iter().flat_map(|p| {
-                        let byte = ((p as i16 + 128) as u8);
-                        [byte, byte, byte, 255]
-                    }).collect())
-                        .ok_or_else(|| Error::ParseError(format!("Failed to create RGBA image from I8 data for page {}", page_number)))?
-                }
-                DecodingResult::I16(data) => {
-                    RgbaImage::from_raw(width, height, data.into_iter().flat_map(|p| {
-                        let byte = ((p >> 8) as i8 as u8);
-                        [byte, byte, byte, 255]
-                    }).collect())
-                        .ok_or_else(|| Error::ParseError(format!("Failed to create RGBA image from I16 data for page {}", page_number)))?
-                }
-                DecodingResult::I32(data) => {
-                    RgbaImage::from_raw(width, height, data.into_iter().flat_map(|p| {
-                        let byte = ((p >> 24) as i8 as u8);
-                        [byte, byte, byte, 255]
-                    }).collect())
-                        .ok_or_else(|| Error::ParseError(format!("Failed to create RGBA image from I32 data for page {}", page_number)))?
-                }
-                DecodingResult::I64(data) => {
-                    RgbaImage::from_raw(width, height, data.into_iter().flat_map(|p| {
-                        let byte = ((p >> 56) as i8 as u8);
-                        [byte, byte, byte, 255]
-                    }).collect())
-                        .ok_or_else(|| Error::ParseError(format!("Failed to create RGBA image from I64 data for page {}", page_number)))?
-                }
+                DecodingResult::U16(data) => RgbaImage::from_raw(
+                    width,
+                    height,
+                    data.into_iter()
+                        .flat_map(|p| {
+                            let byte = (p >> 8) as u8;
+                            [byte, byte, byte, 255]
+                        })
+                        .collect(),
+                )
+                .ok_or_else(|| {
+                    Error::ParseError(format!(
+                        "Failed to create RGBA image from U16 data for page {}",
+                        page_number
+                    ))
+                })?,
+                DecodingResult::U32(data) => RgbaImage::from_raw(
+                    width,
+                    height,
+                    data.into_iter()
+                        .flat_map(|p| {
+                            let byte = (p >> 24) as u8;
+                            [byte, byte, byte, 255]
+                        })
+                        .collect(),
+                )
+                .ok_or_else(|| {
+                    Error::ParseError(format!(
+                        "Failed to create RGBA image from U32 data for page {}",
+                        page_number
+                    ))
+                })?,
+                DecodingResult::U64(data) => RgbaImage::from_raw(
+                    width,
+                    height,
+                    data.into_iter()
+                        .flat_map(|p| {
+                            let byte = (p >> 56) as u8;
+                            [byte, byte, byte, 255]
+                        })
+                        .collect(),
+                )
+                .ok_or_else(|| {
+                    Error::ParseError(format!(
+                        "Failed to create RGBA image from U64 data for page {}",
+                        page_number
+                    ))
+                })?,
+                DecodingResult::F16(data) => RgbaImage::from_raw(
+                    width,
+                    height,
+                    data.into_iter()
+                        .flat_map(|p| {
+                            let float_val = p.to_f32();
+                            let byte = (float_val.clamp(0.0, 1.0) * 255.0) as u8;
+                            [byte, byte, byte, 255]
+                        })
+                        .collect(),
+                )
+                .ok_or_else(|| {
+                    Error::ParseError(format!(
+                        "Failed to create RGBA image from F16 data for page {}",
+                        page_number
+                    ))
+                })?,
+                DecodingResult::F32(data) => RgbaImage::from_raw(
+                    width,
+                    height,
+                    data.into_iter()
+                        .flat_map(|p| {
+                            let byte = (p.clamp(0.0, 1.0) * 255.0) as u8;
+                            [byte, byte, byte, 255]
+                        })
+                        .collect(),
+                )
+                .ok_or_else(|| {
+                    Error::ParseError(format!(
+                        "Failed to create RGBA image from F32 data for page {}",
+                        page_number
+                    ))
+                })?,
+                DecodingResult::F64(data) => RgbaImage::from_raw(
+                    width,
+                    height,
+                    data.into_iter()
+                        .flat_map(|p| {
+                            let byte = (p.clamp(0.0, 1.0) * 255.0) as u8;
+                            [byte, byte, byte, 255]
+                        })
+                        .collect(),
+                )
+                .ok_or_else(|| {
+                    Error::ParseError(format!(
+                        "Failed to create RGBA image from F64 data for page {}",
+                        page_number
+                    ))
+                })?,
+                DecodingResult::I8(data) => RgbaImage::from_raw(
+                    width,
+                    height,
+                    data.into_iter()
+                        .flat_map(|p| {
+                            let byte = ((p as i16 + 128) as u8);
+                            [byte, byte, byte, 255]
+                        })
+                        .collect(),
+                )
+                .ok_or_else(|| {
+                    Error::ParseError(format!(
+                        "Failed to create RGBA image from I8 data for page {}",
+                        page_number
+                    ))
+                })?,
+                DecodingResult::I16(data) => RgbaImage::from_raw(
+                    width,
+                    height,
+                    data.into_iter()
+                        .flat_map(|p| {
+                            let byte = ((p >> 8) as i8 as u8);
+                            [byte, byte, byte, 255]
+                        })
+                        .collect(),
+                )
+                .ok_or_else(|| {
+                    Error::ParseError(format!(
+                        "Failed to create RGBA image from I16 data for page {}",
+                        page_number
+                    ))
+                })?,
+                DecodingResult::I32(data) => RgbaImage::from_raw(
+                    width,
+                    height,
+                    data.into_iter()
+                        .flat_map(|p| {
+                            let byte = ((p >> 24) as i8 as u8);
+                            [byte, byte, byte, 255]
+                        })
+                        .collect(),
+                )
+                .ok_or_else(|| {
+                    Error::ParseError(format!(
+                        "Failed to create RGBA image from I32 data for page {}",
+                        page_number
+                    ))
+                })?,
+                DecodingResult::I64(data) => RgbaImage::from_raw(
+                    width,
+                    height,
+                    data.into_iter()
+                        .flat_map(|p| {
+                            let byte = ((p >> 56) as i8 as u8);
+                            [byte, byte, byte, 255]
+                        })
+                        .collect(),
+                )
+                .ok_or_else(|| {
+                    Error::ParseError(format!(
+                        "Failed to create RGBA image from I64 data for page {}",
+                        page_number
+                    ))
+                })?,
             };
 
             // Convert to PNG for web compatibility
             let dynamic_img = image::DynamicImage::ImageRgba8(rgba_image);
             let mut png_data = Vec::new();
-            dynamic_img.write_to(&mut Cursor::new(&mut png_data), ImageFormat::Png)
+            dynamic_img
+                .write_to(&mut Cursor::new(&mut png_data), ImageFormat::Png)
                 .map_err(|e| {
-                    Error::ParseError(format!("Failed to encode TIFF page {} as PNG: {}", page_number, e))
+                    Error::ParseError(format!(
+                        "Failed to encode TIFF page {} as PNG: {}",
+                        page_number, e
+                    ))
                 })?;
 
             // Create resource ID for the image
@@ -213,19 +323,13 @@ impl Parser for TiffParser {
 
             // Create image block
             let image_block = ImageBlock {
-                bounds: Rect {
-                    x: 0.0,
-                    y: 0.0,
-                    width: width as f64,
-                    height: height as f64,
-                },
+                bounds: Rect::new(0.0, 0.0, width as f64, height as f64),
                 resource_id: resource_id.clone(),
-                alt_text: context.filename.as_ref().map(|f| format!("{} - Page {}", f, page_number)),
-                format: Some("TIFF".to_string()),
-                original_size: Some(Dimensions {
-                    width: width as f64,
-                    height: height as f64,
-                }),
+                alt_text: None,
+                format: Some("image/tiff".to_string()),
+                original_size: Some(Dimensions::new(width as f64, height as f64)),
+                style: ShapeStyle::default(),
+                rotation: 0.0,
             };
 
             // Create page with the image
@@ -247,7 +351,10 @@ impl Parser for TiffParser {
             if decoder.more_images() {
                 if let Err(e) = decoder.next_image() {
                     warn!("Failed to move to next TIFF page: {}", e);
-                    return Err(Error::ParseError(format!("Failed to move to next TIFF page: {}", e)));
+                    return Err(Error::ParseError(format!(
+                        "Failed to move to next TIFF page: {}",
+                        e
+                    )));
                 }
                 page_number += 1;
             } else {
@@ -269,7 +376,10 @@ impl Parser for TiffParser {
         document.metadata = metadata;
         document.resources.images = image_resources;
 
-        info!("Successfully parsed TIFF with {} page(s)", document.pages.len());
+        info!(
+            "Successfully parsed TIFF with {} page(s)",
+            document.pages.len()
+        );
 
         Ok(document)
     }

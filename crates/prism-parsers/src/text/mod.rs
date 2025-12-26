@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! Plain text format parsers
 //!
 //! Parsers for plain text files (.txt, .log, .json, .xml, .csv, .md, .html, etc.)

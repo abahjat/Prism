@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 //! # Renderer Traits
 //!
 //! Core traits for rendering documents from the UDM to various output formats.
