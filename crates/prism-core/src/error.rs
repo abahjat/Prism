@@ -78,10 +78,7 @@ impl Error {
     /// Check if this error is recoverable
     #[must_use]
     pub fn is_recoverable(&self) -> bool {
-        matches!(
-            self,
-            Error::Timeout(_) | Error::MemoryLimitExceeded { .. }
-        )
+        matches!(self, Error::Timeout(_) | Error::MemoryLimitExceeded { .. })
     }
 
     /// Check if this error is due to invalid/corrupted input
