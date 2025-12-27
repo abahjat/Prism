@@ -20,6 +20,20 @@ const clearBtn = document.getElementById('clearBtn');
 const retryBtn = document.getElementById('retryBtn');
 const serverStatus = document.getElementById('serverStatus');
 
+// Zoom control elements
+const zoomControls = document.getElementById('zoomControls');
+const zoomInBtn = document.getElementById('zoomInBtn');
+const zoomOutBtn = document.getElementById('zoomOutBtn');
+const zoomLevel = document.getElementById('zoomLevel');
+const fitBtn = document.getElementById('fitBtn');
+const actualSizeBtn = document.getElementById('actualSizeBtn');
+
+// Zoom state
+let currentZoom = 1;
+let isImageMode = false;
+let imageNaturalWidth = 0;
+let imageNaturalHeight = 0;
+
 // Initialize
 checkServerStatus();
 
@@ -36,6 +50,21 @@ fileInput.addEventListener('change', (e) => {
 
 clearBtn.addEventListener('click', resetViewer);
 retryBtn.addEventListener('click', resetViewer);
+
+// Zoom control event listeners
+zoomInBtn.addEventListener('click', () => zoomImage(1.25));
+zoomOutBtn.addEventListener('click', () => zoomImage(0.8));
+fitBtn.addEventListener('click', fitToWindow);
+actualSizeBtn.addEventListener('click', actualSize);
+
+// Mouse wheel zoom for images
+viewerContent.addEventListener('wheel', (e) => {
+    if (isImageMode) {
+        e.preventDefault();
+        const factor = e.deltaY < 0 ? 1.1 : 0.9;
+        zoomImage(factor);
+    }
+});
 
 // Drag and Drop
 uploadBox.addEventListener('dragover', (e) => {
@@ -133,23 +162,70 @@ async function handleFile(file) {
 function displayDocument(file, html) {
     hideAllSections();
 
+    // Check if this is an image file
+    const ext = getFileExtension(file.name).toLowerCase();
+    const imageExtensions = ['png', 'jpg', 'jpeg', 'tif', 'tiff', 'gif', 'bmp', 'webp'];
+    isImageMode = imageExtensions.includes(ext);
+
     // Show file info
     fileInfo.style.display = 'flex';
     fileName.textContent = file.name;
     fileSize.textContent = formatFileSize(file.size);
-    fileFormat.textContent = getFileExtension(file.name).toUpperCase();
+    fileFormat.textContent = ext.toUpperCase();
 
-    // Show viewer with iframe
+    // Show viewer
     viewerSection.style.display = 'block';
 
-    // Create iframe to display HTML
+    if (isImageMode) {
+        // Image mode: display with zoom controls
+        zoomControls.style.display = 'flex';
+        viewerContent.classList.add('image-mode');
+        viewerContent.innerHTML = '';
+
+        // Parse the HTML to extract image src
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, 'text/html');
+        const imgEl = doc.querySelector('img');
+
+        if (imgEl && imgEl.src) {
+            // Create zoom container and image
+            const container = document.createElement('div');
+            container.className = 'image-zoom-container';
+
+            const img = document.createElement('img');
+            img.src = imgEl.src;
+            img.alt = imgEl.alt || file.name;
+
+            img.onload = () => {
+                imageNaturalWidth = img.naturalWidth;
+                imageNaturalHeight = img.naturalHeight;
+                // Fit to window on initial load
+                fitToWindow();
+            };
+
+            container.appendChild(img);
+            viewerContent.appendChild(container);
+        } else {
+            // Fallback to iframe if no image found
+            displayAsIframe(html);
+        }
+    } else {
+        // Regular document mode: use iframe
+        zoomControls.style.display = 'none';
+        viewerContent.classList.remove('image-mode');
+        displayAsIframe(html);
+    }
+}
+
+// Display content in iframe (for non-image documents)
+function displayAsIframe(html) {
+    viewerContent.innerHTML = '';
+
     const iframe = document.createElement('iframe');
     iframe.style.width = '100%';
     iframe.style.border = 'none';
     iframe.style.minHeight = '600px';
 
-    // Write HTML to iframe
-    viewerContent.innerHTML = '';
     viewerContent.appendChild(iframe);
 
     const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
@@ -209,6 +285,7 @@ function showError(message) {
 // Reset viewer
 function resetViewer() {
     hideAllSections();
+    resetImageState();
     uploadBox.style.display = 'block';
     fileInput.value = '';
 }
@@ -234,6 +311,59 @@ function formatFileSize(bytes) {
 function getFileExtension(filename) {
     const parts = filename.split('.');
     return parts.length > 1 ? parts[parts.length - 1] : '';
+}
+
+// =====================
+// Image Zoom Functions
+// =====================
+
+// Zoom image by a factor
+function zoomImage(factor) {
+    if (!isImageMode) return;
+
+    currentZoom = Math.max(0.1, Math.min(10, currentZoom * factor));
+    applyZoom();
+}
+
+// Fit image to container window
+function fitToWindow() {
+    if (!isImageMode || imageNaturalWidth === 0 || imageNaturalHeight === 0) return;
+
+    const containerWidth = viewerContent.clientWidth - 40; // Padding
+    const containerHeight = viewerContent.clientHeight - 40;
+
+    const scaleX = containerWidth / imageNaturalWidth;
+    const scaleY = containerHeight / imageNaturalHeight;
+
+    currentZoom = Math.min(scaleX, scaleY, 1); // Don't scale up, only down
+    applyZoom();
+}
+
+// Show image at actual size (100%)
+function actualSize() {
+    if (!isImageMode) return;
+
+    currentZoom = 1;
+    applyZoom();
+}
+
+// Apply current zoom level to image
+function applyZoom() {
+    const container = viewerContent.querySelector('.image-zoom-container');
+    if (!container) return;
+
+    container.style.transform = `scale(${currentZoom})`;
+    zoomLevel.textContent = Math.round(currentZoom * 100) + '%';
+}
+
+// Reset image zoom state
+function resetImageState() {
+    currentZoom = 1;
+    isImageMode = false;
+    imageNaturalWidth = 0;
+    imageNaturalHeight = 0;
+    viewerContent.classList.remove('image-mode');
+    zoomControls.style.display = 'none';
 }
 
 // Periodic server status check (every 30 seconds)

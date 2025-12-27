@@ -108,6 +108,42 @@ impl Format {
         }
     }
 
+    /// Create a new ODT (`OpenDocument` Text) format instance
+    #[must_use]
+    pub fn odt() -> Self {
+        Self {
+            mime_type: "application/vnd.oasis.opendocument.text".to_string(),
+            extension: "odt".to_string(),
+            family: FormatFamily::Office,
+            name: "OpenDocument Text (ODT)".to_string(),
+            is_container: true,
+        }
+    }
+
+    /// Create a new ODS (`OpenDocument` Spreadsheet) format instance
+    #[must_use]
+    pub fn ods() -> Self {
+        Self {
+            mime_type: "application/vnd.oasis.opendocument.spreadsheet".to_string(),
+            extension: "ods".to_string(),
+            family: FormatFamily::Office,
+            name: "OpenDocument Spreadsheet (ODS)".to_string(),
+            is_container: true,
+        }
+    }
+
+    /// Create a new ODP (`OpenDocument` Presentation) format instance
+    #[must_use]
+    pub fn odp() -> Self {
+        Self {
+            mime_type: "application/vnd.oasis.opendocument.presentation".to_string(),
+            extension: "odp".to_string(),
+            family: FormatFamily::Office,
+            name: "OpenDocument Presentation (ODP)".to_string(),
+            is_container: true,
+        }
+    }
+
     /// Create a new PNG format instance
     #[must_use]
     pub fn png() -> Self {
@@ -140,6 +176,102 @@ impl Format {
             extension: "tif".to_string(),
             family: FormatFamily::Image,
             name: "TIFF Image".to_string(),
+            is_container: false,
+        }
+    }
+
+    /// Create a new GIF format instance
+    #[must_use]
+    pub fn gif() -> Self {
+        Self {
+            mime_type: "image/gif".to_string(),
+            extension: "gif".to_string(),
+            family: FormatFamily::Image,
+            name: "GIF Image".to_string(),
+            is_container: false,
+        }
+    }
+
+    /// Create a new WebP format instance
+    #[must_use]
+    pub fn webp() -> Self {
+        Self {
+            mime_type: "image/webp".to_string(),
+            extension: "webp".to_string(),
+            family: FormatFamily::Image,
+            name: "WebP Image".to_string(),
+            is_container: false,
+        }
+    }
+
+    /// Create a new BMP format instance
+    #[must_use]
+    pub fn bmp() -> Self {
+        Self {
+            mime_type: "image/bmp".to_string(),
+            extension: "bmp".to_string(),
+            family: FormatFamily::Image,
+            name: "BMP Image".to_string(),
+            is_container: false,
+        }
+    }
+
+    /// Create a new SVG format instance
+    #[must_use]
+    pub fn svg() -> Self {
+        Self {
+            mime_type: "image/svg+xml".to_string(),
+            extension: "svg".to_string(),
+            family: FormatFamily::Image,
+            name: "SVG Image".to_string(),
+            is_container: false,
+        }
+    }
+
+    /// Create a new EPS (Encapsulated PostScript) format instance
+    #[must_use]
+    pub fn eps() -> Self {
+        Self {
+            mime_type: "application/postscript".to_string(),
+            extension: "eps".to_string(),
+            family: FormatFamily::Image,
+            name: "EPS Image".to_string(),
+            is_container: false,
+        }
+    }
+
+    /// Create a new EMF (Enhanced Metafile) format instance
+    #[must_use]
+    pub fn emf() -> Self {
+        Self {
+            mime_type: "image/emf".to_string(),
+            extension: "emf".to_string(),
+            family: FormatFamily::Image,
+            name: "EMF Image".to_string(),
+            is_container: false,
+        }
+    }
+
+    /// Create a new EMZ (Compressed Enhanced Metafile) format instance
+    #[must_use]
+    pub fn emz() -> Self {
+        Self {
+            mime_type: "application/x-emz".to_string(),
+            extension: "emz".to_string(),
+            family: FormatFamily::Image,
+            name: "EMZ Image".to_string(),
+            is_container: false,
+        }
+    }
+
+    /// Create a new WMF (Windows Metafile) format instance
+    #[must_use]
+    pub fn wmf() -> Self {
+        Self {
+            mime_type: "image/wmf".to_string(),
+            extension: "wmf".to_string(),
+            family: FormatFamily::Image,
+            name: "WMF Image".to_string(),
             is_container: false,
         }
     }
@@ -224,6 +356,18 @@ impl Format {
             extension: "html".to_string(),
             family: FormatFamily::Text,
             name: "HTML".to_string(),
+            is_container: false,
+        }
+    }
+
+    /// Create a new RTF format instance (Rich Text Format)
+    #[must_use]
+    pub fn rtf() -> Self {
+        Self {
+            mime_type: "application/rtf".to_string(),
+            extension: "rtf".to_string(),
+            family: FormatFamily::Document,
+            name: "Rich Text Format (RTF)".to_string(),
             is_container: false,
         }
     }
@@ -495,24 +639,18 @@ static SIGNATURES: &[FormatSignature] = &[
     FormatSignature {
         bytes: b"GIF87a",
         offset: 0,
-        format: || Format {
-            mime_type: "image/gif".to_string(),
-            extension: "gif".to_string(),
-            family: FormatFamily::Image,
-            name: "GIF Image".to_string(),
-            is_container: false,
-        },
+        format: Format::gif,
     },
     FormatSignature {
         bytes: b"GIF89a",
         offset: 0,
-        format: || Format {
-            mime_type: "image/gif".to_string(),
-            extension: "gif".to_string(),
-            family: FormatFamily::Image,
-            name: "GIF Image".to_string(),
-            is_container: false,
-        },
+        format: Format::gif,
+    },
+    // WebP (RIFF....WEBP format)
+    FormatSignature {
+        bytes: b"RIFF",
+        offset: 0,
+        format: Format::webp, // Note: Also needs WEBP at offset 8, handled in can_parse
     },
     // TIFF (little-endian)
     FormatSignature {
@@ -562,6 +700,12 @@ static SIGNATURES: &[FormatSignature] = &[
             is_container: true,
         },
     },
+    // RTF (Rich Text Format)
+    FormatSignature {
+        bytes: b"{\\rtf",
+        offset: 0,
+        format: Format::rtf,
+    },
 ];
 
 /// Extension to format mapping
@@ -574,11 +718,22 @@ static EXTENSION_MAP: &[(&str, fn() -> Format)] = &[
     ("doc", Format::doc),
     ("xls", Format::xls),
     ("ppt", Format::ppt),
+    ("odt", Format::odt),
+    ("ods", Format::ods),
+    ("odp", Format::odp),
     ("png", Format::png),
     ("jpg", Format::jpeg),
     ("jpeg", Format::jpeg),
     ("tif", Format::tiff),
     ("tiff", Format::tiff),
+    ("gif", Format::gif),
+    ("webp", Format::webp),
+    ("bmp", Format::bmp),
+    ("svg", Format::svg),
+    ("eps", Format::eps),
+    ("emf", Format::emf),
+    ("emz", Format::emz),
+    ("wmf", Format::wmf),
     ("txt", Format::text),
     ("json", Format::json),
     ("xml", Format::xml),
@@ -598,6 +753,7 @@ static EXTENSION_MAP: &[(&str, fn() -> Format)] = &[
     ("gz", Format::gzip),
     ("gzip", Format::gzip),
     ("tgz", Format::gzip), // Often treated as gzip then tar
+    ("rtf", Format::rtf),
 ];
 
 /// Detect the format of a document from its content

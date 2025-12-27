@@ -79,10 +79,59 @@ impl Parser for HtmlParser {
         let check_len = data.len().min(1024);
         if let Ok(text) = std::str::from_utf8(&data[..check_len]) {
             let text_lower = text.to_lowercase();
-            // Look for common HTML tags
-            return text_lower.contains("<html")
+            // Look for common HTML tags (full documents)
+            if text_lower.contains("<html")
                 || text_lower.contains("<!doctype")
-                || (text_lower.contains("<head") && text_lower.contains("<body"));
+                || (text_lower.contains("<head") && text_lower.contains("<body"))
+            {
+                return true;
+            }
+
+            // Also detect HTML fragments (files with common HTML tags but no doctype)
+            // Count common HTML tags - if we find several, it's likely HTML
+            let html_tags = [
+                "<div",
+                "<span",
+                "<p>",
+                "<p ",
+                "<h1",
+                "<h2",
+                "<h3",
+                "<h4",
+                "<h5",
+                "<h6",
+                "<br>",
+                "<br/>",
+                "<br />",
+                "<hr>",
+                "<hr/>",
+                "<table",
+                "<tr",
+                "<td",
+                "<ul",
+                "<ol",
+                "<li",
+                "<a ",
+                "<a>",
+                "<img",
+                "<form",
+                "<input",
+                "<blockquote",
+                "<strong",
+                "<em>",
+                "<b>",
+                "<i>",
+                "<u>",
+            ];
+            let tag_count = html_tags
+                .iter()
+                .filter(|tag| text_lower.contains(*tag))
+                .count();
+
+            // If we find 2+ HTML tags, it's likely HTML
+            if tag_count >= 2 {
+                return true;
+            }
         }
 
         false
@@ -104,10 +153,10 @@ impl Parser for HtmlParser {
         // Extract title from HTML if present
         let title = Self::extract_title(&html_content);
 
-        // For HTML, we'll store the raw HTML as a text block
-        // The HTML renderer will handle displaying it properly
+        // For HTML, we store raw HTML with a special marker prefix
+        // so the renderer knows to pass it through directly
         let text_run = TextRun {
-            text: html_content,
+            text: format!("__HTML_RAW__:{html_content}"),
             style: TextStyle::default(),
             bounds: Some(Rect::default()),
             char_positions: Some(Vec::new()),

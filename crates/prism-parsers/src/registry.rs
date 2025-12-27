@@ -34,6 +34,7 @@ impl ParserRegistry {
 
         // Register text parsers
         registry.register(Arc::new(crate::text::CsvParser::new()));
+        registry.register(Arc::new(crate::text::RtfParser::new()));
 
         // Register email parsers
         registry.register(Arc::new(crate::email::MsgParser::new()));
