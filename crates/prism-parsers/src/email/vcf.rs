@@ -9,7 +9,8 @@ use ical::parser::vcard::component::VcardContact;
 use ical::VcardParser;
 use prism_core::{
     document::{
-        ContentBlock, Dimensions, Document, Page, Rect, ShapeStyle, TextBlock, TextRun, TextStyle,
+        ContentBlock, Dimensions, Document, Page, PageMetadata, Rect, ShapeStyle, TextBlock,
+        TextRun, TextStyle,
     },
     error::{Error, Result},
     format::Format,
@@ -31,12 +32,12 @@ impl VcfParser {
     }
 
     /// Format contact field as text content
-    fn format_field(&self, label: &str, value: &str, bold: bool) -> TextRun {
+    fn format_field(label: &str, value: &str, bold: bool) -> TextRun {
         TextRun {
-            text: format!("{}: {}\n", label, value),
+            text: format!("{label}: {value}\n"),
             style: TextStyle {
                 bold,
-                ..Default::default()
+                ..TextStyle::default()
             },
             bounds: None,
             char_positions: None,
@@ -44,7 +45,7 @@ impl VcfParser {
     }
 
     /// Parse a single vCard contact
-    fn parse_vcard(&self, contact: &VcardContact) -> Vec<TextRun> {
+    fn parse_vcard(contact: &VcardContact) -> Vec<TextRun> {
         let mut text_runs = Vec::new();
 
         // Full name (FN property)
@@ -52,27 +53,27 @@ impl VcfParser {
             match prop.name.as_str() {
                 "FN" => {
                     if let Some(value) = prop.value.as_ref() {
-                        text_runs.push(self.format_field("Name", value, true));
+                        text_runs.push(Self::format_field("Name", value, true));
                     }
                 }
                 "ORG" => {
                     if let Some(value) = prop.value.as_ref() {
-                        text_runs.push(self.format_field("Organization", value, false));
+                        text_runs.push(Self::format_field("Organization", value, false));
                     }
                 }
                 "TITLE" => {
                     if let Some(value) = prop.value.as_ref() {
-                        text_runs.push(self.format_field("Title", value, false));
+                        text_runs.push(Self::format_field("Title", value, false));
                     }
                 }
                 "EMAIL" => {
                     if let Some(value) = prop.value.as_ref() {
-                        text_runs.push(self.format_field("Email", value, false));
+                        text_runs.push(Self::format_field("Email", value, false));
                     }
                 }
                 "TEL" => {
                     if let Some(value) = prop.value.as_ref() {
-                        text_runs.push(self.format_field("Phone", value, false));
+                        text_runs.push(Self::format_field("Phone", value, false));
                     }
                 }
                 "ADR" => {
@@ -80,13 +81,13 @@ impl VcfParser {
                         // Address format: PO Box;Extended;Street;City;State;Postal;Country
                         let parts: Vec<&str> = value.split(';').filter(|s| !s.is_empty()).collect();
                         if !parts.is_empty() {
-                            text_runs.push(self.format_field("Address", &parts.join(", "), false));
+                            text_runs.push(Self::format_field("Address", &parts.join(", "), false));
                         }
                     }
                 }
                 "URL" => {
                     if let Some(value) = prop.value.as_ref() {
-                        text_runs.push(self.format_field("Website", value, false));
+                        text_runs.push(Self::format_field("Website", value, false));
                     }
                 }
                 "NOTE" => {
@@ -95,14 +96,14 @@ impl VcfParser {
                             text: "\nNote:\n".to_string(),
                             style: TextStyle {
                                 bold: true,
-                                ..Default::default()
+                                ..TextStyle::default()
                             },
                             bounds: None,
                             char_positions: None,
                         });
                         text_runs.push(TextRun {
-                            text: format!("{}\n", value),
-                            style: Default::default(),
+                            text: format!("{value}\n"),
+                            style: TextStyle::default(),
                             bounds: None,
                             char_positions: None,
                         });
@@ -140,6 +141,9 @@ impl Parser for VcfParser {
         text.contains("BEGIN:VCARD")
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if the VCF data is invalid or no vCards are found.
     async fn parse(&self, data: Bytes, context: ParseContext) -> Result<Document> {
         debug!(
             "Parsing VCF vCard, size: {} bytes, filename: {:?}",
@@ -154,8 +158,7 @@ impl Parser for VcfParser {
             match contact_result {
                 Ok(contact) => vcards.push(contact),
                 Err(e) => {
-                    debug!("Failed to parse vCard: {:?}", e);
-                    continue;
+                    debug!("Failed to parse vCard: {e:?}");
                 }
             }
         }
@@ -167,21 +170,23 @@ impl Parser for VcfParser {
         let mut pages = Vec::new();
         let mut contact_name = None;
 
-        for (page_number, vcard) in vcards.iter().enumerate() {
-            let text_runs = self.parse_vcard(vcard);
+        for (page_offset, vcard) in vcards.iter().enumerate() {
+            let text_runs = Self::parse_vcard(vcard);
 
             // Save first contact name for metadata
-            if page_number == 0 {
+            if page_offset == 0 {
                 for prop in &vcard.properties {
                     if prop.name == "FN" {
-                        contact_name = prop.value.clone();
+                        if let Some(val) = &prop.value {
+                            contact_name.get_or_insert_with(String::new).clone_from(val);
+                        }
                         break;
                     }
                 }
             }
 
             let text_block = TextBlock {
-                bounds: Rect::new(0.0, 0.0, 0.0, 0.0), // No layout info in VCF
+                bounds: Rect::default(), // No layout info in VCF
                 runs: text_runs,
                 paragraph_style: None,
                 style: ShapeStyle::default(),
@@ -189,10 +194,10 @@ impl Parser for VcfParser {
             };
 
             let page = Page {
-                number: (page_number + 1) as u32,
+                number: u32::try_from(page_offset + 1).unwrap_or(u32::MAX),
                 dimensions: Dimensions::LETTER,
                 content: vec![ContentBlock::Text(text_block)],
-                metadata: Default::default(),
+                metadata: PageMetadata::default(),
                 annotations: Vec::new(),
             };
 
@@ -207,7 +212,7 @@ impl Parser for VcfParser {
             metadata.title = Some(filename.clone());
         }
         metadata.add_custom("format", "VCF");
-        metadata.add_custom("contact_count", pages.len() as i64);
+        metadata.add_custom("contact_count", i64::try_from(pages.len()).unwrap_or(0));
 
         // Create document
         let mut document = Document::new();

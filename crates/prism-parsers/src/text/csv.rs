@@ -46,6 +46,12 @@ impl Parser for CsvParser {
         true
     }
 
+    /// Parse a `CSV` document
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the `CSV` data is malformed or cannot be read.
+    #[allow(clippy::too_many_lines)]
     async fn parse(&self, data: Bytes, context: ParseContext) -> Result<Document> {
         debug!(
             "Parsing CSV file, size: {} bytes, filename: {:?}",
@@ -66,11 +72,11 @@ impl Parser for CsvParser {
         let mut row_count = 0;
 
         for result in reader.records() {
-            let record = result.map_err(|e| Error::ParseError(format!("CSV error: {}", e)))?;
+            let record = result.map_err(|e| Error::ParseError(format!("CSV error: {e}")))?;
             row_count += 1;
 
             let mut cells = Vec::new();
-            for field in record.iter() {
+            for field in &record {
                 let run = TextRun {
                     text: field.to_string(),
                     style: TextStyle::default(),
@@ -78,7 +84,7 @@ impl Parser for CsvParser {
                     char_positions: None,
                 };
 
-                let content = if run.text.is_empty() {
+                let cell_content = if run.text.is_empty() {
                     vec![]
                 } else {
                     vec![ContentBlock::Text(TextBlock {
@@ -91,7 +97,7 @@ impl Parser for CsvParser {
                 };
 
                 cells.push(TableCell {
-                    content,
+                    content: cell_content,
                     col_span: 1,
                     row_span: 1,
                     background_color: None,
@@ -108,8 +114,10 @@ impl Parser for CsvParser {
             });
 
             if current_rows.len() >= rows_per_page {
+                #[allow(clippy::cast_possible_truncation)]
+                let page_number = (pages.len() + 1) as u32;
                 pages.push(Page {
-                    number: (pages.len() + 1) as u32,
+                    number: page_number,
                     dimensions: Dimensions::LETTER, // Placeholder dimensions
                     content: vec![ContentBlock::Table(TableBlock {
                         bounds: prism_core::document::Rect::default(),
@@ -128,8 +136,10 @@ impl Parser for CsvParser {
 
         // Flush remaining rows
         if !current_rows.is_empty() {
+            #[allow(clippy::cast_possible_truncation)]
+            let page_number = (pages.len() + 1) as u32;
             pages.push(Page {
-                number: (pages.len() + 1) as u32,
+                number: page_number,
                 dimensions: Dimensions::LETTER,
                 content: vec![ContentBlock::Table(TableBlock {
                     bounds: prism_core::document::Rect::default(),
@@ -144,8 +154,7 @@ impl Parser for CsvParser {
         }
 
         info!(
-            "Successfully parsed CSV with {} rows into {} pages",
-            row_count,
+            "Successfully parsed CSV with {row_count} rows into {} pages",
             pages.len()
         );
 
@@ -153,7 +162,7 @@ impl Parser for CsvParser {
         if let Some(ref filename) = context.filename {
             metadata.title = Some(filename.clone());
         }
-        metadata.add_custom("row_count", row_count as i64);
+        metadata.add_custom("row_count", i64::from(row_count));
 
         let mut doc = Document::builder().metadata(metadata).build();
         doc.pages = pages;
@@ -243,7 +252,8 @@ mod tests {
         // Generate 150 rows. 100 rows per page limit means 2 pages.
         let mut csv_string = String::new();
         for i in 0..150 {
-            csv_string.push_str(&format!("row{},val{}\n", i, i));
+            use std::fmt::Write;
+            let _ = writeln!(csv_string, "row{i},val{i}");
         }
 
         let context = create_context("large.csv", csv_string.len());

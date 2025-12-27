@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 use bytes::Bytes;
-use chrono::NaiveDateTime;
 use prism_core::{
     document::{
         ContentBlock, Dimensions, Document, Rect, TableBlock, TableCell, TableRow, TextBlock,
@@ -13,7 +12,11 @@ use std::io::Cursor;
 use zip::ZipArchive;
 
 /// Parse a ZIP archive and return a document structure representing the file listing.
-pub async fn parse(_context: ParseContext, data: Bytes) -> Result<Document> {
+///
+/// # Errors
+///
+/// Returns an error if the ZIP archive is malformed or cannot be read.
+pub fn parse(_context: ParseContext, data: Bytes) -> Result<Document> {
     let reader = Cursor::new(data);
     let mut archive = ZipArchive::new(reader).map_err(|e| Error::ParseError(e.to_string()))?;
 
@@ -62,11 +65,13 @@ pub async fn parse(_context: ParseContext, data: Bytes) -> Result<Document> {
     let mut document = Document::new();
     let mut page = prism_core::document::Page::new(1, Dimensions::LETTER);
 
+    #[allow(clippy::cast_precision_loss)]
+    let table_height = rows.len() as f64 * 20.0;
     let table = TableBlock {
-        bounds: Rect::new(50.0, 50.0, 500.0, rows.len() as f64 * 20.0), // Approximate
+        bounds: Rect::new(50.0, 50.0, 500.0, table_height), // Approximate
         rows,
         column_count: 4,
-        style: Default::default(),
+        style: prism_core::document::ShapeStyle::default(),
         rotation: 0.0,
     };
 
@@ -79,12 +84,11 @@ pub async fn parse(_context: ParseContext, data: Bytes) -> Result<Document> {
 fn create_header_cell(text: &str) -> TableCell {
     let mut run = TextRun::new(text);
     run.style.bold = true;
-
     let block = TextBlock {
-        bounds: Default::default(),
+        bounds: Rect::default(),
         runs: vec![run],
         paragraph_style: None,
-        style: Default::default(),
+        style: prism_core::document::ShapeStyle::default(),
         rotation: 0.0,
     };
 
@@ -100,10 +104,10 @@ fn create_text_cell(text: &str) -> TableCell {
     let run = TextRun::new(text);
 
     let block = TextBlock {
-        bounds: Default::default(),
+        bounds: Rect::default(),
         runs: vec![run],
         paragraph_style: None,
-        style: Default::default(),
+        style: prism_core::document::ShapeStyle::default(),
         rotation: 0.0,
     };
 
@@ -117,10 +121,14 @@ fn create_text_cell(text: &str) -> TableCell {
 
 fn format_size(bytes: u64) -> String {
     if bytes < 1024 {
-        format!("{} B", bytes)
+        format!("{bytes} B")
     } else if bytes < 1024 * 1024 {
-        format!("{:.1} KB", bytes as f64 / 1024.0)
+        #[allow(clippy::cast_precision_loss)]
+        let kb = bytes as f64 / 1024.0;
+        format!("{kb:.1} KB")
     } else {
-        format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
+        #[allow(clippy::cast_precision_loss)]
+        let mb = bytes as f64 / (1024.0 * 1024.0);
+        format!("{mb:.1} MB")
     }
 }

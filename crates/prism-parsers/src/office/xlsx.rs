@@ -35,6 +35,7 @@ impl XlsxParser {
     }
 
     /// Check if data is an XLSX file by checking ZIP signature
+    #[must_use]
     fn is_xlsx_zip(data: &[u8]) -> bool {
         if data.len() < 4 {
             return false;
@@ -45,7 +46,7 @@ impl XlsxParser {
             && data[3] == 0x04
     }
 
-    /// Parse shared strings table
+    /// Parse shared strings table from `xl/sharedStrings.xml`
     fn parse_shared_strings(archive: &mut ZipArchive<Cursor<&[u8]>>) -> Vec<String> {
         let mut strings = Vec::new();
         if let Ok(mut file) = archive.by_name("xl/sharedStrings.xml") {
@@ -85,7 +86,7 @@ impl XlsxParser {
         strings
     }
 
-    /// Parse `workbook.xml` to get sheets
+    /// Parse `workbook.xml` to get sheets (name, target)
     fn parse_workbook_sheets(archive: &mut ZipArchive<Cursor<&[u8]>>) -> Vec<(String, String)> {
         let mut sheets = Vec::new();
         if let Ok(mut file) = archive.by_name("xl/workbook.xml") {
@@ -97,18 +98,19 @@ impl XlsxParser {
 
                 loop {
                     match reader.read_event_into(&mut buf) {
-                        Ok(quick_xml::events::Event::Empty(e))
-                        | Ok(quick_xml::events::Event::Start(e)) => {
+                        Ok(
+                            quick_xml::events::Event::Empty(e) | quick_xml::events::Event::Start(e),
+                        ) => {
                             if e.name().as_ref() == b"sheet" {
                                 let mut name = String::new();
                                 let mut rid = String::new();
                                 for attr in e.attributes().flatten() {
                                     match attr.key.as_ref() {
                                         b"name" => {
-                                            name = crate::office::utils::attr_value(&attr.value)
+                                            name = crate::office::utils::attr_value(&attr.value);
                                         }
                                         b"r:id" => {
-                                            rid = crate::office::utils::attr_value(&attr.value)
+                                            rid = crate::office::utils::attr_value(&attr.value);
                                         }
                                         _ => {}
                                     }
@@ -142,8 +144,9 @@ impl XlsxParser {
 
                 loop {
                     match reader.read_event_into(&mut buf) {
-                        Ok(quick_xml::events::Event::Empty(e))
-                        | Ok(quick_xml::events::Event::Start(e)) => {
+                        Ok(
+                            quick_xml::events::Event::Empty(e) | quick_xml::events::Event::Start(e),
+                        ) => {
                             if e.name().as_ref() == b"Relationship" {
                                 let mut id = String::new();
                                 let mut target = String::new();
@@ -151,7 +154,7 @@ impl XlsxParser {
                                     match attr.key.as_ref() {
                                         b"Id" => id = crate::office::utils::attr_value(&attr.value),
                                         b"Target" => {
-                                            target = crate::office::utils::attr_value(&attr.value)
+                                            target = crate::office::utils::attr_value(&attr.value);
                                         }
                                         _ => {}
                                     }
@@ -188,21 +191,22 @@ impl XlsxParser {
         }
     }
 
-    /// Parse a single sheet
+    /// Parse a single sheet XML content
     fn parse_sheet(
         xml: &str,
         shared_strings: &[String],
-        styles: &Option<ExcelStyles>,
-    ) -> Result<TableBlock> {
+        styles: Option<&ExcelStyles>,
+    ) -> TableBlock {
         Self::parse_sheet_clean(xml, shared_strings, styles)
     }
 
+    /// Clean implementation of sheet parsing
     #[allow(clippy::too_many_lines)]
     fn parse_sheet_clean(
         xml: &str,
         shared_strings: &[String],
-        styles: &Option<ExcelStyles>,
-    ) -> Result<TableBlock> {
+        styles: Option<&ExcelStyles>,
+    ) -> TableBlock {
         let mut reader = quick_xml::Reader::from_str(xml);
         reader.trim_text(true);
         let mut buf = Vec::new();
@@ -235,7 +239,7 @@ impl XlsxParser {
                                     b"s" => {
                                         s_idx = crate::office::utils::attr_value(&attr.value)
                                             .parse()
-                                            .unwrap_or(0)
+                                            .unwrap_or(0);
                                     }
                                     b"t" => t_type = crate::office::utils::attr_value(&attr.value),
                                     b"r" => r_ref = crate::office::utils::attr_value(&attr.value),
@@ -287,8 +291,6 @@ impl XlsxParser {
                                 } else {
                                     val
                                 }
-                            } else if t_type == "str" {
-                                val
                             } else {
                                 val
                             };
@@ -338,7 +340,7 @@ impl XlsxParser {
                                     // Row index extraction
                                     let parse_row = |s: &str| -> Option<usize> {
                                         let digits: String =
-                                            s.chars().filter(|c| c.is_ascii_digit()).collect();
+                                            s.chars().filter(char::is_ascii_digit).collect();
                                         digits.parse::<usize>().ok().map(|r| {
                                             if r > 0 {
                                                 r - 1
@@ -447,29 +449,29 @@ impl XlsxParser {
         // We have (r, c) where c is the original index.
         // Sorting removals: by row, then by col DESCENDING.
         cells_to_remove.sort_by(|a, b| {
-            if a.0 != b.0 {
-                a.0.cmp(&b.0)
-            } else {
+            if a.0 == b.0 {
                 b.1.cmp(&a.1) // Descending column
+            } else {
+                a.0.cmp(&b.0)
             }
         });
         cells_to_remove.dedup();
 
         for (r, c) in cells_to_remove {
-            if r < rows.len() {
-                if c < rows[r].cells.len() {
-                    rows[r].cells.remove(c);
+            if let Some(row) = rows.get_mut(r) {
+                if c < row.cells.len() {
+                    row.cells.remove(c);
                 }
             }
         }
 
-        Ok(TableBlock {
+        TableBlock {
             bounds: prism_core::document::Rect::default(),
             rows,
             column_count: max_col,
             style: prism_core::document::ShapeStyle::default(),
             rotation: 0.0,
-        })
+        }
     }
 }
 
@@ -505,7 +507,7 @@ impl Parser for XlsxParser {
 
         let reader = Cursor::new(data.as_ref());
         let mut archive =
-            ZipArchive::new(reader).map_err(|e| Error::ParseError(format!("ZIP error: {}", e)))?;
+            ZipArchive::new(reader).map_err(|e| Error::ParseError(format!("ZIP error: {e}")))?;
 
         // 1. Parse Shared Strings
         let shared_strings = Self::parse_shared_strings(&mut archive);
@@ -553,35 +555,31 @@ impl Parser for XlsxParser {
                 // Usually relation target is from xl/ directory context if workbook is in xl/.
                 // Let's assume standard structure: xl/worksheets/sheetN.xml
                 // We should handle path joining properly if possible, but for now simple concat.
-                let zip_path = if target.starts_with('/') {
-                    target.trim_start_matches('/').to_string()
+                let zip_path = if let Some(stripped) = target.strip_prefix('/') {
+                    stripped.to_string()
                 } else {
-                    format!("xl/{}", target)
+                    format!("xl/{target}")
                 };
 
-                debug!("Processing sheet '{}' at {}", name, zip_path);
+                debug!("Processing sheet '{name}' at {zip_path}");
 
                 if let Ok(mut sheet_file) = archive.by_name(&zip_path) {
                     let mut xml = String::new();
                     if sheet_file.read_to_string(&mut xml).is_ok() {
-                        match Self::parse_sheet(&xml, &shared_strings, &styles) {
-                            Ok(table) => {
-                                let mut page_meta = PageMetadata::default();
-                                page_meta.label = Some(name.clone());
+                        let table = Self::parse_sheet(&xml, &shared_strings, styles.as_ref());
+                        let page_meta = PageMetadata {
+                            label: Some(name.clone()),
+                            ..PageMetadata::default()
+                        };
 
-                                #[allow(clippy::cast_possible_truncation)]
-                                pages.push(Page {
-                                    number: (i + 1) as u32,
-                                    dimensions: Dimensions::LETTER,
-                                    content: vec![ContentBlock::Table(table)],
-                                    metadata: page_meta,
-                                    annotations: vec![],
-                                });
-                            }
-                            Err(e) => {
-                                warn!("Failed to parse sheet {}: {}", name, e);
-                            }
-                        }
+                        #[allow(clippy::cast_possible_truncation)]
+                        pages.push(Page {
+                            number: (i + 1) as u32,
+                            dimensions: Dimensions::LETTER,
+                            content: vec![ContentBlock::Table(table)],
+                            metadata: page_meta,
+                            annotations: vec![],
+                        });
                     }
                 } else {
                     warn!("Could not find sheet file in zip: {}", zip_path);
@@ -593,7 +591,7 @@ impl Parser for XlsxParser {
         if let Some(ref f) = context.filename {
             metadata.title = Some(f.clone());
         }
-        #[allow(clippy::cast_possible_truncation)]
+        #[allow(clippy::cast_possible_wrap)]
         metadata.add_custom("excel_sheet_count", sheets.len() as i64);
 
         let mut doc = Document::builder().metadata(metadata).build();
@@ -653,29 +651,30 @@ mod tests {
         let mut styles = ExcelStyles::default();
         styles.cell_xfs.push(CellXf::default()); // Index 0 (Default)
 
-        let mut style1 = CellXf::default();
-        style1.font_id = 0;
-        styles.cell_xfs.push(style1); // Index 1
+        let xf1 = CellXf {
+            font_id: 0,
+            ..CellXf::default()
+        };
+        styles.cell_xfs.push(xf1); // Index 1
         styles.fonts.push(ExcelFont {
             name: "Arial".to_string(),
             size: 12.0,
             color: Some("#FF0000".to_string()),
-            ..Default::default()
+            ..ExcelFont::default()
         });
 
-        let mut style2 = CellXf::default();
-        style2.fill_id = 0;
-        styles.cell_xfs.push(style2); // Index 2
+        let xf2 = CellXf {
+            fill_id: 0,
+            ..CellXf::default()
+        };
+        styles.cell_xfs.push(xf2); // Index 2
         styles.fills.push(ExcelFill {
             pattern_type: "solid".to_string(),
             fg_color: Some("#00FF00".to_string()),
-            ..Default::default()
+            ..ExcelFill::default()
         });
 
-        let result = XlsxParser::parse_sheet_clean(xml, &shared_strings, &Some(styles));
-        assert!(result.is_ok());
-
-        let table = result.unwrap();
+        let table = XlsxParser::parse_sheet_clean(xml, &shared_strings, Some(&styles));
         assert_eq!(table.rows.len(), 2);
 
         // Check Row 1
@@ -733,9 +732,7 @@ mod tests {
         let shared_strings = vec![];
         let styles = None;
 
-        let result = XlsxParser::parse_sheet_clean(xml, &shared_strings, &styles);
-        assert!(result.is_ok());
-        let table = result.unwrap();
+        let table = XlsxParser::parse_sheet_clean(xml, &shared_strings, styles);
 
         assert_eq!(table.rows.len(), 2);
 

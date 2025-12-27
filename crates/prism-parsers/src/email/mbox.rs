@@ -8,7 +8,8 @@ use bytes::Bytes;
 use mail_parser::MessageParser;
 use prism_core::{
     document::{
-        ContentBlock, Dimensions, Document, Page, Rect, ShapeStyle, TextBlock, TextRun, TextStyle,
+        ContentBlock, Dimensions, Document, Page, PageMetadata, Rect, ShapeStyle, TextBlock,
+        TextRun, TextStyle,
     },
     error::{Error, Result},
     format::Format,
@@ -29,12 +30,12 @@ impl MboxParser {
     }
 
     /// Format email headers as text content
-    fn format_email_header(&self, label: &str, value: &str) -> TextRun {
+    fn format_email_header(label: &str, value: &str) -> TextRun {
         TextRun {
-            text: format!("{}: {}\n", label, value),
+            text: format!("{label}: {value}\n"),
             style: TextStyle {
                 bold: matches!(label, "From" | "To" | "Subject"),
-                ..Default::default()
+                ..TextStyle::default()
             },
             bounds: None,
             char_positions: None,
@@ -42,7 +43,7 @@ impl MboxParser {
     }
 
     /// Parse a single message from MBOX format
-    fn parse_message(&self, message_data: &[u8]) -> Result<Vec<TextRun>> {
+    fn parse_message(message_data: &[u8]) -> Result<Vec<TextRun>> {
         let message = MessageParser::default()
             .parse(message_data)
             .ok_or_else(|| Error::ParseError("Failed to parse message".to_string()))?;
@@ -55,28 +56,26 @@ impl MboxParser {
                 .first()
                 .map(|addr| {
                     if let Some(name) = &addr.name {
-                        format!(
-                            "{} <{}>",
-                            name,
-                            addr.address
-                                .as_ref()
-                                .map(ToString::to_string)
-                                .unwrap_or_default()
-                        )
+                        let email = addr
+                            .address
+                            .as_ref()
+                            .map(std::string::ToString::to_string)
+                            .unwrap_or_default();
+                        format!("{name} <{email}>")
                     } else {
                         addr.address
                             .as_ref()
-                            .map(ToString::to_string)
+                            .map(std::string::ToString::to_string)
                             .unwrap_or_default()
                     }
                 })
                 .unwrap_or_default();
-            text_runs.push(self.format_email_header("From", &from_str));
+            text_runs.push(Self::format_email_header("From", &from_str));
         }
 
         // Extract Sent date
         if let Some(date) = message.date() {
-            text_runs.push(self.format_email_header("Sent", &date.to_rfc3339()));
+            text_runs.push(Self::format_email_header("Sent", &date.to_rfc3339()));
         }
 
         // Extract To header
@@ -85,37 +84,33 @@ impl MboxParser {
                 .iter()
                 .map(|addr| {
                     if let Some(name) = &addr.name {
-                        format!(
-                            "{} <{}>",
-                            name,
-                            addr.address
-                                .as_ref()
-                                .map(ToString::to_string)
-                                .unwrap_or_default()
-                        )
+                        let email = addr
+                            .address
+                            .as_ref()
+                            .map(std::string::ToString::to_string)
+                            .unwrap_or_default();
+                        format!("{name} <{email}>")
                     } else {
                         addr.address
                             .as_ref()
-                            .map(ToString::to_string)
+                            .map(std::string::ToString::to_string)
                             .unwrap_or_default()
                     }
                 })
                 .collect::<Vec<_>>()
                 .join(", ");
-            text_runs.push(self.format_email_header("To", &to_str));
+            text_runs.push(Self::format_email_header("To", &to_str));
         }
 
         // Extract Subject
         if let Some(subject) = message.subject() {
-            text_runs.push(self.format_email_header("Subject", subject));
+            text_runs.push(Self::format_email_header("Subject", subject));
         }
 
         // Add empty line separator
         text_runs.push(TextRun {
-            text: "
-"
-            .to_string(),
-            style: Default::default(),
+            text: "\n".to_string(),
+            style: TextStyle::default(),
             bounds: None,
             char_positions: None,
         });
@@ -131,7 +126,7 @@ impl MboxParser {
 
         text_runs.push(TextRun {
             text: body_text,
-            style: Default::default(),
+            style: TextStyle::default(),
             bounds: None,
             char_positions: None,
         });
@@ -163,18 +158,21 @@ impl Parser for MboxParser {
         data.starts_with(b"From ")
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if the MBOX data is invalid or no messages are found.
     async fn parse(&self, data: Bytes, context: ParseContext) -> Result<Document> {
         debug!(
             "Parsing MBOX mailbox, size: {} bytes, filename: {:?}",
             context.size, context.filename
         );
 
-        let content = String::from_utf8_lossy(&data);
+        let content_str = String::from_utf8_lossy(&data);
         let mut pages = Vec::new();
         let mut page_number = 1;
 
         // Split by "From " lines (MBOX delimiter)
-        let messages: Vec<&str> = content
+        let messages: Vec<&str> = content_str
             .split("\nFrom ")
             .enumerate()
             .filter_map(|(i, msg)| {
@@ -199,10 +197,10 @@ impl Parser for MboxParser {
             if let Some(msg_start) = message_text.find('\n') {
                 let message_data = &message_text[msg_start + 1..];
 
-                match self.parse_message(message_data.as_bytes()) {
+                match Self::parse_message(message_data.as_bytes()) {
                     Ok(text_runs) => {
                         let text_block = TextBlock {
-                            bounds: Rect::new(0.0, 0.0, 0.0, 0.0), // No layout info in MBOX
+                            bounds: Rect::default(), // No layout info in MBOX
                             runs: text_runs,
                             paragraph_style: None,
                             style: ShapeStyle::default(),
@@ -213,7 +211,7 @@ impl Parser for MboxParser {
                             number: page_number,
                             dimensions: Dimensions::LETTER,
                             content: vec![ContentBlock::Text(text_block)],
-                            metadata: Default::default(),
+                            metadata: PageMetadata::default(),
                             annotations: Vec::new(),
                         };
 
@@ -221,7 +219,7 @@ impl Parser for MboxParser {
                         page_number += 1;
                     }
                     Err(e) => {
-                        debug!("Failed to parse message in MBOX: {}", e);
+                        debug!("Failed to parse message in MBOX: {e}");
                         // Continue with other messages
                     }
                 }
@@ -240,7 +238,7 @@ impl Parser for MboxParser {
             metadata.title = Some(filename.clone());
         }
         metadata.add_custom("format", "MBOX");
-        metadata.add_custom("message_count", pages.len() as i64);
+        metadata.add_custom("message_count", i64::try_from(pages.len()).unwrap_or(0));
 
         // Create document
         let mut document = Document::new();

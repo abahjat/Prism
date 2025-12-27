@@ -25,19 +25,26 @@ use tracing::{debug, info, warn};
 pub struct DocParser;
 
 impl DocParser {
+    /// Create a new DOC parser
     #[must_use]
     pub fn new() -> Self {
         Self
     }
 
+    /// Check if the data has OLE2/CFB signature
+    #[must_use]
     fn is_ole2_file(data: &[u8]) -> bool {
-        data.len() >= 8 && &data[0..8] == &[0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1]
+        data.starts_with(&[0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1])
     }
 
+    /// Extract text parts from DOC stream
+    ///
+    /// # Errors
+    /// Returns an error if the OLE2 file cannot be opened or parsed.
     fn extract_text_from_doc(data: &[u8]) -> Result<Vec<String>> {
         let cursor = Cursor::new(data);
         let mut comp = CompoundFile::open(cursor)
-            .map_err(|e| Error::ParseError(format!("Failed to open OLE2 file: {}", e)))?;
+            .map_err(|e| Error::ParseError(format!("Failed to open OLE2 file: {e}")))?;
 
         // Try to find WordDocument stream
         let mut text_parts = Vec::new();
@@ -191,13 +198,16 @@ impl Parser for DocParser {
 pub struct XlsParser;
 
 impl XlsParser {
+    /// Create a new XLS parser
     #[must_use]
     pub fn new() -> Self {
         Self
     }
 
+    /// Check if the data has OLE2/CFB signature
+    #[must_use]
     fn is_ole2_file(data: &[u8]) -> bool {
-        data.len() >= 8 && &data[0..8] == &[0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1]
+        data.starts_with(&[0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1])
     }
 }
 
@@ -244,7 +254,7 @@ impl Parser for XlsParser {
         match calamine::open_workbook_auto_from_rs(cursor) {
             Ok(mut workbook) => {
                 // Use the same logic as XLSX parser
-                let sheet_names = workbook.sheet_names().to_vec();
+                let sheet_names = workbook.sheet_names().clone();
                 let mut pages = Vec::new();
 
                 for (idx, name) in sheet_names.iter().enumerate() {
@@ -255,7 +265,7 @@ impl Parser for XlsParser {
                         for row in range.rows() {
                             let mut row_text = String::new();
                             for cell in row {
-                                let cell_text = format!("{}\t", cell);
+                                let cell_text = format!("{cell}\t");
                                 row_text.push_str(&cell_text);
                             }
 
@@ -279,6 +289,7 @@ impl Parser for XlsParser {
                             }
                         }
 
+                        #[allow(clippy::cast_possible_truncation)]
                         let page = Page {
                             number: (idx + 1) as u32,
                             dimensions: Dimensions::LETTER,
@@ -315,6 +326,7 @@ impl Parser for XlsParser {
                 metadata.add_custom("legacy_format", true);
 
                 let page_count = pages.len();
+                #[allow(clippy::cast_possible_wrap)]
                 metadata.add_custom("sheet_count", page_count as i64);
 
                 let mut document = Document::builder().metadata(metadata).build();
@@ -325,8 +337,8 @@ impl Parser for XlsParser {
                 Ok(document)
             }
             Err(e) => {
-                warn!("Failed to parse XLS with calamine: {}", e);
-                Err(Error::ParseError(format!("Failed to parse XLS: {}", e)))
+                warn!("Failed to parse XLS with calamine: {e}");
+                Err(Error::ParseError(format!("Failed to parse XLS: {e}")))
             }
         }
     }
@@ -345,18 +357,21 @@ impl Parser for XlsParser {
     }
 }
 
-/// Legacy PPT parser (PowerPoint 97-2003)
+/// Legacy PPT parser (`PowerPoint` 97-2003)
 #[derive(Debug, Clone)]
 pub struct PptParser;
 
 impl PptParser {
+    /// Create a new PPT parser
     #[must_use]
     pub fn new() -> Self {
         Self
     }
 
+    /// Check if the data has OLE2/CFB signature
+    #[must_use]
     fn is_ole2_file(data: &[u8]) -> bool {
-        data.len() >= 8 && &data[0..8] == &[0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1]
+        data.starts_with(&[0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1])
     }
 }
 
@@ -400,7 +415,7 @@ impl Parser for PptParser {
 
         let cursor = Cursor::new(data.as_ref());
         let mut comp = CompoundFile::open(cursor)
-            .map_err(|e| Error::ParseError(format!("Failed to open PPT file: {}", e)))?;
+            .map_err(|e| Error::ParseError(format!("Failed to open PPT file: {e}")))?;
 
         // Extract basic text - PPT format is very complex
         let mut text_parts = Vec::new();
@@ -487,13 +502,14 @@ impl Parser for PptParser {
 }
 
 /// Extract printable text from binary data
+#[must_use]
 fn extract_printable_text(data: &[u8]) -> String {
     let mut text = String::new();
     let mut consecutive_printable = 0;
     let mut buffer = String::new();
 
     for &byte in data {
-        if byte >= 32 && byte < 127 {
+        if (32..127).contains(&byte) {
             // Printable ASCII
             buffer.push(byte as char);
             consecutive_printable += 1;

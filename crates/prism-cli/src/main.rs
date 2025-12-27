@@ -33,6 +33,7 @@ struct Args {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)] // Placeholder CLI - variants will be constructed when clap is integrated
 enum Command {
     Detect { file: PathBuf },
     Convert { input: PathBuf, output: PathBuf },

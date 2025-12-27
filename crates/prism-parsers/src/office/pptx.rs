@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-//! PPTX (Microsoft PowerPoint) parser
+//! `PPTX` (`Microsoft PowerPoint`) parser
 //!
-//! Parses PPTX files into the Unified Document Model.
+//! Parses `PPTX` files into the Unified Document Model.
 
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -15,7 +15,7 @@ use prism_core::{
 use quick_xml::events::Event;
 use quick_xml::Reader;
 use std::collections::HashMap;
-use std::io::Cursor;
+use std::io::{Cursor, Read};
 use tracing::{debug, info};
 use zip::ZipArchive;
 
@@ -26,9 +26,9 @@ use image::ImageReader;
 use prism_core::document::ImageResource;
 use std::collections::HashSet;
 
-/// PPTX parser
+/// `PPTX` parser
 ///
-/// Parses Microsoft PowerPoint PPTX files into the Unified Document Model.
+/// Parses `Microsoft PowerPoint` `PPTX` files into the Unified Document Model.
 /// Each slide becomes a separate page in the document.
 #[derive(Debug, Clone)]
 pub struct PptxParser;
@@ -73,7 +73,7 @@ impl PptxParser {
 
         loop {
             match reader.read_event_into(&mut buf) {
-                Ok(Event::Start(e)) | Ok(Event::Empty(e)) => {
+                Ok(Event::Start(e) | Event::Empty(e)) => {
                     match e.name().as_ref() {
                         b"p:sldId" => {
                             for attr in e.attributes().flatten() {
@@ -83,8 +83,8 @@ impl PptxParser {
                             }
                         }
                         b"p:sldSz" => {
-                            let mut width = 12192000.0;
-                            let mut height = 6858000.0;
+                            let mut width = 12_192_000.0;
+                            let mut height = 6_858_000.0;
 
                             for attr in e.attributes().flatten() {
                                 match attr.key.as_ref() {
@@ -114,8 +114,7 @@ impl PptxParser {
                 Ok(Event::Eof) => break,
                 Err(e) => {
                     return Err(Error::ParseError(format!(
-                        "XML error in presentation.xml: {}",
-                        e
+                        "XML error in presentation.xml: {e}"
                     )))
                 }
                 _ => {}
@@ -143,6 +142,12 @@ impl Parser for PptxParser {
         Self::is_pptx_zip(data)
     }
 
+    /// Parse a `PPTX` document
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the ZIP archive cannot be opened or if required XML files are missing or malformed.
+    #[allow(clippy::too_many_lines)]
     async fn parse(&self, data: Bytes, context: ParseContext) -> Result<Document> {
         debug!(
             "Parsing PPTX file, size: {} bytes, filename: {:?}",
@@ -152,16 +157,15 @@ impl Parser for PptxParser {
         // Open PPTX as ZIP archive
         let cursor = Cursor::new(data.as_ref());
         let mut archive = ZipArchive::new(cursor)
-            .map_err(|e| Error::ParseError(format!("Failed to open PPTX as ZIP: {}", e)))?;
+            .map_err(|e| Error::ParseError(format!("Failed to open PPTX as ZIP: {e}")))?;
 
         // 1. Read relationships to find slide filenames
         let mut rels_map: HashMap<String, String> = HashMap::new();
         if let Ok(mut rels_file) = archive.by_name("ppt/_rels/presentation.xml.rels") {
             let mut xml = String::new();
-            use std::io::Read;
-            rels_file.read_to_string(&mut xml).map_err(|e| {
-                Error::ParseError(format!("Failed to read relationship XML: {}", e))
-            })?;
+            rels_file
+                .read_to_string(&mut xml)
+                .map_err(|e| Error::ParseError(format!("Failed to read relationship XML: {e}")))?;
 
             if let Ok(rels) = Relationships::from_xml(&xml) {
                 // Determine target using rId
@@ -190,9 +194,8 @@ impl Parser for PptxParser {
         let (slide_rids, dimensions) =
             if let Ok(mut presentation_file) = archive.by_name("ppt/presentation.xml") {
                 let mut xml = String::new();
-                use std::io::Read;
                 presentation_file.read_to_string(&mut xml).map_err(|e| {
-                    Error::ParseError(format!("Failed to read presentation.xml: {}", e))
+                    Error::ParseError(format!("Failed to read presentation.xml: {e}"))
                 })?;
                 Self::parse_presentation_xml(&xml)?
             } else {
@@ -216,10 +219,9 @@ impl Parser for PptxParser {
 
         if let Ok(mut rels_file) = archive.by_name("ppt/_rels/presentation.xml.rels") {
             let mut xml = String::new();
-            use std::io::Read;
-            rels_file.read_to_string(&mut xml).map_err(|e| {
-                Error::ParseError(format!("Failed to read relationship XML: {}", e))
-            })?;
+            rels_file
+                .read_to_string(&mut xml)
+                .map_err(|e| Error::ParseError(format!("Failed to read relationship XML: {e}")))?;
             let rels = Relationships::from_xml(&xml)?;
 
             for rid in &slide_rids {
@@ -240,11 +242,10 @@ impl Parser for PptxParser {
         }
 
         if let Some(target) = theme_target {
-            let entry_name = format!("ppt/{}", target);
+            let entry_name = format!("ppt/{target}");
             let clean_name = entry_name.replace('\\', "/");
             if let Ok(mut theme_file) = archive.by_name(&clean_name) {
                 let mut theme_xml = Vec::new();
-                use std::io::Read;
                 if theme_file.read_to_end(&mut theme_xml).is_ok() {
                     if let Ok(theme) = crate::office::theme::parse_theme(&theme_xml) {
                         debug!("Parsed theme: {}", theme.name);
@@ -265,7 +266,7 @@ impl Parser for PptxParser {
             if let Some(target) = rid_to_target.get(rid) {
                 // Target is relative to ppt/, usually "slides/slide1.xml"
                 // Zip entry name should be "ppt/" + target
-                let entry_name = format!("ppt/{}", target);
+                let entry_name = format!("ppt/{target}");
                 // Handle cases where target might already start with / or be relative
                 // Usually it acts as "ppt/slides/slide1.xml" if target is "slides/slide1.xml"
 
@@ -275,9 +276,8 @@ impl Parser for PptxParser {
                 let clean_name = entry_name.replace('\\', "/");
 
                 if let Ok(mut file) = archive.by_name(&clean_name) {
-                    use std::io::Read;
                     file.read_to_string(&mut slide_xml).map_err(|e| {
-                        Error::ParseError(format!("Failed to read slide XML {}: {}", clean_name, e))
+                        Error::ParseError(format!("Failed to read slide XML {clean_name}: {e}"))
                     })?;
                 } else {
                     debug!("Could not find slide file: {}", clean_name);
@@ -289,8 +289,7 @@ impl Parser for PptxParser {
                     // Path format: ppt/slides/slide1.xml -> ppt/slides/_rels/slide1.xml.rels
                     let mut slide_rels = HashMap::new();
                     if let Some((dir, filename)) = clean_name.rsplit_once('/') {
-                        let rels_path = format!("{}/_rels/{}.rels", dir, filename);
-                        use std::io::Read; // Ensure Read is imported for ZipFile
+                        let rels_path = format!("{dir}/_rels/{filename}.rels");
 
                         // ... existing code ...
 
@@ -346,15 +345,26 @@ impl Parser for PptxParser {
                                     let mut img_data = Vec::new();
                                     if img_file.read_to_end(&mut img_data).is_ok() {
                                         // Determine mime type
-                                        let mime_type = if clean_path.ends_with(".png") {
-                                            "image/png"
-                                        } else if clean_path.ends_with(".jpg")
-                                            || clean_path.ends_with(".jpeg")
+                                        let path_for_ext = std::path::Path::new(&clean_path);
+                                        let mime_type = if path_for_ext
+                                            .extension()
+                                            .is_some_and(|ext| ext.eq_ignore_ascii_case("png"))
                                         {
+                                            "image/png"
+                                        } else if path_for_ext.extension().is_some_and(|ext| {
+                                            ext.eq_ignore_ascii_case("jpg")
+                                                || ext.eq_ignore_ascii_case("jpeg")
+                                        }) {
                                             "image/jpeg"
-                                        } else if clean_path.ends_with(".gif") {
+                                        } else if path_for_ext
+                                            .extension()
+                                            .is_some_and(|ext| ext.eq_ignore_ascii_case("gif"))
+                                        {
                                             "image/gif"
-                                        } else if clean_path.ends_with(".svg") {
+                                        } else if path_for_ext
+                                            .extension()
+                                            .is_some_and(|ext| ext.eq_ignore_ascii_case("svg"))
+                                        {
                                             "image/svg+xml"
                                         } else {
                                             "application/octet-stream"
@@ -388,6 +398,7 @@ impl Parser for PptxParser {
                         }
                     }
 
+                    #[allow(clippy::cast_possible_truncation)]
                     let page =
                         SlideParser::parse(&slide_xml, (i + 1) as u32, &slide_rels, dimensions);
                     pages.push(page);
@@ -401,6 +412,7 @@ impl Parser for PptxParser {
             metadata.title = Some(filename);
         }
         metadata.add_custom("format", "PPTX");
+        #[allow(clippy::cast_possible_wrap)]
         metadata.add_custom("slide_count", pages.len() as i64);
         if let Some(name) = theme_name {
             metadata.add_custom("theme_name", name);

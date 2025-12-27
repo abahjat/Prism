@@ -7,7 +7,10 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use cfb::CompoundFile;
 use prism_core::{
-    document::{ContentBlock, Dimensions, Document, Page, TextBlock, TextRun, TextStyle},
+    document::{
+        ContentBlock, Dimensions, Document, Page, PageMetadata, Rect, ShapeStyle, TextBlock,
+        TextRun, TextStyle,
+    },
     error::{Error, Result},
     format::Format,
     metadata::Metadata,
@@ -33,7 +36,7 @@ impl MsgParser {
             text: format!("{label}: {value}\n"),
             style: TextStyle {
                 bold: label == "From" || label == "To" || label == "Subject",
-                ..Default::default()
+                ..TextStyle::default()
             },
             bounds: None,
             char_positions: None,
@@ -82,7 +85,7 @@ impl MsgParser {
 
         for i in 0..100 {
             // Limit to 100 attachments for sanity
-            let attach_storage_name = format!("__attach_version1.0_{:08}", i);
+            let attach_storage_name = format!("__attach_version1.0_{i:08}");
 
             // Check if this storage exists (by trying to read a property inside it?)
             // Or just check if valid directory.
@@ -167,6 +170,9 @@ impl Parser for MsgParser {
         data.len() >= 8 && &data[0..8] == b"\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1"
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if the MSG data is invalid or cannot be opened as a CFB file.
     async fn parse(&self, data: Bytes, context: ParseContext) -> Result<Document> {
         debug!(
             "Parsing MSG email, size: {} bytes, filename: {:?}",
@@ -176,7 +182,7 @@ impl Parser for MsgParser {
         // Open as CFB file
         let cursor = Cursor::new(&data[..]);
         let mut comp = CompoundFile::open(cursor)
-            .map_err(|e| Error::ParseError(format!("Failed to open MSG as CFB: {}", e)))?;
+            .map_err(|e| Error::ParseError(format!("Failed to open MSG as CFB: {e}")))?;
 
         let mut text_runs = Vec::new();
 
@@ -222,7 +228,7 @@ impl Parser for MsgParser {
         // Add empty line separator
         text_runs.push(TextRun {
             text: "\n".to_string(),
-            style: Default::default(),
+            style: TextStyle::default(),
             bounds: None,
             char_positions: None,
         });
@@ -242,7 +248,7 @@ impl Parser for MsgParser {
 
         text_runs.push(TextRun {
             text: body_text.clone(),
-            style: Default::default(),
+            style: TextStyle::default(),
             bounds: None,
             char_positions: None,
         });
@@ -252,10 +258,10 @@ impl Parser for MsgParser {
 
         // Create text block
         let text_block = TextBlock {
-            bounds: prism_core::document::Rect::new(0.0, 0.0, 0.0, 0.0), // No layout info in MSG
+            bounds: Rect::default(), // No layout info in MSG
             runs: text_runs,
             paragraph_style: None,
-            style: Default::default(),
+            style: ShapeStyle::default(),
             rotation: 0.0,
         };
 
@@ -264,7 +270,7 @@ impl Parser for MsgParser {
             number: 1,
             dimensions: Dimensions::LETTER,
             content: vec![ContentBlock::Text(text_block)],
-            metadata: Default::default(),
+            metadata: PageMetadata::default(),
             annotations: Vec::new(),
             // attachments can also be linked here? No, they are document level in UDM.
         };
@@ -278,8 +284,10 @@ impl Parser for MsgParser {
             metadata.author = Some(sender);
         }
         metadata.add_custom("format", "MSG");
-        #[allow(clippy::cast_possible_wrap)]
-        metadata.add_custom("attachment_count", attachments.len() as i64);
+        metadata.add_custom(
+            "attachment_count",
+            i64::try_from(attachments.len()).unwrap_or(0),
+        );
 
         // Create document
         let mut document = Document::new();
@@ -382,12 +390,12 @@ mod tests {
             }
             filename_bytes.push(0);
             filename_bytes.push(0);
-            comp.create_stream(format!("{}/__substg1.0_3707001F", attach_storage))?
+            comp.create_stream(format!("{attach_storage}/__substg1.0_3707001F"))?
                 .write_all(&filename_bytes)?;
 
             // Content: __substg1.0_37010102 (Binary)
             let content = b"Hello Attachment";
-            comp.create_stream(format!("{}/__substg1.0_37010102", attach_storage))?
+            comp.create_stream(format!("{attach_storage}/__substg1.0_37010102"))?
                 .write_all(content)?;
         }
 
@@ -399,7 +407,7 @@ mod tests {
             format: parser.format(),
             filename: Some("test.msg".to_string()),
             size: data.len(),
-            options: Default::default(),
+            options: prism_core::parser::ParseOptions::default(),
         };
 
         let document = parser.parse(data, context).await?;

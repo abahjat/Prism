@@ -84,6 +84,11 @@ fn map_theme_index(idx: i64) -> Option<&'static str> {
 }
 
 impl ExcelStyles {
+    /// Parse styles from XML content
+    ///
+    /// # Errors
+    /// Returns an error if the XML is malformed or cannot be parsed.
+    #[allow(clippy::too_many_lines)]
     pub fn from_xml(xml: &str, theme: Option<&Theme>) -> Result<Self> {
         let mut reader = Reader::from_str(xml);
         reader.trim_text(true);
@@ -210,6 +215,7 @@ impl ExcelStyles {
     }
 
     /// Resolve a style by XF index/ID
+    #[must_use]
     pub fn get_style(&self, xf_id: usize) -> (prism_core::document::TextStyle, Option<String>) {
         use prism_core::document::TextStyle;
 
@@ -407,7 +413,6 @@ fn parse_fill(reader: &mut Reader<&[u8]>, theme: Option<&Theme>) -> Result<Excel
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashMap;
 
     #[test]
     fn test_excel_theme_color_resolution() {

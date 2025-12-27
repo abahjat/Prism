@@ -20,7 +20,7 @@ pub fn parse_cell_ref(ref_str: &str) -> Result<(usize, usize)> {
     let col_end = ref_str
         .chars()
         .position(|c| c.is_ascii_digit())
-        .ok_or_else(|| Error::ParseError(format!("Invalid cell reference: {}", ref_str)))?;
+        .ok_or_else(|| Error::ParseError(format!("Invalid cell reference: {ref_str}")))?;
 
     let col_str = &ref_str[..col_end];
     let row_str = &ref_str[col_end..];
@@ -28,7 +28,7 @@ pub fn parse_cell_ref(ref_str: &str) -> Result<(usize, usize)> {
     let col = excel_column_to_index(col_str)?;
     let row = row_str
         .parse::<usize>()
-        .map_err(|_| Error::ParseError(format!("Invalid row number: {}", row_str)))?
+        .map_err(|_| Error::ParseError(format!("Invalid row number: {row_str}")))?
         .saturating_sub(1); // Excel rows are 1-based
 
     Ok((row, col))
@@ -52,10 +52,7 @@ pub fn excel_column_to_index(col: &str) -> Result<usize> {
     let mut index = 0;
     for c in col.chars() {
         if !c.is_ascii_uppercase() {
-            return Err(Error::ParseError(format!(
-                "Invalid column character: {}",
-                c
-            )));
+            return Err(Error::ParseError(format!("Invalid column character: {c}")));
         }
         index = index * 26 + (c as usize - 'A' as usize + 1);
     }
@@ -121,7 +118,7 @@ pub fn resolve_word_color(
     if let Some(v) = val {
         if v != "auto" && !v.is_empty() {
             // Usually "FF0000" or "AABBCC"
-            return Some(format!("#{}", v));
+            return Some(format!("#{v}"));
         }
     }
 
@@ -131,7 +128,7 @@ pub fn resolve_word_color(
             if let Some(t) = tint {
                 return Some(apply_tint(&hex, t));
             }
-            return Some(format!("#{}", hex));
+            return Some(format!("#{hex}"));
         }
     }
 
@@ -141,7 +138,7 @@ pub fn resolve_word_color(
 /// Apply Excel tint/shade to a hex color
 fn apply_tint(hex: &str, tint: f64) -> String {
     if tint == 0.0 {
-        return format!("#{}", hex);
+        return format!("#{hex}");
     }
 
     let r = u8::from_str_radix(&hex[0..2], 16).unwrap_or(0);
@@ -149,13 +146,19 @@ fn apply_tint(hex: &str, tint: f64) -> String {
     let b = u8::from_str_radix(&hex[4..6], 16).unwrap_or(0);
 
     let apply = |c: u8| -> u8 {
-        let val = c as f64;
+        let val = f64::from(c);
         if tint > 0.0 {
             // Lighten: value * (1 - tint) + (255 * tint)
-            (val * (1.0 - tint) + (255.0 * tint)).round() as u8
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            {
+                (val * (1.0 - tint) + (255.0 * tint)).round() as u8
+            }
         } else {
             // Darken: value * (1 + tint)
-            (val * (1.0 + tint)).round() as u8
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            {
+                (val * (1.0 + tint)).round() as u8
+            }
         }
     };
 

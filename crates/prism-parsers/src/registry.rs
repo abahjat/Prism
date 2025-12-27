@@ -68,7 +68,7 @@ impl ParserRegistry {
     /// Get a parser for the given format and data
     ///
     /// This method checks if the parser can actually handle the specific file
-    /// by calling can_parse() before returning it.
+    /// by calling `can_parse()` before returning it.
     ///
     /// # Arguments
     ///

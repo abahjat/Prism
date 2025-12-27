@@ -38,6 +38,7 @@ impl DocxParser {
     }
 
     /// Check if data is a valid DOCX file (ZIP with word/document.xml)
+    #[must_use]
     fn is_docx_zip(data: &[u8]) -> bool {
         if data.len() < 4 || &data[0..2] != b"PK" {
             return false;
@@ -73,12 +74,14 @@ impl Parser for DocxParser {
         Self::is_docx_zip(data)
     }
 
+    #[allow(clippy::too_many_lines)]
     async fn parse(&self, data: Bytes, context: ParseContext) -> Result<Document> {
+        const PARAS_PER_PAGE: usize = 50;
         debug!("Parsing DOCX file: {:?}", context.filename);
 
         let cursor = Cursor::new(data.as_ref());
         let mut archive = ZipArchive::new(cursor)
-            .map_err(|e| Error::ParseError(format!("Failed to open DOCX ZIP: {}", e)))?;
+            .map_err(|e| Error::ParseError(format!("Failed to open DOCX ZIP: {e}")))?;
 
         // 1. Parse Relationships
         let mut _rels = Relationships::new();
@@ -118,9 +121,8 @@ impl Parser for DocxParser {
         match archive.by_name("word/document.xml") {
             Ok(mut file) => {
                 use std::io::Read;
-                file.read_to_string(&mut document_xml).map_err(|e| {
-                    Error::ParseError(format!("Failed to read document.xml: {}", e))
-                })?;
+                file.read_to_string(&mut document_xml)
+                    .map_err(|e| Error::ParseError(format!("Failed to read document.xml: {e}")))?;
             }
             Err(_) => return Err(Error::ParseError("word/document.xml not found".to_string())),
         }
@@ -146,7 +148,6 @@ impl Parser for DocxParser {
 
         // Count paragraphs for approximate pagination
         let mut para_count = 0;
-        const PARAS_PER_PAGE: usize = 50;
 
         loop {
             match reader.read_event_into(&mut buf) {
@@ -158,10 +159,6 @@ impl Parser for DocxParser {
                             current_paragraph_runs.clear();
                             current_paragraph_style = None;
                             para_count += 1;
-                        }
-                        b"w:pPr" => {
-                            // Paragraph properties (e.g. style)
-                            // We need to parse this eagerly to apply to the paragraph
                         }
                         b"w:pStyle" => {
                             for attr in e.attributes().flatten() {
@@ -193,18 +190,24 @@ impl Parser for DocxParser {
                                 match attr.key.as_ref() {
                                     b"w:val" => val = Some(utils::attr_value(&attr.value)),
                                     b"w:themeColor" => {
-                                        theme_color = Some(utils::attr_value(&attr.value))
+                                        theme_color = Some(utils::attr_value(&attr.value));
                                     }
                                     b"w:themeTint" => {
                                         if let Ok(v) = utils::attr_value(&attr.value).parse::<i64>()
                                         {
-                                            tint = Some(v as f64);
+                                            #[allow(clippy::cast_precision_loss)]
+                                            {
+                                                tint = Some(v as f64);
+                                            }
                                         }
                                     }
                                     b"w:themeShade" => {
                                         if let Ok(v) = utils::attr_value(&attr.value).parse::<i64>()
                                         {
-                                            shade = Some(v as f64);
+                                            #[allow(clippy::cast_precision_loss)]
+                                            {
+                                                shade = Some(v as f64);
+                                            }
                                         }
                                     }
                                     _ => {}
@@ -226,7 +229,7 @@ impl Parser for DocxParser {
                             if current_run_style.color.is_none() {
                                 if let Some(v) = val {
                                     if v != "auto" {
-                                        current_run_style.color = Some(format!("#{}", v));
+                                        current_run_style.color = Some(format!("#{v}"));
                                     }
                                 }
                             }
@@ -248,9 +251,6 @@ impl Parser for DocxParser {
                                 }
                             }
                         }
-                        b"w:t" => {
-                            // Text content
-                        }
                         b"w:tbl" => {
                             // Delegate to table parser
                             // Note: parse_table expects we just consumed <w:tbl>
@@ -258,7 +258,7 @@ impl Parser for DocxParser {
                                 Ok(table_block) => {
                                     current_page_content.push(ContentBlock::Table(table_block));
                                 }
-                                Err(e) => warn!("Failed to parse table: {}", e),
+                                Err(e) => warn!("Failed to parse table: {e}"),
                             }
                         }
                         _ => {}
@@ -294,7 +294,7 @@ impl Parser for DocxParser {
                                 };
                                 current_page_content.push(ContentBlock::Text(block));
 
-                                // Pagination logic
+                                #[allow(clippy::cast_possible_truncation)]
                                 if para_count >= PARAS_PER_PAGE {
                                     pages.push(Page {
                                         number: (pages.len() + 1) as u32,
@@ -339,7 +339,7 @@ impl Parser for DocxParser {
                 }
                 Ok(Event::Eof) => break,
                 Err(e) => {
-                    warn!("XML error: {}", e);
+                    warn!("XML error: {e}");
                     break;
                 }
                 _ => {}
@@ -349,6 +349,7 @@ impl Parser for DocxParser {
 
         // Add final page
         if !current_page_content.is_empty() {
+            #[allow(clippy::cast_possible_truncation)]
             pages.push(Page {
                 number: (pages.len() + 1) as u32,
                 dimensions: Dimensions::LETTER,
