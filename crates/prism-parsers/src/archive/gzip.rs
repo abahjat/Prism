@@ -14,6 +14,10 @@ use std::io::{Cursor, Read};
 // Import tar parse function to delegate if needed
 use super::tar;
 
+/// Parse a GZIP file.
+///
+/// If the uncompressed content is a TAR archive, it delegates to the TAR parser.
+/// Otherwise, it returns metadata about the compressed file.
 pub async fn parse(context: ParseContext, data: Bytes) -> Result<Document> {
     let cursor = Cursor::new(&data);
     let mut decoder = GzDecoder::new(cursor);

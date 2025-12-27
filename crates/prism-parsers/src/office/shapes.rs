@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+//! # Shapes Module
+//!
+//! Parsing logic for DrawingML shapes and text bodies.
+
 use crate::office::utils;
 use prism_core::document::{
     ContentBlock, Dimensions, ImageBlock, Rect, ShapeStyle, TextBlock, TextRun, TextStyle,
@@ -27,7 +31,7 @@ pub fn parse_shape(reader: &mut Reader<&[u8]>, buf: &mut Vec<u8>) -> Option<Cont
                     for attr in e.attributes().flatten() {
                         if attr.key.as_ref() == b"rot" {
                             if let Ok(val) = utils::attr_value(&attr.value).parse::<f64>() {
-                                rotation = val / 60000.0;
+                                rotation = val / 60_000.0;
                             }
                         }
                     }
@@ -177,7 +181,7 @@ pub fn parse_picture(
     }
 
     let image_path = if let Some(target) = rels.get(&embed_id) {
-        let mut path = target.clone();
+        let path = target.clone();
         if let Some(ext) = std::path::Path::new(&path)
             .extension()
             .and_then(|s| s.to_str())

@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+//! # Relationships Module
+//!
+//! Handles parsing and management of Office Open XML relationships.
+
 use crate::office::utils;
 use prism_core::error::{Error, Result};
 use quick_xml::events::Event;

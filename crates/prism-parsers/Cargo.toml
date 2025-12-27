@@ -60,6 +60,7 @@ lopdf = "0.38" # For metadata extraction and basic parsing
 # Email parsing
 mail-parser = "0.9" # EML/MBOX email parsing
 ical = "0.11"       # VCF/vCard parsing
+csv = "1.4.0"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }

@@ -23,6 +23,7 @@ use zip::ZipArchive;
 use crate::office::relationships::Relationships;
 use crate::office::styles::Styles;
 use crate::office::tables;
+use crate::office::theme::{parse_theme, Theme};
 use crate::office::utils;
 
 /// DOCX parser
@@ -90,13 +91,24 @@ impl Parser for DocxParser {
             }
         }
 
-        // 2. Parse Styles
+        // 2. Parse Theme (Start with Default)
+        let mut theme: Option<Theme> = None;
+        if let Ok(mut file) = archive.by_name("word/theme/theme1.xml") {
+            use std::io::Read;
+            let mut xml = Vec::new(); // Theme parser expects bytes, usually
+            file.read_to_end(&mut xml).ok();
+            if let Ok(t) = parse_theme(&xml) {
+                theme = Some(t);
+            }
+        }
+
+        // 3. Parse Styles
         let mut styles = Styles::new();
         if let Ok(mut file) = archive.by_name("word/styles.xml") {
             use std::io::Read;
             let mut xml = String::new();
             file.read_to_string(&mut xml).ok();
-            if let Ok(s) = Styles::from_xml(&xml) {
+            if let Ok(s) = Styles::from_xml(&xml, theme.as_ref()) {
                 styles = s;
             }
         }
@@ -172,11 +184,49 @@ impl Parser for DocxParser {
                         b"w:i" if in_run_props => current_run_style.italic = true,
                         b"w:u" if in_run_props => current_run_style.underline = true,
                         b"w:color" if in_run_props => {
+                            let mut val: Option<String> = None;
+                            let mut theme_color: Option<String> = None;
+                            let mut tint: Option<f64> = None;
+                            let mut shade: Option<f64> = None;
+
                             for attr in e.attributes().flatten() {
-                                if attr.key.as_ref() == b"w:val" {
-                                    let val = utils::attr_value(&attr.value);
-                                    if val != "auto" {
-                                        current_run_style.color = Some(format!("#{}", val));
+                                match attr.key.as_ref() {
+                                    b"w:val" => val = Some(utils::attr_value(&attr.value)),
+                                    b"w:themeColor" => {
+                                        theme_color = Some(utils::attr_value(&attr.value))
+                                    }
+                                    b"w:themeTint" => {
+                                        if let Ok(v) = utils::attr_value(&attr.value).parse::<i64>()
+                                        {
+                                            tint = Some(v as f64);
+                                        }
+                                    }
+                                    b"w:themeShade" => {
+                                        if let Ok(v) = utils::attr_value(&attr.value).parse::<i64>()
+                                        {
+                                            shade = Some(v as f64);
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                            }
+
+                            if let Some(t) = theme.as_ref() {
+                                if let Some(c) = utils::resolve_word_color(
+                                    val.as_deref(),
+                                    theme_color.as_deref(),
+                                    tint,
+                                    shade,
+                                    t,
+                                ) {
+                                    current_run_style.color = Some(c);
+                                }
+                            }
+                            // Fallback
+                            if current_run_style.color.is_none() {
+                                if let Some(v) = val {
+                                    if v != "auto" {
+                                        current_run_style.color = Some(format!("#{}", v));
                                     }
                                 }
                             }

@@ -68,7 +68,10 @@ async fn main() -> Result<()> {
         Command::Detect { file } => {
             println!("Detecting format of: {}", file.display());
             let data = std::fs::read(&file)?;
-            match prism_core::format::detect_format(&data, file.file_name().and_then(|s| s.to_str())) {
+            match prism_core::format::detect_format(
+                &data,
+                file.file_name().and_then(|s| s.to_str()),
+            ) {
                 Some(result) => {
                     println!("Format: {}", result.format.name);
                     println!("MIME type: {}", result.format.mime_type);
@@ -86,7 +89,11 @@ async fn main() -> Result<()> {
             println!("(Not yet implemented)");
         }
         Command::ExtractText { input, output } => {
-            println!("Extracting text from {} to {}", input.display(), output.display());
+            println!(
+                "Extracting text from {} to {}",
+                input.display(),
+                output.display()
+            );
             println!("(Not yet implemented)");
         }
         Command::Metadata { file } => {

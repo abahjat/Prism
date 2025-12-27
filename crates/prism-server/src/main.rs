@@ -80,7 +80,11 @@ impl AppState {
 
         // Log registered MIME types for debugging
         for parser in registry.all_parsers() {
-            info!("  - {}: {}", parser.metadata().name, parser.format().mime_type);
+            info!(
+                "  - {}: {}",
+                parser.metadata().name,
+                parser.format().mime_type
+            );
         }
 
         let renderer = HtmlRenderer::new();

@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+//! # Tables Module
+//!
+//! Parsing logic for Word and PowerPoint tables.
+
 use crate::office::utils;
 use prism_core::document::{ContentBlock, Rect, TableBlock, TableCell, TableRow, TextBlock};
 use prism_core::error::{Error, Result};

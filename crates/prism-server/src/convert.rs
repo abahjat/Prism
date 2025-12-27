@@ -60,10 +60,7 @@ pub async fn convert(
     let (filename, file_data) = extract_file(&mut multipart).await?;
     let file_size = file_data.len();
 
-    info!(
-        "Processing file: {:?}, size: {} bytes",
-        filename, file_size
-    );
+    info!("Processing file: {:?}, size: {} bytes", filename, file_size);
 
     // Validate file size
     if file_size > state.config.max_file_size {
@@ -87,9 +84,15 @@ pub async fn convert(
 
     // Check if parser exists and can handle this specific file
     let has_parser = state.parser_registry.has_parser(&format_result.format);
-    debug!("Parser available for {}: {}", format_result.format.mime_type, has_parser);
+    debug!(
+        "Parser available for {}: {}",
+        format_result.format.mime_type, has_parser
+    );
 
-    match state.parser_registry.get_parser_for_data(&format_result.format, &file_data) {
+    match state
+        .parser_registry
+        .get_parser_for_data(&format_result.format, &file_data)
+    {
         Some(parser) => {
             // Parser available - perform conversion
             info!(
@@ -113,7 +116,10 @@ pub async fn convert(
                     ApiError::InternalServerError(format!("Failed to parse document: {}", e))
                 })?;
 
-            debug!("Document parsed successfully, pages: {}", document.page_count());
+            debug!(
+                "Document parsed successfully, pages: {}",
+                document.page_count()
+            );
 
             // Render to HTML
             let render_context = RenderContext {
@@ -179,22 +185,21 @@ pub async fn convert(
 
 /// Extract file from multipart form data
 async fn extract_file(multipart: &mut Multipart) -> Result<(Option<String>, Vec<u8>), ApiError> {
-    while let Some(field) = multipart.next_field().await.map_err(|e| {
-        ApiError::BadRequest(format!("Failed to read multipart field: {}", e))
-    })? {
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(|e| ApiError::BadRequest(format!("Failed to read multipart field: {}", e)))?
+    {
         let name = field.name().unwrap_or("").to_string();
 
         if name == "file" {
             let filename = field.file_name().map(|s| s.to_string());
-            let data = field.bytes().await.map_err(|e| {
-                ApiError::BadRequest(format!("Failed to read file data: {}", e))
-            })?;
+            let data = field
+                .bytes()
+                .await
+                .map_err(|e| ApiError::BadRequest(format!("Failed to read file data: {}", e)))?;
 
-            debug!(
-                "Extracted file: {:?}, size: {} bytes",
-                filename,
-                data.len()
-            );
+            debug!("Extracted file: {:?}, size: {} bytes", filename, data.len());
 
             return Ok((filename, data.to_vec()));
         }
