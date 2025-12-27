@@ -35,6 +35,7 @@ uuid = { workspace = true }
 bytes = { workspace = true }
 chrono = { workspace = true }
 base64 = "0.22"
+tempfile = "3.10"
 
 # Image processing (use 0.25 to match pdfium-render)
 image = { version = "0.25", default-features = false, features = [

@@ -3,6 +3,8 @@
 
 /// BMP image parser
 pub mod bmp;
+/// External image converter (ImageMagick integration)
+pub mod converter;
 /// GIF image parser
 pub mod gif;
 /// JPEG image parser

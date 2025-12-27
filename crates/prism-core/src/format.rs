@@ -839,6 +839,26 @@ fn detect_by_extension(filename: &str) -> Option<DetectionResult> {
 
 /// Check if a ZIP file is actually an Office document
 fn detect_office_in_zip(data: &[u8]) -> Option<Format> {
+    // Check for ODF formats first - they have a "mimetype" file at the start
+    // ODF mimetype file is typically uncompressed and at the beginning of the ZIP
+    let mimetype_marker = b"mimetypeapplication/vnd.oasis.opendocument.";
+    if let Some(pos) = data
+        .windows(mimetype_marker.len())
+        .position(|w| w == mimetype_marker)
+    {
+        // Check what type of ODF document
+        let after_marker = &data[pos + mimetype_marker.len()..];
+        if after_marker.starts_with(b"text") {
+            return Some(Format::odt());
+        }
+        if after_marker.starts_with(b"spreadsheet") {
+            return Some(Format::ods());
+        }
+        if after_marker.starts_with(b"presentation") {
+            return Some(Format::odp());
+        }
+    }
+
     // Simple check: look for "[Content_Types].xml" which is present in OOXML
     // In a real implementation, you'd actually parse the ZIP
 

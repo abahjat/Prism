@@ -517,4 +517,11 @@ mod tests {
         let meta = parser.metadata();
         assert_eq!(meta.name, "ODP Parser");
     }
+
+    #[test]
+    fn test_odt_can_parse() {
+        let data = std::fs::read("../../test-files/testPhoneNumberExtractor.odt").unwrap();
+        let parser = OdtParser::new();
+        assert!(parser.can_parse(&data), "OdtParser should detect ODT file");
+    }
 }
