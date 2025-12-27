@@ -7,7 +7,10 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use cfb::CompoundFile;
 use prism_core::{
-    document::{ContentBlock, Dimensions, Document, Page, TextBlock, TextRun, TextStyle},
+    document::{
+        ContentBlock, Dimensions, Document, Page, PageMetadata, Rect, ShapeStyle, TextBlock,
+        TextRun, TextStyle,
+    },
     error::{Error, Result},
     format::Format,
     metadata::Metadata,
@@ -28,12 +31,12 @@ impl MsgParser {
     }
 
     /// Format email headers as text content
-    fn format_email_header(&self, label: &str, value: &str) -> TextRun {
+    fn format_email_header(label: &str, value: &str) -> TextRun {
         TextRun {
-            text: format!("{}: {}\n", label, value),
+            text: format!("{label}: {value}\n"),
             style: TextStyle {
                 bold: label == "From" || label == "To" || label == "Subject",
-                ..Default::default()
+                ..TextStyle::default()
             },
             bounds: None,
             char_positions: None,
@@ -42,7 +45,6 @@ impl MsgParser {
 
     /// Extract string property from MSG file
     fn extract_string_property(
-        &self,
         comp: &mut CompoundFile<Cursor<&[u8]>>,
         prop_path: &str,
     ) -> Option<String> {
@@ -72,7 +74,6 @@ impl MsgParser {
 
     /// Extract attachments from MSG file
     fn extract_attachments(
-        &self,
         comp: &mut CompoundFile<Cursor<&[u8]>>,
     ) -> Vec<prism_core::document::Attachment> {
         let mut attachments = Vec::new();
@@ -84,7 +85,7 @@ impl MsgParser {
 
         for i in 0..100 {
             // Limit to 100 attachments for sanity
-            let attach_storage_name = format!("__attach_version1.0_{:08}", i);
+            let attach_storage_name = format!("__attach_version1.0_{i:08}");
 
             // Check if this storage exists (by trying to read a property inside it?)
             // Or just check if valid directory.
@@ -95,22 +96,22 @@ impl MsgParser {
                 let base = &attach_storage_name;
 
                 // Filename: 0x3707 (Long) or 0x3704 (Short)
-                let filename = self
-                    .extract_string_property(comp, &format!("{}/__substg1.0_3707001F", base))
-                    .or_else(|| {
-                        self.extract_string_property(
-                            comp,
-                            &format!("{}/__substg1.0_3704001F", base),
-                        )
-                    })
-                    .unwrap_or_else(|| format!("attachment_{}", i));
+                let filename =
+                    Self::extract_string_property(comp, &format!("{base}/__substg1.0_3707001F"))
+                        .or_else(|| {
+                            Self::extract_string_property(
+                                comp,
+                                &format!("{base}/__substg1.0_3704001F"),
+                            )
+                        })
+                        .unwrap_or_else(|| format!("attachment_{i}"));
 
                 // Mime Type: 0x370E
                 let mime_type =
-                    self.extract_string_property(comp, &format!("{}/__substg1.0_370E001F", base));
+                    Self::extract_string_property(comp, &format!("{base}/__substg1.0_370E001F"));
 
                 // Data: 0x3701 (Binary - 0102)
-                let data_path = format!("{}/__substg1.0_37010102", base);
+                let data_path = format!("{base}/__substg1.0_37010102");
                 let data = if let Ok(mut stream) = comp.open_stream(&data_path) {
                     use std::io::Read;
                     let mut buf = Vec::new();
@@ -169,6 +170,9 @@ impl Parser for MsgParser {
         data.len() >= 8 && &data[0..8] == b"\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1"
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if the MSG data is invalid or cannot be opened as a CFB file.
     async fn parse(&self, data: Bytes, context: ParseContext) -> Result<Document> {
         debug!(
             "Parsing MSG email, size: {} bytes, filename: {:?}",
@@ -178,7 +182,7 @@ impl Parser for MsgParser {
         // Open as CFB file
         let cursor = Cursor::new(&data[..]);
         let mut comp = CompoundFile::open(cursor)
-            .map_err(|e| Error::ParseError(format!("Failed to open MSG as CFB: {}", e)))?;
+            .map_err(|e| Error::ParseError(format!("Failed to open MSG as CFB: {e}")))?;
 
         let mut text_runs = Vec::new();
 
@@ -187,53 +191,55 @@ impl Parser for MsgParser {
         // where XXXX is the property tag and YYYY is the data type
 
         // Sender name (0x0C1A - SENDER_NAME, 001F = Unicode string)
-        if let Some(sender_name) = self.extract_string_property(&mut comp, "__substg1.0_0C1A001F") {
-            text_runs.push(self.format_email_header("From", &sender_name));
-        } else if let Some(sender_email) =
-            self.extract_string_property(&mut comp, "__substg1.0_0C1F001F")
+        if let Some(sender_name) = Self::extract_string_property(&mut comp, "__substg1.0_0C1A001F")
         {
-            text_runs.push(self.format_email_header("From", &sender_email));
+            text_runs.push(Self::format_email_header("From", &sender_name));
+        } else if let Some(sender_email) =
+            Self::extract_string_property(&mut comp, "__substg1.0_0C1F001F")
+        {
+            text_runs.push(Self::format_email_header("From", &sender_email));
         }
 
         // Sent time (0x0039 - CLIENT_SUBMIT_TIME)
-        if let Some(sent_time) = self.extract_string_property(&mut comp, "__substg1.0_00390040") {
-            text_runs.push(self.format_email_header("Sent", &sent_time));
+        if let Some(sent_time) = Self::extract_string_property(&mut comp, "__substg1.0_00390040") {
+            text_runs.push(Self::format_email_header("Sent", &sent_time));
         }
 
         // Recipient (0x0E04 - DISPLAY_TO, 001F = Unicode string)
-        if let Some(to) = self.extract_string_property(&mut comp, "__substg1.0_0E04001F") {
-            text_runs.push(self.format_email_header("To", &to));
+        if let Some(to) = Self::extract_string_property(&mut comp, "__substg1.0_0E04001F") {
+            text_runs.push(Self::format_email_header("To", &to));
         }
 
         // CC (0x0E03 - DISPLAY_CC)
-        if let Some(cc) = self.extract_string_property(&mut comp, "__substg1.0_0E03001F") {
-            text_runs.push(self.format_email_header("Cc", &cc));
+        if let Some(cc) = Self::extract_string_property(&mut comp, "__substg1.0_0E03001F") {
+            text_runs.push(Self::format_email_header("Cc", &cc));
         }
 
         // BCC (0x0E02 - DISPLAY_BCC)
-        if let Some(bcc) = self.extract_string_property(&mut comp, "__substg1.0_0E02001F") {
-            text_runs.push(self.format_email_header("Bcc", &bcc));
+        if let Some(bcc) = Self::extract_string_property(&mut comp, "__substg1.0_0E02001F") {
+            text_runs.push(Self::format_email_header("Bcc", &bcc));
         }
 
         // Subject (0x0037 - SUBJECT, 001F = Unicode string)
-        if let Some(subject) = self.extract_string_property(&mut comp, "__substg1.0_0037001F") {
-            text_runs.push(self.format_email_header("Subject", &subject));
+        if let Some(subject) = Self::extract_string_property(&mut comp, "__substg1.0_0037001F") {
+            text_runs.push(Self::format_email_header("Subject", &subject));
         }
 
         // Add empty line separator
         text_runs.push(TextRun {
             text: "\n".to_string(),
-            style: Default::default(),
+            style: TextStyle::default(),
             bounds: None,
             char_positions: None,
         });
 
         // Body (0x1000 - BODY, 001F = Unicode string)
         let body_text = if let Some(body) =
-            self.extract_string_property(&mut comp, "__substg1.0_1000001F")
+            Self::extract_string_property(&mut comp, "__substg1.0_1000001F")
         {
             body
-        } else if let Some(body) = self.extract_string_property(&mut comp, "__substg1.0_10130102") {
+        } else if let Some(body) = Self::extract_string_property(&mut comp, "__substg1.0_10130102")
+        {
             // HTML body (0x1013, 0102 = binary) - simplified handling for now, raw string fallback
             body
         } else {
@@ -242,20 +248,20 @@ impl Parser for MsgParser {
 
         text_runs.push(TextRun {
             text: body_text.clone(),
-            style: Default::default(),
+            style: TextStyle::default(),
             bounds: None,
             char_positions: None,
         });
 
         // Extract Attachments
-        let attachments = self.extract_attachments(&mut comp);
+        let attachments = Self::extract_attachments(&mut comp);
 
         // Create text block
         let text_block = TextBlock {
-            bounds: prism_core::document::Rect::new(0.0, 0.0, 0.0, 0.0), // No layout info in MSG
+            bounds: Rect::default(), // No layout info in MSG
             runs: text_runs,
             paragraph_style: None,
-            style: prism_core::document::ShapeStyle::default(),
+            style: ShapeStyle::default(),
             rotation: 0.0,
         };
 
@@ -264,21 +270,24 @@ impl Parser for MsgParser {
             number: 1,
             dimensions: Dimensions::LETTER,
             content: vec![ContentBlock::Text(text_block)],
-            metadata: Default::default(),
+            metadata: PageMetadata::default(),
             annotations: Vec::new(),
             // attachments can also be linked here? No, they are document level in UDM.
         };
 
         // Create metadata
         let mut metadata = Metadata::default();
-        if let Some(subject) = self.extract_string_property(&mut comp, "__substg1.0_0037001F") {
+        if let Some(subject) = Self::extract_string_property(&mut comp, "__substg1.0_0037001F") {
             metadata.title = Some(subject);
         }
-        if let Some(sender) = self.extract_string_property(&mut comp, "__substg1.0_0C1A001F") {
+        if let Some(sender) = Self::extract_string_property(&mut comp, "__substg1.0_0C1A001F") {
             metadata.author = Some(sender);
         }
         metadata.add_custom("format", "MSG");
-        metadata.add_custom("attachment_count", attachments.len() as i64);
+        metadata.add_custom(
+            "attachment_count",
+            i64::try_from(attachments.len()).unwrap_or(0),
+        );
 
         // Create document
         let mut document = Document::new();
@@ -307,6 +316,8 @@ impl Parser for MsgParser {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use prism_core::metadata::MetadataValue;
+    use std::io::{Cursor, Write};
 
     #[test]
     fn test_can_parse_msg() {
@@ -321,5 +332,116 @@ mod tests {
         let metadata = parser.metadata();
         assert_eq!(metadata.name, "MSG Parser");
         assert!(!metadata.requires_sandbox);
+    }
+
+    #[tokio::test]
+    async fn test_parse_msg_content() -> Result<()> {
+        // Create an in-memory CFB file
+        let mut buffer = Cursor::new(Vec::new());
+        {
+            let mut comp =
+                CompoundFile::create(&mut buffer).map_err(|e| Error::ParseError(e.to_string()))?;
+
+            // 1. Sender Name: __substg1.0_0C1A001F (Unicode)
+            // "Sender Name" in UTF-16LE
+            let sender = "Sender Name".encode_utf16().collect::<Vec<u16>>();
+            let mut sender_bytes = Vec::new();
+            for c in sender {
+                sender_bytes.extend_from_slice(&c.to_le_bytes());
+            }
+            // Null terminator
+            sender_bytes.push(0);
+            sender_bytes.push(0);
+            comp.create_stream("__substg1.0_0C1A001F")?
+                .write_all(&sender_bytes)?;
+
+            // 2. Subject: __substg1.0_0037001F (Unicode)
+            let subject = "Test Subject".encode_utf16().collect::<Vec<u16>>();
+            let mut subject_bytes = Vec::new();
+            for c in subject {
+                subject_bytes.extend_from_slice(&c.to_le_bytes());
+            }
+            subject_bytes.push(0);
+            subject_bytes.push(0);
+            comp.create_stream("__substg1.0_0037001F")?
+                .write_all(&subject_bytes)?;
+
+            // 3. Body: __substg1.0_1000001F (Unicode)
+            let body = "This is the body.".encode_utf16().collect::<Vec<u16>>();
+            let mut body_bytes = Vec::new();
+            for c in body {
+                body_bytes.extend_from_slice(&c.to_le_bytes());
+            }
+            body_bytes.push(0);
+            body_bytes.push(0);
+            comp.create_stream("__substg1.0_1000001F")?
+                .write_all(&body_bytes)?;
+
+            // 4. Attachment
+            // Create storage for attachment 0
+            let attach_storage = "__attach_version1.0_00000000";
+            comp.create_storage(attach_storage)?;
+
+            // Filename: __substg1.0_3707001F inside attachment storage
+            let filename = "test.txt".encode_utf16().collect::<Vec<u16>>();
+            let mut filename_bytes = Vec::new();
+            for c in filename {
+                filename_bytes.extend_from_slice(&c.to_le_bytes());
+            }
+            filename_bytes.push(0);
+            filename_bytes.push(0);
+            comp.create_stream(format!("{attach_storage}/__substg1.0_3707001F"))?
+                .write_all(&filename_bytes)?;
+
+            // Content: __substg1.0_37010102 (Binary)
+            let content = b"Hello Attachment";
+            comp.create_stream(format!("{attach_storage}/__substg1.0_37010102"))?
+                .write_all(content)?;
+        }
+
+        // Reset cursor to beginning is not needed because we use the inner vec, but good practice if we were reading.
+        let data = Bytes::from(buffer.into_inner());
+
+        let parser = MsgParser::new();
+        let context = ParseContext {
+            format: parser.format(),
+            filename: Some("test.msg".to_string()),
+            size: data.len(),
+            options: prism_core::parser::ParseOptions::default(),
+        };
+
+        let document = parser.parse(data, context).await?;
+
+        // Verify Metadata
+        assert_eq!(document.metadata.title.as_deref(), Some("Test Subject"));
+        assert_eq!(document.metadata.author.as_deref(), Some("Sender Name"));
+
+        if let Some(MetadataValue::String(format_str)) = document.metadata.custom.get("format") {
+            assert_eq!(format_str, "MSG");
+        } else {
+            panic!("Expected format metadata string");
+        }
+
+        // Verify Content
+        let page = &document.pages[0];
+        if let ContentBlock::Text(text_block) = &page.content[0] {
+            let full_text = text_block
+                .runs
+                .iter()
+                .map(|r| r.text.as_str())
+                .collect::<String>();
+            assert!(full_text.contains("From: Sender Name"));
+            assert!(full_text.contains("Subject: Test Subject"));
+            assert!(full_text.contains("This is the body."));
+        } else {
+            panic!("Expected text block");
+        }
+
+        // Verify Attachments
+        assert_eq!(document.attachments.len(), 1);
+        assert_eq!(document.attachments[0].filename, "test.txt");
+        assert_eq!(document.attachments[0].data, b"Hello Attachment");
+
+        Ok(())
     }
 }

@@ -88,6 +88,9 @@ impl Parser for HtmlParser {
         false
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if the HTML file contains invalid UTF-8.
     async fn parse(&self, data: Bytes, context: ParseContext) -> Result<Document> {
         debug!(
             "Parsing HTML file, size: {} bytes, filename: {:?}",
@@ -96,7 +99,7 @@ impl Parser for HtmlParser {
 
         // Convert to string
         let html_content = String::from_utf8(data.to_vec())
-            .map_err(|e| Error::ParseError(format!("Invalid UTF-8 in HTML file: {}", e)))?;
+            .map_err(|e| Error::ParseError(format!("Invalid UTF-8 in HTML file: {e}")))?;
 
         // Extract title from HTML if present
         let title = Self::extract_title(&html_content);
@@ -104,7 +107,7 @@ impl Parser for HtmlParser {
         // For HTML, we'll store the raw HTML as a text block
         // The HTML renderer will handle displaying it properly
         let text_run = TextRun {
-            text: html_content.clone(),
+            text: html_content,
             style: TextStyle::default(),
             bounds: Some(Rect::default()),
             char_positions: Some(Vec::new()),
@@ -127,13 +130,15 @@ impl Parser for HtmlParser {
                 height: 1100.0,
             },
             content: vec![ContentBlock::Text(text_block)],
-            metadata: Default::default(),
+            metadata: prism_core::document::PageMetadata::default(),
             annotations: Vec::new(),
         };
 
         // Create metadata
-        let mut metadata = Metadata::default();
-        metadata.title = title.or_else(|| context.filename.clone());
+        let mut metadata = Metadata {
+            title: title.or_else(|| context.filename.clone()),
+            ..Metadata::default()
+        };
         metadata.add_custom("format", "HTML");
         metadata.add_custom("content_type", "text/html");
 

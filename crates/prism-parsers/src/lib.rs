@@ -56,11 +56,17 @@
 #![warn(clippy::pedantic)]
 #![allow(clippy::module_name_repetitions)]
 
+/// Email format parsers
 pub mod email;
+/// Image format parsers
 pub mod image;
+/// Office format parsers
 pub mod office;
+/// PDF format parsers
 pub mod pdf;
+/// Parser registry
 pub mod registry;
+/// Text format parsers
 pub mod text;
 
 // Re-export commonly used types
@@ -74,14 +80,8 @@ pub use text::{
     CsvParser, HtmlParser, JsonParser, LogParser, MarkdownParser, TextParser, XmlParser,
 };
 
+/// Archive format parsers
 pub mod archive;
-
-// Individual parser modules (to be implemented)
-// pub mod office;
-// pub mod pdf;
-// pub mod email;
-// pub mod archive;
-// pub mod cad;
 
 /// Prism parsers version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

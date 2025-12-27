@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //! # Prism Core
 //!
+//! Core types and traits for the Prism document conversion library.
+//! # Prism Core
+//!
 //! Core document model and traits for the Prism document processing SDK.
 //!
 //! This crate provides:
@@ -56,10 +59,9 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// ```rust
 /// use prism_core::init;
 ///
-/// fn main() {
+/// ///
 ///     init();
 ///     // ... use Prism
-/// }
 /// ```
 pub fn init() {
     tracing::debug!("Initializing Prism v{}", VERSION);

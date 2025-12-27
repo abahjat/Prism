@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+//! # Relationships Module
+//!
+//! Handles parsing and management of Office Open XML relationships.
+
 use crate::office::utils;
 use prism_core::error::{Error, Result};
 use quick_xml::events::Event;
@@ -8,23 +12,32 @@ use std::collections::HashMap;
 /// A relationship to an external or internal resource
 #[derive(Debug, Clone)]
 pub struct Relationship {
+    /// Unique identifier for the relationship
     pub id: String,
+    /// Target URI or path
     pub target: String,
+    /// Relationship type URI
     pub rel_type: String,
 }
 
 /// Store for document relationships
 #[derive(Debug, Clone, Default)]
 pub struct Relationships {
+    /// Map of relationship ID to Relationship object
     pub map: HashMap<String, Relationship>,
 }
 
 impl Relationships {
+    /// Create a new empty relationships store
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
     /// Parse relationships from XML content
+    ///
+    /// # Errors
+    /// Returns an error if the XML is malformed or cannot be parsed.
     pub fn from_xml(xml: &str) -> Result<Self> {
         let mut map = HashMap::new();
         let mut reader = Reader::from_str(xml);
@@ -34,7 +47,7 @@ impl Relationships {
 
         loop {
             match reader.read_event_into(&mut buf) {
-                Ok(Event::Empty(e)) | Ok(Event::Start(e)) => {
+                Ok(Event::Empty(e) | Event::Start(e)) => {
                     if e.name().as_ref() == b"Relationship" {
                         let mut id = None;
                         let mut target = None;
@@ -64,8 +77,7 @@ impl Relationships {
                 Ok(Event::Eof) => break,
                 Err(e) => {
                     return Err(Error::ParseError(format!(
-                        "XML error in relationships: {}",
-                        e
+                        "XML error in relationships: {e}"
                     )))
                 }
                 _ => {}
@@ -77,6 +89,7 @@ impl Relationships {
     }
 
     /// Get a relationship by ID
+    #[must_use]
     pub fn get(&self, id: &str) -> Option<&Relationship> {
         self.map.get(id)
     }

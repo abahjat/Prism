@@ -252,7 +252,7 @@ impl Format {
         }
     }
 
-    /// Create a new PPT format instance (PowerPoint 97-2003)
+    /// Create a new PPT format instance (`PowerPoint` 97-2003)
     #[must_use]
     pub fn ppt() -> Self {
         Self {
@@ -532,7 +532,7 @@ static SIGNATURES: &[FormatSignature] = &[
         offset: 0,
         format: || Format {
             mime_type: "application/x-cfb".to_string(),
-            extension: "".to_string(),
+            extension: String::new(),
             family: FormatFamily::Office,
             name: "OLE Compound File".to_string(),
             is_container: true,
@@ -565,6 +565,7 @@ static SIGNATURES: &[FormatSignature] = &[
 ];
 
 /// Extension to format mapping
+#[allow(clippy::type_complexity)]
 static EXTENSION_MAP: &[(&str, fn() -> Format)] = &[
     ("pdf", Format::pdf),
     ("docx", Format::docx),

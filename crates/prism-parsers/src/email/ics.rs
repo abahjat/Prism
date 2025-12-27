@@ -9,7 +9,8 @@ use ical::parser::ical::component::IcalCalendar;
 use ical::IcalParser;
 use prism_core::{
     document::{
-        ContentBlock, Dimensions, Document, Page, Rect, ShapeStyle, TextBlock, TextRun, TextStyle,
+        ContentBlock, Dimensions, Document, Page, PageMetadata, Rect, ShapeStyle, TextBlock,
+        TextRun, TextStyle,
     },
     error::{Error, Result},
     format::Format,
@@ -31,12 +32,12 @@ impl IcsParser {
     }
 
     /// Format event field as text content
-    fn format_field(&self, label: &str, value: &str, bold: bool) -> TextRun {
+    fn format_field(label: &str, value: &str, bold: bool) -> TextRun {
         TextRun {
-            text: format!("{}: {}\n", label, value),
+            text: format!("{label}: {value}\n"),
             style: TextStyle {
                 bold,
-                ..Default::default()
+                ..TextStyle::default()
             },
             bounds: None,
             char_positions: None,
@@ -44,7 +45,7 @@ impl IcsParser {
     }
 
     /// Parse a single calendar event
-    fn parse_event(&self, calendar: &IcalCalendar) -> Vec<TextRun> {
+    fn parse_event(calendar: &IcalCalendar) -> Vec<TextRun> {
         let mut text_runs = Vec::new();
 
         // Parse events from the calendar
@@ -53,22 +54,22 @@ impl IcsParser {
                 match prop.name.as_str() {
                     "SUMMARY" => {
                         if let Some(value) = prop.value.as_ref() {
-                            text_runs.push(self.format_field("Event", value, true));
+                            text_runs.push(Self::format_field("Event", value, true));
                         }
                     }
                     "DTSTART" => {
                         if let Some(value) = prop.value.as_ref() {
-                            text_runs.push(self.format_field("Start", value, false));
+                            text_runs.push(Self::format_field("Start", value, false));
                         }
                     }
                     "DTEND" => {
                         if let Some(value) = prop.value.as_ref() {
-                            text_runs.push(self.format_field("End", value, false));
+                            text_runs.push(Self::format_field("End", value, false));
                         }
                     }
                     "LOCATION" => {
                         if let Some(value) = prop.value.as_ref() {
-                            text_runs.push(self.format_field("Location", value, false));
+                            text_runs.push(Self::format_field("Location", value, false));
                         }
                     }
                     "DESCRIPTION" => {
@@ -77,14 +78,14 @@ impl IcsParser {
                                 text: "\nDescription:\n".to_string(),
                                 style: TextStyle {
                                     bold: true,
-                                    ..Default::default()
+                                    ..TextStyle::default()
                                 },
                                 bounds: None,
                                 char_positions: None,
                             });
                             text_runs.push(TextRun {
-                                text: format!("{}\n", value),
-                                style: Default::default(),
+                                text: format!("{value}\n"),
+                                style: TextStyle::default(),
                                 bounds: None,
                                 char_positions: None,
                             });
@@ -92,12 +93,12 @@ impl IcsParser {
                     }
                     "ORGANIZER" => {
                         if let Some(value) = prop.value.as_ref() {
-                            text_runs.push(self.format_field("Organizer", value, false));
+                            text_runs.push(Self::format_field("Organizer", value, false));
                         }
                     }
                     "ATTENDEE" => {
                         if let Some(value) = prop.value.as_ref() {
-                            text_runs.push(self.format_field("Attendee", value, false));
+                            text_runs.push(Self::format_field("Attendee", value, false));
                         }
                     }
                     _ => {} // Ignore other properties
@@ -107,7 +108,7 @@ impl IcsParser {
             // Add separator between events
             text_runs.push(TextRun {
                 text: "\n---\n\n".to_string(),
-                style: Default::default(),
+                style: TextStyle::default(),
                 bounds: None,
                 char_positions: None,
             });
@@ -141,6 +142,9 @@ impl Parser for IcsParser {
         text.contains("BEGIN:VCALENDAR")
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if the ICS data is invalid or no calendars are found.
     async fn parse(&self, data: Bytes, context: ParseContext) -> Result<Document> {
         debug!(
             "Parsing ICS iCalendar, size: {} bytes, filename: {:?}",
@@ -155,8 +159,7 @@ impl Parser for IcsParser {
             match calendar_result {
                 Ok(calendar) => calendars.push(calendar),
                 Err(e) => {
-                    debug!("Failed to parse iCalendar: {:?}", e);
-                    continue;
+                    debug!("Failed to parse iCalendar: {e:?}");
                 }
             }
         }
@@ -168,21 +171,25 @@ impl Parser for IcsParser {
         let mut pages = Vec::new();
         let mut calendar_title = None;
 
-        for (page_number, calendar) in calendars.iter().enumerate() {
-            let text_runs = self.parse_event(calendar);
+        for (page_offset, calendar) in calendars.iter().enumerate() {
+            let text_runs = Self::parse_event(calendar);
 
             // Save calendar title for metadata
-            if page_number == 0 {
+            if page_offset == 0 {
                 for prop in &calendar.properties {
                     if prop.name == "X-WR-CALNAME" || prop.name == "NAME" {
-                        calendar_title = prop.value.clone();
+                        if let Some(val) = &prop.value {
+                            calendar_title
+                                .get_or_insert_with(String::new)
+                                .clone_from(val);
+                        }
                         break;
                     }
                 }
             }
 
             let text_block = TextBlock {
-                bounds: Rect::new(0.0, 0.0, 0.0, 0.0), // No layout info in ICS
+                bounds: Rect::default(), // No layout info in ICS
                 runs: text_runs,
                 paragraph_style: None,
                 style: ShapeStyle::default(),
@@ -190,10 +197,10 @@ impl Parser for IcsParser {
             };
 
             let page = Page {
-                number: (page_number + 1) as u32,
+                number: u32::try_from(page_offset + 1).unwrap_or(u32::MAX),
                 dimensions: Dimensions::LETTER,
                 content: vec![ContentBlock::Text(text_block)],
-                metadata: Default::default(),
+                metadata: PageMetadata::default(),
                 annotations: Vec::new(),
             };
 
@@ -208,7 +215,7 @@ impl Parser for IcsParser {
             metadata.title = Some(filename.clone());
         }
         metadata.add_custom("format", "ICS");
-        metadata.add_custom("calendar_count", pages.len() as i64);
+        metadata.add_custom("calendar_count", i64::try_from(pages.len()).unwrap_or(0));
 
         // Create document
         let mut document = Document::new();

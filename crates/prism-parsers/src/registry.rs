@@ -32,6 +32,12 @@ impl ParserRegistry {
         registry.register(Arc::new(crate::archive::ArchiveParser::new(Format::tar())));
         registry.register(Arc::new(crate::archive::ArchiveParser::new(Format::gzip())));
 
+        // Register text parsers
+        registry.register(Arc::new(crate::text::CsvParser::new()));
+
+        // Register email parsers
+        registry.register(Arc::new(crate::email::MsgParser::new()));
+
         registry
     }
 
@@ -62,7 +68,7 @@ impl ParserRegistry {
     /// Get a parser for the given format and data
     ///
     /// This method checks if the parser can actually handle the specific file
-    /// by calling can_parse() before returning it.
+    /// by calling `can_parse()` before returning it.
     ///
     /// # Arguments
     ///

@@ -65,65 +65,11 @@ impl TextParser {
             .iter()
             .filter(|&&b| b < 32 && b != b'\n' && b != b'\r' && b != b'\t')
             .count();
+        #[allow(clippy::cast_precision_loss)]
         let ratio = control_char_count as f64 / data.len() as f64;
 
         // If more than 10% are non-text control characters, probably binary
         ratio < 0.1
-    }
-
-    /// Get the appropriate format based on file extension
-    fn format_for_extension(extension: &str) -> Format {
-        match extension.to_lowercase().as_str() {
-            "txt" => Format {
-                mime_type: "text/plain".to_string(),
-                extension: "txt".to_string(),
-                family: prism_core::format::FormatFamily::Text,
-                name: "Plain Text".to_string(),
-                is_container: false,
-            },
-            "log" => Format {
-                mime_type: "text/plain".to_string(),
-                extension: "log".to_string(),
-                family: prism_core::format::FormatFamily::Text,
-                name: "Log File".to_string(),
-                is_container: false,
-            },
-            "json" => Format {
-                mime_type: "application/json".to_string(),
-                extension: "json".to_string(),
-                family: prism_core::format::FormatFamily::Text,
-                name: "JSON".to_string(),
-                is_container: false,
-            },
-            "xml" => Format {
-                mime_type: "application/xml".to_string(),
-                extension: "xml".to_string(),
-                family: prism_core::format::FormatFamily::Text,
-                name: "XML".to_string(),
-                is_container: false,
-            },
-            "csv" => Format {
-                mime_type: "text/csv".to_string(),
-                extension: "csv".to_string(),
-                family: prism_core::format::FormatFamily::Text,
-                name: "CSV".to_string(),
-                is_container: false,
-            },
-            "md" | "markdown" => Format {
-                mime_type: "text/markdown".to_string(),
-                extension: "md".to_string(),
-                family: prism_core::format::FormatFamily::Text,
-                name: "Markdown".to_string(),
-                is_container: false,
-            },
-            _ => Format {
-                mime_type: "text/plain".to_string(),
-                extension: extension.to_string(),
-                family: prism_core::format::FormatFamily::Text,
-                name: "Text File".to_string(),
-                is_container: false,
-            },
-        }
     }
 }
 
@@ -150,6 +96,9 @@ impl Parser for TextParser {
         Self::is_likely_text(data)
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if the text file contains invalid UTF-8.
     async fn parse(&self, data: Bytes, context: ParseContext) -> Result<Document> {
         debug!(
             "Parsing text file, size: {} bytes, filename: {:?}",
@@ -158,11 +107,11 @@ impl Parser for TextParser {
 
         // Convert bytes to UTF-8 string
         let text = std::str::from_utf8(&data)
-            .map_err(|e| Error::ParseError(format!("Invalid UTF-8: {}", e)))?
+            .map_err(|e| Error::ParseError(format!("Invalid UTF-8: {e}")))?
             .to_string();
 
         let char_count = text.len();
-        debug!("Successfully decoded {} characters of text", char_count);
+        debug!("Successfully decoded {char_count} characters of text");
 
         // Create a single text run with all the content
         let text_run = TextRun {
@@ -206,11 +155,10 @@ impl Parser for TextParser {
             }
         }
 
-        metadata.add_custom("character_count", char_count as i64);
-        metadata.add_custom(
-            "line_count",
-            data.iter().filter(|&&b| b == b'\n').count() as i64,
-        );
+        metadata.add_custom("character_count", i64::try_from(char_count).unwrap_or(0));
+        #[allow(clippy::naive_bytecount)]
+        let line_count = data.iter().filter(|&&b| b == b'\n').count();
+        metadata.add_custom("line_count", i64::try_from(line_count).unwrap_or(0));
 
         // Build document
         let mut document = Document::builder().metadata(metadata).build();
@@ -242,6 +190,7 @@ impl Parser for TextParser {
 macro_rules! impl_text_parser {
     ($parser:ident, $format_fn:expr, $name:expr) => {
         impl $parser {
+            /// Create a new parser instance
             #[must_use]
             pub fn new() -> Self {
                 Self
@@ -286,7 +235,7 @@ macro_rules! impl_text_parser {
 
 impl_text_parser!(JsonParser, Format::json, "JSON Parser");
 impl_text_parser!(XmlParser, Format::xml, "XML Parser");
-impl_text_parser!(CsvParser, Format::csv, "CSV Parser");
+// CsvParser moved to csv.rs
 impl_text_parser!(MarkdownParser, Format::markdown, "Markdown Parser");
 impl_text_parser!(LogParser, Format::log, "Log Parser");
 
@@ -325,14 +274,14 @@ mod tests {
         let content = "Hello, world!\nThis is a test.";
         let data = Bytes::from(content);
 
-        let context = ParseContext {
+        let parse_context = ParseContext {
             format: parser.format(),
             filename: Some("test.txt".to_string()),
             size: data.len(),
-            options: Default::default(),
+            options: prism_core::parser::ParseOptions::default(),
         };
 
-        let result = parser.parse(data, context).await;
+        let result = parser.parse(data, parse_context).await;
         assert!(result.is_ok());
 
         let document = result.unwrap();
@@ -355,14 +304,14 @@ mod tests {
         let content = r#"{"name": "test", "value": 123}"#;
         let data = Bytes::from(content);
 
-        let context = ParseContext {
+        let parse_context = ParseContext {
             format: parser.format(),
             filename: Some("data.json".to_string()),
             size: data.len(),
-            options: Default::default(),
+            options: prism_core::parser::ParseOptions::default(),
         };
 
-        let result = parser.parse(data, context).await;
+        let result = parser.parse(data, parse_context).await;
         assert!(result.is_ok());
 
         let document = result.unwrap();
@@ -375,14 +324,14 @@ mod tests {
         let content = "Line 1\nLine 2\nLine 3\nLine 4\nLine 5";
         let data = Bytes::from(content);
 
-        let context = ParseContext {
+        let parse_context = ParseContext {
             format: parser.format(),
             filename: Some("test.log".to_string()),
             size: data.len(),
-            options: Default::default(),
+            options: prism_core::parser::ParseOptions::default(),
         };
 
-        let result = parser.parse(data, context).await;
+        let result = parser.parse(data, parse_context).await;
         assert!(result.is_ok());
 
         let document = result.unwrap();

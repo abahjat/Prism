@@ -6,7 +6,8 @@ use bytes::Bytes;
 use image::{ImageFormat, RgbaImage};
 use prism_core::{
     document::{
-        ContentBlock, Dimensions, Document, ImageBlock, ImageResource, Page, Rect, ShapeStyle,
+        ContentBlock, Dimensions, Document, ImageBlock, ImageResource, Page, PageMetadata, Rect,
+        ShapeStyle,
     },
     error::{Error, Result},
     format::Format,
@@ -56,6 +57,10 @@ impl Parser for TiffParser {
             || (data[0] == 0x4D && data[1] == 0x4D && data[2] == 0x00 && data[3] == 0x2A)
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if the TIFF data is invalid or cannot be decoded.
+    #[allow(clippy::too_many_lines)]
     async fn parse(&self, data: Bytes, context: ParseContext) -> Result<Document> {
         debug!(
             "Parsing TIFF image, size: {} bytes, filename: {:?}",
@@ -70,7 +75,7 @@ impl Parser for TiffParser {
         // Create TIFF decoder
         let cursor = Cursor::new(&data[..]);
         let mut decoder = Decoder::new(cursor)
-            .map_err(|e| Error::ParseError(format!("Failed to create TIFF decoder: {}", e)))?;
+            .map_err(|e| Error::ParseError(format!("Failed to create TIFF decoder: {e}")))?;
 
         let mut pages = Vec::new();
         let mut image_resources = Vec::new();
@@ -81,13 +86,13 @@ impl Parser for TiffParser {
             // Get dimensions for current page
             let (width, height) = decoder
                 .dimensions()
-                .map_err(|e| Error::ParseError(format!("Failed to get TIFF dimensions: {}", e)))?;
+                .map_err(|e| Error::ParseError(format!("Failed to get TIFF dimensions: {e}")))?;
 
-            debug!("TIFF page {} dimensions: {}x{}", page_number, width, height);
+            debug!("TIFF page {page_number} dimensions: {width}x{height}");
 
             // Decode the image data for this page
             let decoding_result = decoder.read_image().map_err(|e| {
-                Error::ParseError(format!("Failed to decode TIFF page {}: {}", page_number, e))
+                Error::ParseError(format!("Failed to decode TIFF page {page_number}: {e}"))
             })?;
 
             // Convert to RGBA image for consistent handling
@@ -106,16 +111,14 @@ impl Parser for TiffParser {
                         }
                         RgbaImage::from_raw(width, height, rgba_data).ok_or_else(|| {
                             Error::ParseError(format!(
-                                "Failed to create RGBA image from RGB U8 data for page {}",
-                                page_number
+                                "Failed to create RGBA image from RGB U8 data for page {page_number}"
                             ))
                         })?
                     } else if data.len() == pixel_count * 4 {
                         // Already RGBA
                         RgbaImage::from_raw(width, height, data).ok_or_else(|| {
                             Error::ParseError(format!(
-                                "Failed to create RGBA image from RGBA U8 data for page {}",
-                                page_number
+                                "Failed to create RGBA image from RGBA U8 data for page {page_number}"
                             ))
                         })?
                     } else {
@@ -127,8 +130,7 @@ impl Parser for TiffParser {
                         )
                         .ok_or_else(|| {
                             Error::ParseError(format!(
-                                "Failed to create RGBA image from grayscale U8 data for page {}",
-                                page_number
+                                "Failed to create RGBA image from grayscale U8 data for page {page_number}"
                             ))
                         })?
                     }
@@ -145,8 +147,7 @@ impl Parser for TiffParser {
                 )
                 .ok_or_else(|| {
                     Error::ParseError(format!(
-                        "Failed to create RGBA image from U16 data for page {}",
-                        page_number
+                        "Failed to create RGBA image from U16 data for page {page_number}"
                     ))
                 })?,
                 DecodingResult::U32(data) => RgbaImage::from_raw(
@@ -161,8 +162,7 @@ impl Parser for TiffParser {
                 )
                 .ok_or_else(|| {
                     Error::ParseError(format!(
-                        "Failed to create RGBA image from U32 data for page {}",
-                        page_number
+                        "Failed to create RGBA image from U32 data for page {page_number}"
                     ))
                 })?,
                 DecodingResult::U64(data) => RgbaImage::from_raw(
@@ -177,8 +177,7 @@ impl Parser for TiffParser {
                 )
                 .ok_or_else(|| {
                     Error::ParseError(format!(
-                        "Failed to create RGBA image from U64 data for page {}",
-                        page_number
+                        "Failed to create RGBA image from U64 data for page {page_number}"
                     ))
                 })?,
                 DecodingResult::F16(data) => RgbaImage::from_raw(
@@ -187,6 +186,7 @@ impl Parser for TiffParser {
                     data.into_iter()
                         .flat_map(|p| {
                             let float_val = p.to_f32();
+                            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
                             let byte = (float_val.clamp(0.0, 1.0) * 255.0) as u8;
                             [byte, byte, byte, 255]
                         })
@@ -194,8 +194,7 @@ impl Parser for TiffParser {
                 )
                 .ok_or_else(|| {
                     Error::ParseError(format!(
-                        "Failed to create RGBA image from F16 data for page {}",
-                        page_number
+                        "Failed to create RGBA image from F16 data for page {page_number}"
                     ))
                 })?,
                 DecodingResult::F32(data) => RgbaImage::from_raw(
@@ -203,6 +202,7 @@ impl Parser for TiffParser {
                     height,
                     data.into_iter()
                         .flat_map(|p| {
+                            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
                             let byte = (p.clamp(0.0, 1.0) * 255.0) as u8;
                             [byte, byte, byte, 255]
                         })
@@ -210,8 +210,7 @@ impl Parser for TiffParser {
                 )
                 .ok_or_else(|| {
                     Error::ParseError(format!(
-                        "Failed to create RGBA image from F32 data for page {}",
-                        page_number
+                        "Failed to create RGBA image from F32 data for page {page_number}"
                     ))
                 })?,
                 DecodingResult::F64(data) => RgbaImage::from_raw(
@@ -219,6 +218,7 @@ impl Parser for TiffParser {
                     height,
                     data.into_iter()
                         .flat_map(|p| {
+                            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
                             let byte = (p.clamp(0.0, 1.0) * 255.0) as u8;
                             [byte, byte, byte, 255]
                         })
@@ -226,8 +226,7 @@ impl Parser for TiffParser {
                 )
                 .ok_or_else(|| {
                     Error::ParseError(format!(
-                        "Failed to create RGBA image from F64 data for page {}",
-                        page_number
+                        "Failed to create RGBA image from F64 data for page {page_number}"
                     ))
                 })?,
                 DecodingResult::I8(data) => RgbaImage::from_raw(
@@ -235,15 +234,15 @@ impl Parser for TiffParser {
                     height,
                     data.into_iter()
                         .flat_map(|p| {
-                            let byte = ((p as i16 + 128) as u8);
+                            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                            let byte = (i32::from(p) + 128) as u8;
                             [byte, byte, byte, 255]
                         })
                         .collect(),
                 )
                 .ok_or_else(|| {
                     Error::ParseError(format!(
-                        "Failed to create RGBA image from I8 data for page {}",
-                        page_number
+                        "Failed to create RGBA image from I8 data for page {page_number}"
                     ))
                 })?,
                 DecodingResult::I16(data) => RgbaImage::from_raw(
@@ -251,15 +250,15 @@ impl Parser for TiffParser {
                     height,
                     data.into_iter()
                         .flat_map(|p| {
-                            let byte = ((p >> 8) as i8 as u8);
+                            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                            let byte = (p >> 8) as i8 as u8;
                             [byte, byte, byte, 255]
                         })
                         .collect(),
                 )
                 .ok_or_else(|| {
                     Error::ParseError(format!(
-                        "Failed to create RGBA image from I16 data for page {}",
-                        page_number
+                        "Failed to create RGBA image from I16 data for page {page_number}"
                     ))
                 })?,
                 DecodingResult::I32(data) => RgbaImage::from_raw(
@@ -267,15 +266,15 @@ impl Parser for TiffParser {
                     height,
                     data.into_iter()
                         .flat_map(|p| {
-                            let byte = ((p >> 24) as i8 as u8);
+                            #[allow(clippy::cast_sign_loss)]
+                            let byte = (p >> 24) as i8 as u8;
                             [byte, byte, byte, 255]
                         })
                         .collect(),
                 )
                 .ok_or_else(|| {
                     Error::ParseError(format!(
-                        "Failed to create RGBA image from I32 data for page {}",
-                        page_number
+                        "Failed to create RGBA image from I32 data for page {page_number}"
                     ))
                 })?,
                 DecodingResult::I64(data) => RgbaImage::from_raw(
@@ -283,15 +282,15 @@ impl Parser for TiffParser {
                     height,
                     data.into_iter()
                         .flat_map(|p| {
-                            let byte = ((p >> 56) as i8 as u8);
+                            #[allow(clippy::cast_sign_loss)]
+                            let byte = (p >> 56) as i8 as u8;
                             [byte, byte, byte, 255]
                         })
                         .collect(),
                 )
                 .ok_or_else(|| {
                     Error::ParseError(format!(
-                        "Failed to create RGBA image from I64 data for page {}",
-                        page_number
+                        "Failed to create RGBA image from I64 data for page {page_number}"
                     ))
                 })?,
             };
@@ -303,13 +302,12 @@ impl Parser for TiffParser {
                 .write_to(&mut Cursor::new(&mut png_data), ImageFormat::Png)
                 .map_err(|e| {
                     Error::ParseError(format!(
-                        "Failed to encode TIFF page {} as PNG: {}",
-                        page_number, e
+                        "Failed to encode TIFF page {page_number} as PNG: {e}"
                     ))
                 })?;
 
             // Create resource ID for the image
-            let resource_id = format!("img_page_{}", page_number);
+            let resource_id = format!("img_page_{page_number}");
 
             // Create image resource
             let image_resource = ImageResource {
@@ -322,12 +320,13 @@ impl Parser for TiffParser {
             };
 
             // Create image block
+            #[allow(clippy::cast_precision_loss)]
             let image_block = ImageBlock {
-                bounds: Rect::new(0.0, 0.0, width as f64, height as f64),
+                bounds: Rect::new(0.0, 0.0, f64::from(width), f64::from(height)),
                 resource_id: resource_id.clone(),
                 alt_text: None,
                 format: Some("image/tiff".to_string()),
-                original_size: Some(Dimensions::new(width as f64, height as f64)),
+                original_size: Some(Dimensions::new(f64::from(width), f64::from(height))),
                 style: ShapeStyle::default(),
                 rotation: 0.0,
             };
@@ -336,11 +335,11 @@ impl Parser for TiffParser {
             let page = Page {
                 number: page_number,
                 dimensions: Dimensions {
-                    width: width as f64,
-                    height: height as f64,
+                    width: f64::from(width),
+                    height: f64::from(height),
                 },
                 content: vec![ContentBlock::Image(image_block)],
-                metadata: Default::default(),
+                metadata: PageMetadata::default(),
                 annotations: Vec::new(),
             };
 
@@ -350,10 +349,9 @@ impl Parser for TiffParser {
             // Try to move to next page/directory
             if decoder.more_images() {
                 if let Err(e) = decoder.next_image() {
-                    warn!("Failed to move to next TIFF page: {}", e);
+                    warn!("Failed to move to next TIFF page: {e}");
                     return Err(Error::ParseError(format!(
-                        "Failed to move to next TIFF page: {}",
-                        e
+                        "Failed to move to next TIFF page: {e}"
                     )));
                 }
                 page_number += 1;
@@ -368,7 +366,7 @@ impl Parser for TiffParser {
             metadata.title = Some(filename.clone());
         }
         metadata.add_custom("format", "TIFF");
-        metadata.add_custom("page_count", pages.len() as i64);
+        metadata.add_custom("page_count", i64::try_from(pages.len()).unwrap_or(0));
 
         // Create document
         let mut document = Document::new();

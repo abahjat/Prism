@@ -11,7 +11,12 @@ use prism_core::{
 use std::io::Cursor;
 use tar::Archive;
 
-pub async fn parse(_context: ParseContext, data: Bytes) -> Result<Document> {
+/// Parse a TAR archive and return a document structure representing the file listing.
+///
+/// # Errors
+///
+/// Returns an error if the TAR archive is malformed or cannot be read.
+pub fn parse(_context: ParseContext, data: Bytes) -> Result<Document> {
     let reader = Cursor::new(data);
     let mut archive = Archive::new(reader);
 
@@ -38,16 +43,17 @@ pub async fn parse(_context: ParseContext, data: Bytes) -> Result<Document> {
         // Skip directories? Usually they appear as explicit entries in TAR.
         // We can include them.
 
-        let path = entry
-            .path()
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_else(|_| "[Unknown]".to_string());
+        let path = entry.path().map_or_else(
+            |_| "[Unknown]".to_string(),
+            |p| p.to_string_lossy().to_string(),
+        );
         let size = entry.size();
         let mtime = entry.header().mtime().unwrap_or(0);
+        let mtime_i64 = i64::try_from(mtime).unwrap_or(0);
 
         // Simple date formatting (manual implementation to avoid extra deps if possible, or use chrono)
         // Since we used chrono in zip.rs, we can use it here too if we interpret mtime as unix timestamp
-        let modified = match chrono::DateTime::from_timestamp(mtime as i64, 0) {
+        let modified = match chrono::DateTime::from_timestamp(mtime_i64, 0) {
             Some(dt) => dt.format("%Y-%m-%d %H:%M:%S").to_string(),
             None => "-".to_string(),
         };
@@ -65,11 +71,13 @@ pub async fn parse(_context: ParseContext, data: Bytes) -> Result<Document> {
     let mut document = Document::new();
     let mut page = prism_core::document::Page::new(1, Dimensions::LETTER);
 
+    #[allow(clippy::cast_precision_loss)]
+    let table_height = rows.len() as f64 * 20.0;
     let table = TableBlock {
-        bounds: Rect::new(50.0, 50.0, 500.0, rows.len() as f64 * 20.0),
+        bounds: Rect::new(50.0, 50.0, 500.0, table_height),
         rows,
         column_count: 3,
-        style: Default::default(),
+        style: prism_core::document::ShapeStyle::default(),
         rotation: 0.0,
     };
 
@@ -84,10 +92,10 @@ fn create_header_cell(text: &str) -> TableCell {
     run.style.bold = true;
 
     let block = TextBlock {
-        bounds: Default::default(),
+        bounds: Rect::default(),
         runs: vec![run],
         paragraph_style: None,
-        style: Default::default(),
+        style: prism_core::document::ShapeStyle::default(),
         rotation: 0.0,
     };
 
@@ -103,10 +111,10 @@ fn create_text_cell(text: &str) -> TableCell {
     let run = TextRun::new(text);
 
     let block = TextBlock {
-        bounds: Default::default(),
+        bounds: Rect::default(),
         runs: vec![run],
         paragraph_style: None,
-        style: Default::default(),
+        style: prism_core::document::ShapeStyle::default(),
         rotation: 0.0,
     };
 
@@ -120,10 +128,14 @@ fn create_text_cell(text: &str) -> TableCell {
 
 fn format_size(bytes: u64) -> String {
     if bytes < 1024 {
-        format!("{} B", bytes)
+        format!("{bytes} B")
     } else if bytes < 1024 * 1024 {
-        format!("{:.1} KB", bytes as f64 / 1024.0)
+        #[allow(clippy::cast_precision_loss)]
+        let kb = bytes as f64 / 1024.0;
+        format!("{kb:.1} KB")
     } else {
-        format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
+        #[allow(clippy::cast_precision_loss)]
+        let mb = bytes as f64 / (1024.0 * 1024.0);
+        format!("{mb:.1} MB")
     }
 }

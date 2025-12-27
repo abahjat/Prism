@@ -59,7 +59,7 @@ impl HtmlRenderer {
     }
 
     /// Render a text run with its formatting
-    fn render_text_run(&self, run: &prism_core::document::TextRun) -> String {
+    fn render_text_run(run: &prism_core::document::TextRun) -> String {
         let mut html = html_escape(&run.text);
         let style = &run.style;
 
@@ -71,7 +71,7 @@ impl HtmlRenderer {
         }
 
         if let Some(font_size) = style.font_size {
-            styles.push(format!("font-size: {}pt", font_size));
+            styles.push(format!("font-size: {font_size}pt"));
         }
 
         if let Some(ref color) = style.color {
@@ -84,19 +84,19 @@ impl HtmlRenderer {
 
         // Apply font weight/style/decoration
         if style.bold {
-            html = format!("<strong>{}</strong>", html);
+            html = format!("<strong>{html}</strong>");
         }
 
         if style.italic {
-            html = format!("<em>{}</em>", html);
+            html = format!("<em>{html}</em>");
         }
 
         if style.underline {
-            html = format!("<u>{}</u>", html);
+            html = format!("<u>{html}</u>");
         }
 
         if style.strikethrough {
-            html = format!("<s>{}</s>", html);
+            html = format!("<s>{html}</s>");
         }
 
         // Wrap in span with inline styles if needed
@@ -107,8 +107,44 @@ impl HtmlRenderer {
         html
     }
 
+    /// Generate CSS styles from `ShapeStyle`
+    fn render_shape_style(style: &prism_core::document::ShapeStyle) -> Vec<String> {
+        let mut styles = Vec::new();
+
+        if let Some(ref bg) = style.fill_color {
+            // Check if it's a gradient
+            if bg.contains("gradient") {
+                styles.push(format!("background: {};", html_escape(bg)));
+            } else {
+                styles.push(format!("background-color: {};", html_escape(bg)));
+            }
+        }
+
+        if let Some(ref stroke) = style.stroke_color {
+            styles.push(format!(
+                "border: {}pt solid {};",
+                style.stroke_width.unwrap_or(1.0),
+                html_escape(stroke)
+            ));
+        }
+
+        if let Some(ref shadow) = style.shadow {
+            styles.push(format!("box-shadow: {};", html_escape(shadow)));
+        }
+
+        if let Some(opacity) = style.opacity {
+            styles.push(format!("opacity: {opacity};"));
+        }
+
+        if let Some(z_index) = style.z_index {
+            styles.push(format!("z-index: {z_index};"));
+        }
+
+        styles
+    }
+
     /// Check if content contains embedded special viewers (PDF, single images)
-    fn has_embedded_viewer(&self, page: &prism_core::document::Page) -> bool {
+    fn has_embedded_viewer(page: &prism_core::document::Page) -> bool {
         // Check if this is a single-block page with PDF data or single image
         if page.content.len() == 1 {
             match &page.content[0] {
@@ -131,23 +167,17 @@ impl HtmlRenderer {
     /// Render all pages in the document
     fn render_pages(&self, document: &Document) -> String {
         // Check if this is an email or contact format (no page concept)
-        let is_email_format = document
-            .metadata
-            .custom
-            .get("format")
-            .and_then(|v| {
-                if let prism_core::metadata::MetadataValue::String(s) = v {
-                    Some(s.as_str())
-                } else {
-                    None
-                }
-            })
-            .map(|f| matches!(f, "EML" | "MSG" | "MBOX" | "VCF" | "ICS"))
-            .unwrap_or(false);
+        let is_email_format = document.metadata.custom.get("format").is_some_and(|v| {
+            if let prism_core::metadata::MetadataValue::String(s) = v {
+                matches!(s.as_str(), "EML" | "MSG" | "MBOX" | "VCF" | "ICS")
+            } else {
+                false
+            }
+        });
 
         // Check if this is a single-page document with embedded viewer
         if is_email_format
-            || (document.pages.len() == 1 && self.has_embedded_viewer(&document.pages[0]))
+            || (document.pages.len() == 1 && Self::has_embedded_viewer(&document.pages[0]))
         {
             // Render content directly without page wrapper
             document
@@ -220,11 +250,10 @@ impl HtmlRenderer {
             .join("\n");
 
         format!(
-            r#"<div class="page" style="width: {}pt; height: {}pt; position: relative; overflow: hidden; {}">
-        <div class="page-number" style="display: none;">Page {}</div>
-        {}
-    </div>"#,
-            width, height, background_style, page_num, content
+            r#"<div class="page" style="width: {width}pt; height: {height}pt; position: relative; overflow: hidden; {background_style}">
+        <div class="page-number" style="display: none;">Page {page_num}</div>
+        {content}
+    </div>"#
         )
     }
 
@@ -234,9 +263,9 @@ impl HtmlRenderer {
         document: &Document,
         table: &prism_core::document::TableBlock,
     ) -> String {
+        use std::fmt::Write;
         let mut html = String::from(r#"<table class="data-table">"#);
 
-        // Render table rows
         for row in &table.rows {
             html.push_str("<tr>");
 
@@ -244,25 +273,25 @@ impl HtmlRenderer {
                 // Handle col_span and row_span
                 let mut attrs = String::new();
                 if cell.col_span > 1 {
-                    attrs.push_str(&format!(r#" colspan="{}""#, cell.col_span));
+                    let _ = write!(attrs, r#" colspan="{}""#, cell.col_span);
                 }
                 if cell.row_span > 1 {
-                    attrs.push_str(&format!(r#" rowspan="{}""#, cell.row_span));
+                    let _ = write!(attrs, r#" rowspan="{}""#, cell.row_span);
                 }
 
-                html.push_str(&format!("<td{}>", attrs));
+                let _ = write!(html, "<td{attrs}>");
 
                 // Render cell content
                 for content_block in &cell.content {
                     match content_block {
                         ContentBlock::Text(text_block) => {
-                            let text = text_block
-                                .runs
-                                .iter()
-                                .map(|run| html_escape(&run.text))
-                                .collect::<Vec<_>>()
-                                .join("");
-                            html.push_str(&text);
+                            html.push_str(
+                                &text_block
+                                    .runs
+                                    .iter()
+                                    .map(|run| html_escape(&run.text))
+                                    .collect::<String>(),
+                            );
                         }
                         _ => {
                             // Recursively render other content types if needed
@@ -279,14 +308,23 @@ impl HtmlRenderer {
 
         html.push_str("</table>");
 
+        let style_css = Self::render_shape_style(&table.style).join(" ");
+
         // Wrap table in absolute div if it has bounds
         if table.bounds.width > 0.0 && table.bounds.height > 0.0 {
             format!(
-                r#"<div style="position: absolute; left: {}pt; top: {}pt; width: {}pt; height: {}pt;">{}</div>"#,
-                table.bounds.x, table.bounds.y, table.bounds.width, table.bounds.height, html
+                r#"<div style="position: absolute; left: {}pt; top: {}pt; width: {}pt; height: {}pt; {}">{}</div>"#,
+                table.bounds.x,
+                table.bounds.y,
+                table.bounds.width,
+                table.bounds.height,
+                style_css,
+                html
             )
-        } else {
+        } else if style_css.is_empty() {
             html
+        } else {
+            format!(r#"<div style="{style_css}">{html}</div>"#)
         }
     }
 
@@ -298,13 +336,13 @@ impl HtmlRenderer {
                 if text_block.runs.len() == 1
                     && text_block.runs[0].text.starts_with("__PDF_DATA__:")
                 {
-                    return self.render_pdf_viewer(&text_block.runs[0].text);
+                    return Self::render_pdf_viewer(&text_block.runs[0].text);
                 }
-                self.render_text_block(text_block)
+                Self::render_text_block(text_block)
             }
             ContentBlock::Image(image_block) => self.render_image_block(document, image_block),
             ContentBlock::Table(table_block) => self.render_table(document, table_block),
-            ContentBlock::Vector(vector_block) => self.render_vector(document, vector_block),
+            ContentBlock::Vector(vector_block) => Self::render_vector(document, vector_block),
             ContentBlock::Container(container_block) => {
                 self.render_container(document, container_block)
             }
@@ -312,7 +350,7 @@ impl HtmlRenderer {
     }
 
     /// Render embedded PDF viewer
-    fn render_pdf_viewer(&self, text: &str) -> String {
+    fn render_pdf_viewer(text: &str) -> String {
         let pdf_data = &text[13..]; // Skip "__PDF_DATA__:" prefix
         format!(
             r#"<div class="pdf-viewer-container">
@@ -374,14 +412,13 @@ impl HtmlRenderer {
     }
 
     /// Render a text block
-    fn render_text_block(&self, text_block: &prism_core::document::TextBlock) -> String {
+    fn render_text_block(text_block: &prism_core::document::TextBlock) -> String {
         // Render each text run with its formatting
         let formatted_text = text_block
             .runs
             .iter()
-            .map(|run| self.render_text_run(run))
-            .collect::<Vec<_>>()
-            .join("");
+            .map(Self::render_text_run)
+            .collect::<String>();
 
         // Determine positioning style
         let pos_style = if text_block.bounds.width > 0.0 && text_block.bounds.height > 0.0 {
@@ -397,28 +434,17 @@ impl HtmlRenderer {
         };
 
         // Apply rotation if needed
-        let transform_style = if text_block.rotation != 0.0 {
+        let transform_style = if text_block.rotation == 0.0 {
+            String::new()
+        } else {
             format!(
                 "transform: rotate({}deg); transform-origin: center;",
                 text_block.rotation
             )
-        } else {
-            String::new()
         };
 
-        // Apply styles (background, border) from the shape
-        let mut shape_styles = Vec::new();
-        if let Some(ref bg) = text_block.style.fill_color {
-            shape_styles.push(format!("background-color: {};", html_escape(bg)));
-        }
-
-        if let Some(ref stroke) = text_block.style.stroke_color {
-            shape_styles.push(format!(
-                "border: {}pt solid {};",
-                text_block.style.stroke_width.unwrap_or(1.0),
-                html_escape(stroke)
-            ));
-        }
+        // Apply visual styles
+        let shape_styles = Self::render_shape_style(&text_block.style);
 
         format!(
             r#"<div class="text-content" style="{pos_style} {transform_style} {}">{formatted_text}</div>"#,
@@ -444,12 +470,21 @@ impl HtmlRenderer {
                 if let Some(ref data) = img_resource.data {
                     let base64_data = general_purpose::STANDARD.encode(data);
                     let alt_text = image_block.alt_text.as_deref().unwrap_or("Image");
+                    let embed = self.config.embed_resources;
 
-                    format!(
-                        r#"<img src="data:{};base64,{base64_data}" alt="{}" style="width: 100%; height: 100%;" />"#,
-                        html_escape(&img_resource.mime_type),
-                        html_escape(alt_text)
-                    )
+                    if embed {
+                        format!(
+                            r#"<img src="data:{};base64,{base64_data}" alt="{}" style="width: 100%; height: 100%; object-fit: fill; display: block;" />"#,
+                            html_escape(&img_resource.mime_type),
+                            html_escape(alt_text)
+                        )
+                    } else {
+                        format!(
+                            r#"<img src="resource/{}" alt="{}" style="width: 100%; height: 100%; object-fit: fill; display: block;" />"#,
+                            html_escape(&img_resource.id),
+                            html_escape(alt_text)
+                        )
+                    }
                 } else {
                     String::from("<p><em>[Image data missing]</em></p>")
                 }
@@ -459,42 +494,51 @@ impl HtmlRenderer {
             }
         };
 
+        // Apply visual styles
+        let style_css = Self::render_shape_style(&image_block.style).join(" ");
+
         // Position wrapper
         if image_block.bounds.width > 0.0 && image_block.bounds.height > 0.0 {
             format!(
-                r#"<div class="image-container" style="position: absolute; left: {}pt; top: {}pt; width: {}pt; height: {}pt;">{img_tag}</div>"#,
+                r#"<div class="image-container" style="position: absolute; left: {}pt; top: {}pt; width: {}pt; height: {}pt; {style_css}">{img_tag}</div>"#,
                 image_block.bounds.x,
                 image_block.bounds.y,
                 image_block.bounds.width,
-                image_block.bounds.height
+                image_block.bounds.height,
             )
         } else {
-            format!(r#"<div class="image-container">{img_tag}</div>"#)
+            format!(r#"<div class="image-container" style="{style_css}">{img_tag}</div>"#)
         }
     }
 
     /// Render a vector block
-    fn render_vector(
-        &self,
-        _document: &Document,
-        vector: &prism_core::document::VectorBlock,
-    ) -> String {
+    fn render_vector(_document: &Document, vector: &prism_core::document::VectorBlock) -> String {
+        use std::fmt::Write;
         let mut paths_svg = String::new();
         for path in &vector.paths {
             let mut d = String::new();
             for cmd in &path.commands {
-                use prism_core::document::PathCommand::*;
+                use prism_core::document::PathCommand::{Close, CurveTo, LineTo, MoveTo, QuadTo};
                 match cmd {
-                    MoveTo(p) => d.push_str(&format!("M {} {} ", p.x, p.y)),
-                    LineTo(p) => d.push_str(&format!("L {} {} ", p.x, p.y)),
-                    CurveTo { cp1, cp2, end } => d.push_str(&format!(
-                        "C {} {} {} {} {} {} ",
-                        cp1.x, cp1.y, cp2.x, cp2.y, end.x, end.y
-                    )),
-                    QuadTo { cp, end } => {
-                        d.push_str(&format!("Q {} {} {} {} ", cp.x, cp.y, end.x, end.y))
+                    MoveTo(p) => {
+                        let _ = write!(d, "M {} {} ", p.x, p.y);
                     }
-                    Close => d.push_str("Z "),
+                    LineTo(p) => {
+                        let _ = write!(d, "L {} {} ", p.x, p.y);
+                    }
+                    CurveTo { cp1, cp2, end } => {
+                        let _ = write!(
+                            d,
+                            "C {} {} {} {} {} {} ",
+                            cp1.x, cp1.y, cp2.x, cp2.y, end.x, end.y
+                        );
+                    }
+                    QuadTo { cp, end } => {
+                        let _ = write!(d, "Q {} {} {} {} ", cp.x, cp.y, end.x, end.y);
+                    }
+                    Close => {
+                        d.push_str("Z ");
+                    }
                 }
             }
 
@@ -502,13 +546,13 @@ impl HtmlRenderer {
             let stroke = path.stroke.as_deref().unwrap_or("none");
             let stroke_width = path.stroke_width.unwrap_or(0.0);
 
-            paths_svg.push_str(&format!(
-                r#"<path d="{}" fill="{}" stroke="{}" stroke-width="{}" />"#,
+            let _ = write!(
+                paths_svg,
+                r#"<path d="{}" fill="{}" stroke="{}" stroke-width="{stroke_width}" />"#,
                 d.trim(),
                 html_escape(fill),
                 html_escape(stroke),
-                stroke_width
-            ));
+            );
         }
 
         // Wrap in SVG
@@ -524,7 +568,7 @@ impl HtmlRenderer {
                 vector.bounds.x, vector.bounds.y, vector.bounds.width, vector.bounds.height, svg
             )
         } else {
-            format!(r#"<div class="vector-block">{}</div>"#, svg)
+            format!(r#"<div class="vector-block">{svg}</div>"#)
         }
     }
 
@@ -551,7 +595,7 @@ impl HtmlRenderer {
                 content
             )
         } else {
-            format!(r#"<div class="container-block">{}</div>"#, content)
+            format!(r#"<div class="container-block">{content}</div>"#)
         }
     }
 }
@@ -577,6 +621,7 @@ impl Renderer for HtmlRenderer {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     async fn render(&self, document: &Document, _context: RenderContext) -> Result<Bytes> {
         let title = document
             .metadata
@@ -585,17 +630,19 @@ impl Renderer for HtmlRenderer {
             .unwrap_or("Untitled Document");
 
         // Check if this is a single-page document with embedded viewer
-        let has_embedded =
-            document.pages.len() == 1 && self.has_embedded_viewer(&document.pages[0]);
+        let _has_embedded =
+            document.pages.len() == 1 && Self::has_embedded_viewer(&document.pages[0]);
 
-        let html = format!(
-            r#"<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{}</title>
-    <style>
+        let viewport_meta = if self.config.responsive {
+            r#"<meta name="viewport" content="width=device-width, initial-scale=1.0">"#
+        } else {
+            ""
+        };
+
+        let custom_css = self.config.custom_css.as_deref().unwrap_or("");
+        let styles = if self.config.include_styles {
+            format!(
+                r"<style>
         body {{
             font-family: Arial, sans-serif;
             margin: 0;
@@ -656,7 +703,21 @@ impl Renderer for HtmlRenderer {
         .data-table tr:hover {{
             background-color: #f5f5f5;
         }}
-    </style>
+        {custom_css}
+    </style>"
+            )
+        } else {
+            String::new()
+        };
+
+        let html = format!(
+            r#"<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    {viewport_meta}
+    <title>{}</title>
+    {styles}
 </head>
 <body>
     <div class="container">
@@ -756,5 +817,56 @@ mod tests {
         let html = String::from_utf8(result.unwrap().to_vec()).unwrap();
         assert!(html.contains("Page 1"));
         assert!(html.contains("Page 2"));
+    }
+
+    #[tokio::test]
+    async fn test_render_with_styles() {
+        let renderer = HtmlRenderer::new();
+
+        let mut style = prism_core::document::ShapeStyle::default();
+        style.fill_color = Some("#FF0000".to_string());
+        style.stroke_color = Some("#000000".to_string());
+        style.stroke_width = Some(2.0);
+        style.shadow = Some("2px 2px 5px black".to_string());
+        style.opacity = Some(0.5);
+        style.z_index = Some(10);
+
+        let block = ContentBlock::Text(prism_core::document::TextBlock {
+            bounds: prism_core::document::Rect::new(0.0, 0.0, 100.0, 100.0),
+            runs: vec![prism_core::document::TextRun::new("Styled")],
+            paragraph_style: None,
+            style,
+            rotation: 0.0,
+        });
+
+        let page = Page {
+            number: 1,
+            dimensions: Dimensions::LETTER,
+            content: vec![block],
+            metadata: Default::default(),
+            annotations: vec![],
+        };
+
+        let document = Document::builder()
+            .metadata(Metadata::builder().title("Styled").build())
+            .page(page)
+            .build();
+
+        let context = RenderContext {
+            options: prism_core::render::RenderOptions::default(),
+            filename: None,
+        };
+
+        let result = renderer.render(&document, context).await;
+        assert!(result.is_ok());
+
+        let html = String::from_utf8(result.unwrap().to_vec()).unwrap();
+
+        // Check for CSS properties
+        assert!(html.contains("background-color: #FF0000"));
+        assert!(html.contains("border: 2pt solid #000000"));
+        assert!(html.contains("box-shadow: 2px 2px 5px black"));
+        assert!(html.contains("opacity: 0.5"));
+        assert!(html.contains("z-index: 10"));
     }
 }

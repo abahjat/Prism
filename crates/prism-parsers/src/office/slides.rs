@@ -1,16 +1,23 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+//! # Slides Module
+//!
+//! Functionality for parsing `PowerPoint` slides.
+
 use crate::office::shapes;
 use prism_core::document::{ContentBlock, Dimensions, Page, PageMetadata};
 use quick_xml::events::Event;
 use quick_xml::Reader;
 
+/// Parser for individual slides in a presentation.
 pub struct SlideParser;
 
 impl SlideParser {
-    pub fn parse(
+    /// Parse slide XML into a `Page`
+    #[must_use]
+    pub fn parse<S: std::hash::BuildHasher>(
         xml: &str,
         slide_num: u32,
-        rels: &std::collections::HashMap<String, String>,
+        rels: &std::collections::HashMap<String, String, S>,
         dimensions: Dimensions,
     ) -> Page {
         let mut reader = Reader::from_str(xml);
@@ -71,7 +78,7 @@ impl SlideParser {
             content,
             annotations: Vec::new(),
             metadata: PageMetadata {
-                label: Some(format!("Slide {}", slide_num)),
+                label: Some(format!("Slide {slide_num}")),
                 rotation: 0,
             },
         }

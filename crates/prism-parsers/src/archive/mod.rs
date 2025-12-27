@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+/// GZIP archive parser
 pub mod gzip;
+/// TAR archive parser
 pub mod tar;
+/// ZIP archive parser
 pub mod zip;
 
 use async_trait::async_trait;
@@ -19,6 +22,7 @@ pub struct ArchiveParser {
 
 impl ArchiveParser {
     /// Create a new archive parser for the specified format
+    #[must_use]
     pub fn new(format: Format) -> Self {
         Self { format }
     }
@@ -37,11 +41,11 @@ impl Parser for ArchiveParser {
     async fn parse(&self, data: Bytes, context: ParseContext) -> Result<Document> {
         // Delegate based on mime type
         if self.format.mime_type == "application/zip" {
-            return zip::parse(context, data).await;
+            return zip::parse(context, data);
         } else if self.format.mime_type == "application/x-tar" {
-            return tar::parse(context, data).await;
+            return tar::parse(context, data);
         } else if self.format.mime_type == "application/gzip" {
-            return gzip::parse(context, data).await;
+            return gzip::parse(context, &data);
         }
 
         Err(Error::UnsupportedFormat(format!(
@@ -73,7 +77,6 @@ mod tests {
     // Explicitly reference crates to avoid ambiguity with modules
     use ::flate2 as flate2_crate;
     use ::tar as tar_crate;
-    use ::zip as zip_crate;
 
     /*
     #[tokio::test]

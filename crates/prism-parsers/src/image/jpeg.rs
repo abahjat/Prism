@@ -6,7 +6,8 @@ use bytes::Bytes;
 use image::ImageFormat;
 use prism_core::{
     document::{
-        ContentBlock, Dimensions, Document, ImageBlock, ImageResource, Page, Rect, ShapeStyle,
+        ContentBlock, Dimensions, Document, ImageBlock, ImageResource, Page, PageMetadata, Rect,
+        ShapeStyle,
     },
     error::{Error, Result},
     format::Format,
@@ -53,6 +54,9 @@ impl Parser for JpegParser {
         data[0] == 0xFF && data[1] == 0xD8 && data[2] == 0xFF
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if the JPEG data is invalid or cannot be decoded.
     async fn parse(&self, data: Bytes, context: ParseContext) -> Result<Document> {
         debug!(
             "Parsing JPEG image, size: {} bytes, filename: {:?}",
@@ -67,12 +71,12 @@ impl Parser for JpegParser {
         // Decode JPEG image to get dimensions
         let cursor = Cursor::new(&data);
         let img = image::load(cursor, ImageFormat::Jpeg)
-            .map_err(|e| Error::ParseError(format!("Failed to decode JPEG: {}", e)))?;
+            .map_err(|e| Error::ParseError(format!("Failed to decode JPEG: {e}")))?;
 
         let width = img.width();
         let height = img.height();
 
-        debug!("JPEG dimensions: {}x{}", width, height);
+        debug!("JPEG dimensions: {width}x{height}");
 
         // Create resource ID for the image
         let resource_id = format!("img_{}", uuid::Uuid::new_v4());
@@ -89,11 +93,11 @@ impl Parser for JpegParser {
 
         // Create image block
         let image_block = ImageBlock {
-            bounds: Rect::new(0.0, 0.0, width as f64, height as f64),
+            bounds: Rect::new(0.0, 0.0, f64::from(width), f64::from(height)),
             resource_id: resource_id.clone(),
             alt_text: None,
             format: Some("image/jpeg".to_string()),
-            original_size: Some(Dimensions::new(width as f64, height as f64)),
+            original_size: Some(Dimensions::new(f64::from(width), f64::from(height))),
             style: ShapeStyle::default(),
             rotation: 0.0,
         };
@@ -102,11 +106,11 @@ impl Parser for JpegParser {
         let page = Page {
             number: 1,
             dimensions: Dimensions {
-                width: width as f64,
-                height: height as f64,
+                width: f64::from(width),
+                height: f64::from(height),
             },
             content: vec![ContentBlock::Image(image_block)],
-            metadata: Default::default(),
+            metadata: PageMetadata::default(),
             annotations: Vec::new(),
         };
 

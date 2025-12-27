@@ -83,6 +83,9 @@ impl Parser for PdfParser {
         data[0] == b'%' && data[1] == b'P' && data[2] == b'D' && data[3] == b'F' && data[4] == b'-'
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if the PDF data is invalid or has no pages.
     async fn parse(&self, data: Bytes, context: ParseContext) -> Result<Document> {
         debug!("Parsing PDF, size: {} bytes", context.size);
 
@@ -99,7 +102,7 @@ impl Parser for PdfParser {
         let pdf_base64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &data);
 
         let text_run = TextRun {
-            text: format!("__PDF_DATA__:{}", pdf_base64),
+            text: format!("__PDF_DATA__:{pdf_base64}"),
             style: TextStyle::default(),
             bounds: Some(Rect::default()),
             char_positions: Some(Vec::new()),
@@ -118,7 +121,7 @@ impl Parser for PdfParser {
                 style: prism_core::document::ShapeStyle::default(),
                 rotation: 0.0,
             })],
-            metadata: Default::default(),
+            metadata: prism_core::document::PageMetadata::default(),
             annotations: Vec::new(),
         };
 
@@ -128,16 +131,13 @@ impl Parser for PdfParser {
                 metadata.title = Some(filename.clone());
             }
         }
-        metadata.add_custom("page_count", page_count as i64);
+        metadata.add_custom("page_count", i64::try_from(page_count).unwrap_or(0));
 
         let mut document = Document::new();
         document.pages = vec![page];
         document.metadata = metadata;
 
-        info!(
-            "Prepared PDF with {} pages for client rendering",
-            page_count
-        );
+        info!("Prepared PDF with {page_count} pages for client rendering");
         Ok(document)
     }
 

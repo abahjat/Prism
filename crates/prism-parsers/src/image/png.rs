@@ -6,7 +6,8 @@ use bytes::Bytes;
 use image::ImageFormat;
 use prism_core::{
     document::{
-        ContentBlock, Dimensions, Document, ImageBlock, ImageResource, Page, Rect, ShapeStyle,
+        ContentBlock, Dimensions, Document, ImageBlock, ImageResource, Page, PageMetadata, Rect,
+        ShapeStyle,
     },
     error::{Error, Result},
     format::Format,
@@ -59,6 +60,9 @@ impl Parser for PngParser {
             && data[7] == 0x0A
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if the PNG data is invalid or cannot be decoded.
     async fn parse(&self, data: Bytes, context: ParseContext) -> Result<Document> {
         debug!(
             "Parsing PNG image, size: {} bytes, filename: {:?}",
@@ -73,12 +77,12 @@ impl Parser for PngParser {
         // Decode PNG image to get dimensions
         let cursor = Cursor::new(&data);
         let img = image::load(cursor, ImageFormat::Png)
-            .map_err(|e| Error::ParseError(format!("Failed to decode PNG: {}", e)))?;
+            .map_err(|e| Error::ParseError(format!("Failed to decode PNG: {e}")))?;
 
         let width = img.width();
         let height = img.height();
 
-        debug!("PNG dimensions: {}x{}", width, height);
+        debug!("PNG dimensions: {width}x{height}");
 
         // Create resource ID for the image
         let resource_id = format!("img_{}", uuid::Uuid::new_v4());
@@ -95,11 +99,11 @@ impl Parser for PngParser {
 
         // Create image block
         let image_block = ImageBlock {
-            bounds: Rect::new(0.0, 0.0, width as f64, height as f64),
+            bounds: Rect::new(0.0, 0.0, f64::from(width), f64::from(height)),
             resource_id: resource_id.clone(),
             alt_text: None,
             format: Some("image/png".to_string()),
-            original_size: Some(Dimensions::new(width as f64, height as f64)),
+            original_size: Some(Dimensions::new(f64::from(width), f64::from(height))),
             style: ShapeStyle::default(),
             rotation: 0.0,
         };
@@ -108,11 +112,11 @@ impl Parser for PngParser {
         let page = Page {
             number: 1,
             dimensions: Dimensions {
-                width: width as f64,
-                height: height as f64,
+                width: f64::from(width),
+                height: f64::from(height),
             },
             content: vec![ContentBlock::Image(image_block)],
-            metadata: Default::default(),
+            metadata: PageMetadata::default(),
             annotations: Vec::new(),
         };
 
@@ -193,11 +197,11 @@ mod tests {
             format: Format::png(),
             filename: Some("test.png".to_string()),
             size: data_len,
-            options: Default::default(),
+            options: prism_core::parser::ParseOptions::default(),
         };
 
         let result = parser.parse(data, context).await;
-        assert!(result.is_ok(), "Failed to parse minimal PNG: {:?}", result);
+        assert!(result.is_ok(), "Failed to parse minimal PNG: {result:?}");
 
         let document = result.unwrap();
         assert_eq!(document.page_count(), 1);
@@ -224,7 +228,7 @@ mod tests {
             format: Format::png(),
             filename: Some("invalid.png".to_string()),
             size: invalid_data.len(),
-            options: Default::default(),
+            options: prism_core::parser::ParseOptions::default(),
         };
 
         let result = parser.parse(invalid_data, context).await;

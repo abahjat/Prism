@@ -1,4 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+//! # Styles Module
+//!
+//! Management of Word styles, including paragraph and character styles.
+
+use crate::office::theme::Theme;
 use crate::office::utils;
 use prism_core::document::{ParagraphStyle, TextAlignment, TextStyle};
 use prism_core::error::{Error, Result};
@@ -6,31 +11,52 @@ use quick_xml::events::Event;
 use quick_xml::Reader;
 use std::collections::HashMap;
 
+/// A Word style definition
 #[derive(Debug, Clone)]
 pub struct Style {
+    /// The unique style identifier
     pub id: String,
+    /// The friendly name of the style
     pub name: Option<String>,
-    pub style_type: String, // paragraph, character, numbering, table
+    /// The type of style (e.g., "paragraph", "character")
+    pub style_type: String,
+    /// The style this one is based on, for inheritance
     pub based_on: Option<String>,
+    /// The style for the next paragraph
     pub next: Option<String>,
+    /// The text formatting for this style
     pub text_style: TextStyle,
+    /// The paragraph formatting for this style
     pub para_style: ParagraphStyle,
 }
 
+/// A collection of styles from a Word document
 #[derive(Debug, Clone, Default)]
 pub struct Styles {
+    #[allow(clippy::struct_field_names)]
     styles: HashMap<String, Style>,
-    default_paragraph_style: ParagraphStyle,
+    _default_paragraph_style: ParagraphStyle,
     default_text_style: TextStyle,
 }
 
 impl Styles {
+    /// Create a new empty style collection
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
     /// Resolve effective text style for a paragraph/run
-    /// TODO: Implement full inheritance (Style -> BasedOn -> Defaults)
+    ///
+    /// # Arguments
+    /// * `style_id` - The ID of the style to apply
+    /// * `direct_formatting` - Any direct formatting applied to the run
+    ///
+    /// # Returns
+    /// The resolved `TextStyle` with inheritance applied.
+    ///
+    /// TODO: Implement full inheritance (Style -> `BasedOn` -> Defaults)
+    #[must_use]
     pub fn resolve_text_style(
         &self,
         style_id: Option<&str>,
@@ -84,7 +110,12 @@ impl Styles {
         resolved
     }
 
-    pub fn from_xml(xml: &str) -> Result<Self> {
+    /// Parse styles from Word `styles.xml`
+    ///
+    /// # Errors
+    /// Returns an error if the XML is invalid or cannot be parsed.
+    #[allow(clippy::too_many_lines)]
+    pub fn from_xml(xml: &str, theme: Option<&Theme>) -> Result<Self> {
         let mut styles = HashMap::new();
         let mut reader = Reader::from_str(xml);
         reader.trim_text(true);
@@ -137,11 +168,57 @@ impl Styles {
                             b"w:i" => style.text_style.italic = true,
                             b"w:u" => style.text_style.underline = true,
                             b"w:color" => {
+                                let mut val: Option<String> = None;
+                                let mut theme_color: Option<String> = None;
+                                let mut tint: Option<f64> = None;
+                                let mut shade: Option<f64> = None;
+
                                 for attr in e.attributes().flatten() {
-                                    if attr.key.as_ref() == b"w:val" {
-                                        let val = utils::attr_value(&attr.value);
-                                        if val != "auto" {
-                                            style.text_style.color = Some(format!("#{}", val));
+                                    match attr.key.as_ref() {
+                                        b"w:val" => val = Some(utils::attr_value(&attr.value)),
+                                        b"w:themeColor" => {
+                                            theme_color = Some(utils::attr_value(&attr.value));
+                                        }
+                                        b"w:themeTint" => {
+                                            if let Ok(v) =
+                                                utils::attr_value(&attr.value).parse::<i64>()
+                                            {
+                                                #[allow(clippy::cast_precision_loss)]
+                                                {
+                                                    tint = Some(v as f64);
+                                                }
+                                            }
+                                        }
+                                        b"w:themeShade" => {
+                                            if let Ok(v) =
+                                                utils::attr_value(&attr.value).parse::<i64>()
+                                            {
+                                                #[allow(clippy::cast_precision_loss)]
+                                                {
+                                                    shade = Some(v as f64);
+                                                }
+                                            }
+                                        }
+                                        _ => {}
+                                    }
+                                }
+
+                                if let Some(t) = theme {
+                                    if let Some(c) = utils::resolve_word_color(
+                                        val.as_deref(),
+                                        theme_color.as_deref(),
+                                        tint,
+                                        shade,
+                                        t,
+                                    ) {
+                                        style.text_style.color = Some(c);
+                                    }
+                                }
+                                // Fallback
+                                if style.text_style.color.is_none() {
+                                    if let Some(v) = val {
+                                        if v != "auto" {
+                                            style.text_style.color = Some(format!("#{v}"));
                                         }
                                     }
                                 }
@@ -194,7 +271,7 @@ impl Styles {
                     }
                 }
                 Ok(Event::Eof) => break,
-                Err(e) => return Err(Error::ParseError(format!("XML error in styles: {}", e))),
+                Err(e) => return Err(Error::ParseError(format!("XML error in styles: {e}"))),
                 _ => {}
             }
             buf.clear();
@@ -202,7 +279,7 @@ impl Styles {
 
         Ok(Self {
             styles,
-            default_paragraph_style: ParagraphStyle::default(),
+            _default_paragraph_style: ParagraphStyle::default(),
             default_text_style: TextStyle::default(),
         })
     }

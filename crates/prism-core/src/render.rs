@@ -42,7 +42,12 @@ pub enum PageRange {
     Pages(Vec<u32>),
 
     /// Page range (inclusive, 1-indexed)
-    Range { start: u32, end: u32 },
+    Range {
+        /// Start page number
+        start: u32,
+        /// End page number
+        end: u32,
+    },
 }
 
 /// Context for rendering operations

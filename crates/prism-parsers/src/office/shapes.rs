@@ -1,13 +1,18 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+//! # Shapes Module
+//!
+//! Parsing logic for `DrawingML` shapes and text bodies.
+
 use crate::office::utils;
 use prism_core::document::{
     ContentBlock, Dimensions, ImageBlock, Rect, ShapeStyle, TextBlock, TextRun, TextStyle,
 };
 use quick_xml::events::Event;
 use quick_xml::Reader;
+use std::io::BufRead;
 
-/// Parse a shape element (p:sp) into a ContentBlock
-/// Parse a shape element (p:sp) into a ContentBlock
+/// Parse a shape element (`p:sp`) into a `ContentBlock`
+#[must_use]
 pub fn parse_shape(reader: &mut Reader<&[u8]>, buf: &mut Vec<u8>) -> Option<ContentBlock> {
     let mut bounds = Rect::default();
     let mut style = ShapeStyle::default();
@@ -27,7 +32,7 @@ pub fn parse_shape(reader: &mut Reader<&[u8]>, buf: &mut Vec<u8>) -> Option<Cont
                     for attr in e.attributes().flatten() {
                         if attr.key.as_ref() == b"rot" {
                             if let Ok(val) = utils::attr_value(&attr.value).parse::<f64>() {
-                                rotation = val / 60000.0;
+                                rotation = val / 60_000.0;
                             }
                         }
                     }
@@ -128,11 +133,12 @@ pub fn parse_shape(reader: &mut Reader<&[u8]>, buf: &mut Vec<u8>) -> Option<Cont
 
 use std::collections::HashMap;
 
-/// Parse a picture element (p:pic) into a ContentBlock
-pub fn parse_picture(
+/// Parse a picture element (`p:pic`) into a `ContentBlock`
+#[must_use]
+pub fn parse_picture<S: std::hash::BuildHasher>(
     reader: &mut Reader<&[u8]>,
     buf: &mut Vec<u8>,
-    rels: &HashMap<String, String>,
+    rels: &HashMap<String, String, S>,
 ) -> Option<ContentBlock> {
     let mut bounds = Rect::default();
     let mut embed_id = String::new();
@@ -173,11 +179,11 @@ pub fn parse_picture(
     }
 
     if embed_id.is_empty() {
-        buf.clear();
+        return None;
     }
 
     let image_path = if let Some(target) = rels.get(&embed_id) {
-        let mut path = target.clone();
+        let path = target.clone();
         if let Some(ext) = std::path::Path::new(&path)
             .extension()
             .and_then(|s| s.to_str())
@@ -187,7 +193,7 @@ pub fn parse_picture(
                 "jpg" | "jpeg" => "image/jpeg".to_string(),
                 "gif" => "image/gif".to_string(),
                 "svg" => "image/svg+xml".to_string(),
-                _ => format!("image/{}", ext),
+                _ => format!("image/{ext}"),
             });
         }
         path
@@ -208,7 +214,8 @@ pub fn parse_picture(
     }))
 }
 
-/// Parse a graphic frame element (p:graphicFrame) into a ContentBlock
+/// Parse a graphic frame element (`p:graphicFrame`) into a `ContentBlock`
+#[must_use]
 pub fn parse_graphic_frame(reader: &mut Reader<&[u8]>, buf: &mut Vec<u8>) -> Option<ContentBlock> {
     let mut bounds = Rect::default();
     let mut table_block = None;
@@ -247,11 +254,12 @@ pub fn parse_graphic_frame(reader: &mut Reader<&[u8]>, buf: &mut Vec<u8>) -> Opt
     }
 }
 
-/// Parse a background element (p:bg) into a ContentBlock (Image)
-pub fn parse_background(
+/// Parse a background element (`p:bg`) into a `ContentBlock` (`Image`)
+#[must_use]
+pub fn parse_background<S: std::hash::BuildHasher>(
     reader: &mut Reader<&[u8]>,
     buf: &mut Vec<u8>,
-    rels: &HashMap<String, String>,
+    rels: &HashMap<String, String, S>,
     dimensions: Dimensions,
 ) -> Option<ContentBlock> {
     let mut embed_id = String::new();
@@ -264,26 +272,15 @@ pub fn parse_background(
 
     loop {
         match reader.read_event_into(buf) {
-            Ok(Event::Start(e)) => match e.name().as_ref() {
-                b"a:blip" => {
+            Ok(Event::Start(e) | Event::Empty(e)) => {
+                if e.name().as_ref() == b"a:blip" {
                     for attr in e.attributes().flatten() {
                         if attr.key.as_ref() == b"r:embed" {
                             embed_id = utils::attr_value(&attr.value);
                         }
                     }
                 }
-                _ => {}
-            },
-            Ok(Event::Empty(e)) => match e.name().as_ref() {
-                b"a:blip" => {
-                    for attr in e.attributes().flatten() {
-                        if attr.key.as_ref() == b"r:embed" {
-                            embed_id = utils::attr_value(&attr.value);
-                        }
-                    }
-                }
-                _ => {}
-            },
+            }
             Ok(Event::End(e)) => {
                 if e.name().as_ref() == b"p:bg" {
                     break;
@@ -306,20 +303,16 @@ pub fn parse_background(
     };
 
     // Determine format from path
-    let image_format = if let Some(ext) = std::path::Path::new(&image_path)
+    let image_format = std::path::Path::new(&image_path)
         .extension()
         .and_then(|s| s.to_str())
-    {
-        Some(match ext.to_lowercase().as_str() {
+        .map(|ext| match ext.to_lowercase().as_str() {
             "png" => "image/png".to_string(),
             "jpg" | "jpeg" => "image/jpeg".to_string(),
             "gif" => "image/gif".to_string(),
             "svg" => "image/svg+xml".to_string(),
-            _ => format!("image/{}", ext),
-        })
-    } else {
-        None
-    };
+            _ => format!("image/{ext}"),
+        });
 
     Some(ContentBlock::Image(ImageBlock {
         bounds: Rect::new(0.0, 0.0, dimensions.width, dimensions.height),
@@ -332,7 +325,8 @@ pub fn parse_background(
     }))
 }
 
-/// Parse a transform element (a:xfrm or p:xfrm) into a Rect
+/// Parse a transform element (`a:xfrm` or `p:xfrm`) into a `Rect`
+#[must_use]
 pub fn parse_transform_2d(reader: &mut Reader<&[u8]>, buf: &mut Vec<u8>) -> Rect {
     let mut bounds = Rect::default();
     let mut depth = 0;
@@ -392,10 +386,7 @@ pub fn parse_transform_2d(reader: &mut Reader<&[u8]>, buf: &mut Vec<u8>) -> Rect
     bounds
 }
 
-/// Parse a text body element (p:txBody) into a list of TextRuns
-use std::io::BufRead;
-
-/// Parse a text body element (p:txBody or a:txBody) into a list of TextRuns
+/// Parse a text body element (`p:txBody` or `a:txBody`) into a list of `TextRun`s
 pub fn parse_text_body<R: BufRead>(
     reader: &mut Reader<R>,
     buf: &mut Vec<u8>,
@@ -409,9 +400,6 @@ pub fn parse_text_body<R: BufRead>(
     loop {
         match reader.read_event_into(buf) {
             Ok(Event::Start(e)) => match e.name().as_ref() {
-                b"a:p" => {
-                    // Paragraph start
-                }
                 b"a:r" => {
                     in_run = true;
                     current_run_style = TextStyle::default(); // Reset style for new run
@@ -460,10 +448,6 @@ pub fn parse_text_body<R: BufRead>(
                             }
                         }
                     }
-                }
-                b"a:t" => {
-                    // Text content is usually in a text event inside a:t, but sometimes directly?
-                    // actually a:t usually contains text.
                 }
                 _ => {}
             },

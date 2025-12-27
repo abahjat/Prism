@@ -20,7 +20,7 @@ impl Default for ServerConfig {
     fn default() -> Self {
         Self {
             max_file_size: 5 * 1024 * 1024 * 1024, // 5GB
-            timeout_seconds: 300, // 5 minutes for large files
+            timeout_seconds: 300,                  // 5 minutes for large files
             enable_fallback: true,
         }
     }
@@ -33,8 +33,8 @@ mod tests {
     #[test]
     fn test_default_config() {
         let config = ServerConfig::default();
-        assert_eq!(config.max_file_size, 50 * 1024 * 1024);
-        assert_eq!(config.timeout_seconds, 30);
+        assert_eq!(config.max_file_size, 5 * 1024 * 1024 * 1024);
+        assert_eq!(config.timeout_seconds, 300);
         assert!(config.enable_fallback);
     }
 }

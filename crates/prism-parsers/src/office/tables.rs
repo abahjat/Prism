@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+//! # Tables Module
+//!
+//! Parsing logic for `Word` and `PowerPoint` tables.
+
 use crate::office::utils;
 use prism_core::document::{ContentBlock, Rect, TableBlock, TableCell, TableRow, TextBlock};
 use prism_core::error::{Error, Result};
@@ -7,7 +11,12 @@ use quick_xml::Reader;
 use std::io::BufRead;
 
 /// Parse a table from the current position in the XML reader
-/// Assumes we just read <w:tbl>
+/// Assumes we just read `<w:tbl>`
+///
+/// # Errors
+///
+/// Returns an error if the XML is malformed or if an unexpected EOF is encountered.
+#[allow(clippy::too_many_lines)]
 pub fn parse_table<R: BufRead>(reader: &mut Reader<R>) -> Result<TableBlock> {
     let mut rows = Vec::new();
     let mut buf = Vec::new();
@@ -61,7 +70,7 @@ pub fn parse_table<R: BufRead>(reader: &mut Reader<R>) -> Result<TableBlock> {
                                 let val = utils::attr_value(&attr.value);
                                 if val != "auto" {
                                     if let Some(cell) = &mut current_cell {
-                                        cell.background_color = Some(format!("#{}", val));
+                                        cell.background_color = Some(format!("#{val}"));
                                     }
                                 }
                             }
@@ -87,8 +96,7 @@ pub fn parse_table<R: BufRead>(reader: &mut Reader<R>) -> Result<TableBlock> {
                                         break;
                                     }
                                 }
-                                Ok(Event::Eof) => break,
-                                Err(_) => break,
+                                Ok(Event::Eof) | Err(_) => break,
                                 _ => {}
                             }
                             buf.clear();
@@ -119,7 +127,7 @@ pub fn parse_table<R: BufRead>(reader: &mut Reader<R>) -> Result<TableBlock> {
                     }
                     b"w:tc" => {
                         if let Some(mut cell) = current_cell.take() {
-                            cell.content = cell_content.clone();
+                            cell.content.clone_from(&cell_content);
                             cell.col_span = grid_span;
                             if let Some(row) = &mut current_row {
                                 row.cells.push(cell);
@@ -130,7 +138,7 @@ pub fn parse_table<R: BufRead>(reader: &mut Reader<R>) -> Result<TableBlock> {
                 }
             }
             Ok(Event::Eof) => return Err(Error::ParseError("Unexpected EOF in table".to_string())),
-            Err(e) => return Err(Error::ParseError(format!("XML error in table: {}", e))),
+            Err(e) => return Err(Error::ParseError(format!("XML error in table: {e}"))),
             _ => {}
         }
         buf.clear();
@@ -145,7 +153,11 @@ pub fn parse_table<R: BufRead>(reader: &mut Reader<R>) -> Result<TableBlock> {
     })
 }
 
-/// Parse a DrawingML table (a:tbl) usually found in PPTX
+/// Parse a `DrawingML` table (`a:tbl`) usually found in `PPTX`
+///
+/// # Errors
+///
+/// Returns an error if the XML is malformed or if an unexpected EOF is encountered.
 pub fn parse_drawingml_table<R: BufRead>(reader: &mut Reader<R>) -> Result<TableBlock> {
     let mut rows = Vec::new();
     let mut buf = Vec::new();
@@ -207,7 +219,7 @@ pub fn parse_drawingml_table<R: BufRead>(reader: &mut Reader<R>) -> Result<Table
                     }
                     b"a:tc" => {
                         if let Some(mut cell) = current_cell.take() {
-                            cell.content = cell_content.clone();
+                            cell.content.clone_from(&cell_content);
                             if let Some(row) = &mut current_row {
                                 row.cells.push(cell);
                             }

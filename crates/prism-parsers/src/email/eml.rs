@@ -9,7 +9,8 @@ use chrono::DateTime;
 use mail_parser::MessageParser;
 use prism_core::{
     document::{
-        ContentBlock, Dimensions, Document, Page, ShapeStyle, TextBlock, TextRun, TextStyle,
+        ContentBlock, Dimensions, Document, Page, PageMetadata, ShapeStyle, TextBlock, TextRun,
+        TextStyle,
     },
     error::{Error, Result},
     format::Format,
@@ -30,12 +31,12 @@ impl EmlParser {
     }
 
     /// Format email headers as text content
-    fn format_email_header(&self, label: &str, value: &str) -> TextRun {
+    fn format_email_header(label: &str, value: &str) -> TextRun {
         TextRun {
-            text: format!("{}: {}\n", label, value),
+            text: format!("{label}: {value}\n"),
             style: TextStyle {
                 bold: label == "From" || label == "To" || label == "Subject",
-                ..Default::default()
+                ..TextStyle::default()
             },
             bounds: None,
             char_positions: None,
@@ -67,6 +68,7 @@ impl Parser for EmlParser {
         text.contains("From:") && (text.contains("To:") || text.contains("Subject:"))
     }
 
+    #[allow(clippy::too_many_lines)]
     async fn parse(&self, data: Bytes, context: ParseContext) -> Result<Document> {
         debug!(
             "Parsing EML email, size: {} bytes, filename: {:?}",
@@ -89,23 +91,23 @@ impl Parser for EmlParser {
                         let email = addr
                             .address
                             .as_ref()
-                            .map(|a| a.to_string())
+                            .map(std::string::ToString::to_string)
                             .unwrap_or_default();
-                        format!("{} <{}>", name, email)
+                        format!("{name} <{email}>")
                     } else {
                         addr.address
                             .as_ref()
-                            .map(|a| a.to_string())
+                            .map(std::string::ToString::to_string)
                             .unwrap_or_default()
                     }
                 })
                 .unwrap_or_default();
-            text_runs.push(self.format_email_header("From", &from_str));
+            text_runs.push(Self::format_email_header("From", &from_str));
         }
 
         // Extract Sent date
         if let Some(date) = message.date() {
-            text_runs.push(self.format_email_header("Sent", &date.to_rfc3339()));
+            text_runs.push(Self::format_email_header("Sent", &date.to_rfc3339()));
         }
 
         // Extract To header
@@ -117,30 +119,30 @@ impl Parser for EmlParser {
                         let email = addr
                             .address
                             .as_ref()
-                            .map(|a| a.to_string())
+                            .map(std::string::ToString::to_string)
                             .unwrap_or_default();
-                        format!("{} <{}>", name, email)
+                        format!("{name} <{email}>")
                     } else {
                         addr.address
                             .as_ref()
-                            .map(|a| a.to_string())
+                            .map(std::string::ToString::to_string)
                             .unwrap_or_default()
                     }
                 })
                 .collect::<Vec<_>>()
                 .join(", ");
-            text_runs.push(self.format_email_header("To", &to_str));
+            text_runs.push(Self::format_email_header("To", &to_str));
         }
 
         // Extract Subject
         if let Some(subject) = message.subject() {
-            text_runs.push(self.format_email_header("Subject", subject));
+            text_runs.push(Self::format_email_header("Subject", subject));
         }
 
         // Add empty line separator
         text_runs.push(TextRun {
             text: "\n".to_string(),
-            style: Default::default(),
+            style: TextStyle::default(),
             bounds: None,
             char_positions: None,
         });
@@ -157,7 +159,7 @@ impl Parser for EmlParser {
 
         text_runs.push(TextRun {
             text: body_text,
-            style: Default::default(),
+            style: TextStyle::default(),
             bounds: None,
             char_positions: None,
         });
@@ -181,7 +183,7 @@ impl Parser for EmlParser {
             number: 1,
             dimensions: Dimensions::LETTER,
             content: vec![ContentBlock::Text(text_block)],
-            metadata: Default::default(),
+            metadata: PageMetadata::default(),
             annotations: Vec::new(),
         };
 
