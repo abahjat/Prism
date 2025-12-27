@@ -5,21 +5,35 @@ use quick_xml::events::Event;
 use quick_xml::reader::Reader;
 use std::collections::HashMap;
 
+/// Represents an Office Theme, containing color schemes and font definitions.
 #[derive(Debug, Clone, Default)]
 pub struct Theme {
+    /// The name of the theme.
     pub name: String,
+    /// A map of color slot names (e.g., "dk1", "accent1") to hex color values.
     pub color_scheme: HashMap<String, String>,
+    /// The major font typeface (headings).
     pub major_font: Option<String>,
+    /// The minor font typeface (body).
     pub minor_font: Option<String>,
 }
 
 impl Theme {
     /// Resolve a color reference (e.g., "accent1") to a hex string
+    #[must_use]
     pub fn resolve_color(&self, color_ref: &str) -> Option<String> {
         self.color_scheme.get(color_ref).cloned()
     }
 }
 
+/// Parses an Office Theme XML content (usually `theme/theme1.xml`).
+///
+/// This function extracts the color scheme and font scheme, resolving
+/// system colors and handling theme color slots.
+///
+/// # Errors
+///
+/// Returns an error if the XML content is malformed or cannot be parsed.
 pub fn parse_theme(content: &[u8]) -> Result<Theme> {
     let mut reader = Reader::from_reader(content);
     reader.trim_text(true);
@@ -84,30 +98,19 @@ pub fn parse_theme(content: &[u8]) -> Result<Theme> {
 
                             // Check for color definitions inside a color slot
                             if let Some(ref slot) = current_clr_tag {
-                                if tag_name == "a:srgbClr" || tag_name == "a:sysClr" {
-                                    for attr in e.attributes().flatten() {
-                                        if attr.key.as_ref() == b"val" {
-                                            let val = attr_value(&attr.value);
-                                            // Extract actual name from "a:dk1" -> "dk1"
-                                            let slot_key = slot.replace("a:", "");
-                                            theme.color_scheme.insert(slot_key, val);
-                                        }
-                                        if attr.key.as_ref() == b"lastClr"
-                                            && !theme
-                                                .color_scheme
-                                                .contains_key(&slot.replace("a:", ""))
-                                        {
-                                            let val = attr_value(&attr.value);
-                                            let slot_key = slot.replace("a:", "");
-                                            theme.color_scheme.insert(slot_key, val);
-                                        }
-                                    }
-                                }
+                                process_color_element(e, slot, &mut theme);
                             } else if tag_name.starts_with("a:") {
                                 // Assume this is a color slot like a:dk1, a:lt1, a:accent1
                                 current_clr_tag = Some(tag_name);
                             }
                         }
+                    }
+                }
+            }
+            Ok(Event::Empty(ref e)) => {
+                if in_clr_scheme {
+                    if let Some(ref slot) = current_clr_tag {
+                        process_color_element(e, slot, &mut theme);
                     }
                 }
             }
@@ -131,11 +134,41 @@ pub fn parse_theme(content: &[u8]) -> Result<Theme> {
                 }
             }
             Ok(Event::Eof) => break,
-            Err(e) => return Err(Error::ParseError(format!("XML error: {:?}", e))),
+            Err(e) => return Err(Error::ParseError(format!("XML error: {e:?}"))),
             _ => (),
         }
         buf.clear();
     }
 
     Ok(theme)
+}
+
+/// Helper to process color elements (srgbClr, sysClr) within a color slot
+fn process_color_element(e: &quick_xml::events::BytesStart<'_>, slot: &str, theme: &mut Theme) {
+    let name = e.name();
+    let tag_name = String::from_utf8_lossy(name.as_ref()).to_string();
+
+    if tag_name == "a:srgbClr" || tag_name == "a:sysClr" {
+        let mut val: Option<String> = None;
+        let mut last_clr: Option<String> = None;
+
+        for attr in e.attributes().flatten() {
+            if attr.key.as_ref() == b"val" {
+                val = Some(attr_value(&attr.value));
+            } else if attr.key.as_ref() == b"lastClr" {
+                last_clr = Some(attr_value(&attr.value));
+            }
+        }
+
+        let final_val = if tag_name == "a:sysClr" {
+            last_clr.or(val)
+        } else {
+            val
+        };
+
+        if let Some(v) = final_val {
+            let slot_key = slot.replace("a:", "");
+            theme.color_scheme.insert(slot_key, v);
+        }
+    }
 }

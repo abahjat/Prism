@@ -316,12 +316,23 @@ pub enum ContentBlock {
 /// Visual style for a shape or block
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ShapeStyle {
-    /// Fill color (hex or named)
+    /// Fill color (hex or named, or CSS gradient)
     pub fill_color: Option<String>,
+
     /// Stroke/Border color
     pub stroke_color: Option<String>,
+
     /// Stroke width in points
     pub stroke_width: Option<f64>,
+
+    /// CSS Box Shadow (e.g. "2px 2px 5px rgba(0,0,0,0.5)")
+    pub shadow: Option<String>,
+
+    /// Opacity (0.0 to 1.0)
+    pub opacity: Option<f64>,
+
+    /// Z-Index stack order
+    pub z_index: Option<i32>,
 }
 
 /// A block of text content

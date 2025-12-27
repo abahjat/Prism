@@ -107,6 +107,42 @@ impl HtmlRenderer {
         html
     }
 
+    /// Generate CSS styles from ShapeStyle
+    fn render_shape_style(&self, style: &prism_core::document::ShapeStyle) -> Vec<String> {
+        let mut styles = Vec::new();
+
+        if let Some(ref bg) = style.fill_color {
+            // Check if it's a gradient
+            if bg.contains("gradient") {
+                styles.push(format!("background: {};", html_escape(bg)));
+            } else {
+                styles.push(format!("background-color: {};", html_escape(bg)));
+            }
+        }
+
+        if let Some(ref stroke) = style.stroke_color {
+            styles.push(format!(
+                "border: {}pt solid {};",
+                style.stroke_width.unwrap_or(1.0),
+                html_escape(stroke)
+            ));
+        }
+
+        if let Some(ref shadow) = style.shadow {
+            styles.push(format!("box-shadow: {};", html_escape(shadow)));
+        }
+
+        if let Some(opacity) = style.opacity {
+            styles.push(format!("opacity: {};", opacity));
+        }
+
+        if let Some(z_index) = style.z_index {
+            styles.push(format!("z-index: {};", z_index));
+        }
+
+        styles
+    }
+
     /// Check if content contains embedded special viewers (PDF, single images)
     fn has_embedded_viewer(&self, page: &prism_core::document::Page) -> bool {
         // Check if this is a single-block page with PDF data or single image
@@ -279,14 +315,26 @@ impl HtmlRenderer {
 
         html.push_str("</table>");
 
+        let style_css = self.render_shape_style(&table.style).join(" ");
+
         // Wrap table in absolute div if it has bounds
         if table.bounds.width > 0.0 && table.bounds.height > 0.0 {
             format!(
-                r#"<div style="position: absolute; left: {}pt; top: {}pt; width: {}pt; height: {}pt;">{}</div>"#,
-                table.bounds.x, table.bounds.y, table.bounds.width, table.bounds.height, html
+                r#"<div style="position: absolute; left: {}pt; top: {}pt; width: {}pt; height: {}pt; {}">{}</div>"#,
+                table.bounds.x,
+                table.bounds.y,
+                table.bounds.width,
+                table.bounds.height,
+                style_css,
+                html
             )
         } else {
-            html
+            // Check if we need a wrapper for styles if not absolute
+            if !style_css.is_empty() {
+                format!(r#"<div style="{}">{}</div>"#, style_css, html)
+            } else {
+                html
+            }
         }
     }
 
@@ -406,19 +454,8 @@ impl HtmlRenderer {
             String::new()
         };
 
-        // Apply styles (background, border) from the shape
-        let mut shape_styles = Vec::new();
-        if let Some(ref bg) = text_block.style.fill_color {
-            shape_styles.push(format!("background-color: {};", html_escape(bg)));
-        }
-
-        if let Some(ref stroke) = text_block.style.stroke_color {
-            shape_styles.push(format!(
-                "border: {}pt solid {};",
-                text_block.style.stroke_width.unwrap_or(1.0),
-                html_escape(stroke)
-            ));
-        }
+        // Apply visual styles
+        let shape_styles = self.render_shape_style(&text_block.style);
 
         format!(
             r#"<div class="text-content" style="{pos_style} {transform_style} {}">{formatted_text}</div>"#,
@@ -446,7 +483,7 @@ impl HtmlRenderer {
                     let alt_text = image_block.alt_text.as_deref().unwrap_or("Image");
 
                     format!(
-                        r#"<img src="data:{};base64,{base64_data}" alt="{}" style="width: 100%; height: 100%;" />"#,
+                        r#"<img src="data:{};base64,{base64_data}" alt="{}" style="width: 100%; height: 100%; object-fit: fill; display: block;" />"#,
                         html_escape(&img_resource.mime_type),
                         html_escape(alt_text)
                     )
@@ -459,17 +496,24 @@ impl HtmlRenderer {
             }
         };
 
+        // Apply visual styles
+        let style_css = self.render_shape_style(&image_block.style).join(" ");
+
         // Position wrapper
         if image_block.bounds.width > 0.0 && image_block.bounds.height > 0.0 {
             format!(
-                r#"<div class="image-container" style="position: absolute; left: {}pt; top: {}pt; width: {}pt; height: {}pt;">{img_tag}</div>"#,
+                r#"<div class="image-container" style="position: absolute; left: {}pt; top: {}pt; width: {}pt; height: {}pt; {}">{img_tag}</div>"#,
                 image_block.bounds.x,
                 image_block.bounds.y,
                 image_block.bounds.width,
-                image_block.bounds.height
+                image_block.bounds.height,
+                style_css
             )
         } else {
-            format!(r#"<div class="image-container">{img_tag}</div>"#)
+            format!(
+                r#"<div class="image-container" style="{}">{img_tag}</div>"#,
+                style_css
+            )
         }
     }
 
@@ -585,7 +629,7 @@ impl Renderer for HtmlRenderer {
             .unwrap_or("Untitled Document");
 
         // Check if this is a single-page document with embedded viewer
-        let has_embedded =
+        let _has_embedded =
             document.pages.len() == 1 && self.has_embedded_viewer(&document.pages[0]);
 
         let html = format!(
@@ -756,5 +800,56 @@ mod tests {
         let html = String::from_utf8(result.unwrap().to_vec()).unwrap();
         assert!(html.contains("Page 1"));
         assert!(html.contains("Page 2"));
+    }
+
+    #[tokio::test]
+    async fn test_render_with_styles() {
+        let renderer = HtmlRenderer::new();
+
+        let mut style = prism_core::document::ShapeStyle::default();
+        style.fill_color = Some("#FF0000".to_string());
+        style.stroke_color = Some("#000000".to_string());
+        style.stroke_width = Some(2.0);
+        style.shadow = Some("2px 2px 5px black".to_string());
+        style.opacity = Some(0.5);
+        style.z_index = Some(10);
+
+        let block = ContentBlock::Text(prism_core::document::TextBlock {
+            bounds: prism_core::document::Rect::new(0.0, 0.0, 100.0, 100.0),
+            runs: vec![prism_core::document::TextRun::new("Styled")],
+            paragraph_style: None,
+            style,
+            rotation: 0.0,
+        });
+
+        let page = Page {
+            number: 1,
+            dimensions: Dimensions::LETTER,
+            content: vec![block],
+            metadata: Default::default(),
+            annotations: vec![],
+        };
+
+        let document = Document::builder()
+            .metadata(Metadata::builder().title("Styled").build())
+            .page(page)
+            .build();
+
+        let context = RenderContext {
+            options: prism_core::render::RenderOptions::default(),
+            filename: None,
+        };
+
+        let result = renderer.render(&document, context).await;
+        assert!(result.is_ok());
+
+        let html = String::from_utf8(result.unwrap().to_vec()).unwrap();
+
+        // Check for CSS properties
+        assert!(html.contains("background-color: #FF0000"));
+        assert!(html.contains("border: 2pt solid #000000"));
+        assert!(html.contains("box-shadow: 2px 2px 5px black"));
+        assert!(html.contains("opacity: 0.5"));
+        assert!(html.contains("z-index: 10"));
     }
 }

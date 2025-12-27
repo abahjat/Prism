@@ -286,7 +286,7 @@ macro_rules! impl_text_parser {
 
 impl_text_parser!(JsonParser, Format::json, "JSON Parser");
 impl_text_parser!(XmlParser, Format::xml, "XML Parser");
-impl_text_parser!(CsvParser, Format::csv, "CSV Parser");
+// CsvParser moved to csv.rs
 impl_text_parser!(MarkdownParser, Format::markdown, "Markdown Parser");
 impl_text_parser!(LogParser, Format::log, "Log Parser");
 

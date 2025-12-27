@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+use crate::office::theme::Theme;
 use crate::office::utils;
 use prism_core::document::{ParagraphStyle, TextAlignment, TextStyle};
 use prism_core::error::{Error, Result};
@@ -84,7 +85,7 @@ impl Styles {
         resolved
     }
 
-    pub fn from_xml(xml: &str) -> Result<Self> {
+    pub fn from_xml(xml: &str, theme: Option<&Theme>) -> Result<Self> {
         let mut styles = HashMap::new();
         let mut reader = Reader::from_str(xml);
         reader.trim_text(true);
@@ -137,11 +138,51 @@ impl Styles {
                             b"w:i" => style.text_style.italic = true,
                             b"w:u" => style.text_style.underline = true,
                             b"w:color" => {
+                                let mut val: Option<String> = None;
+                                let mut theme_color: Option<String> = None;
+                                let mut tint: Option<f64> = None;
+                                let mut shade: Option<f64> = None;
+
                                 for attr in e.attributes().flatten() {
-                                    if attr.key.as_ref() == b"w:val" {
-                                        let val = utils::attr_value(&attr.value);
-                                        if val != "auto" {
-                                            style.text_style.color = Some(format!("#{}", val));
+                                    match attr.key.as_ref() {
+                                        b"w:val" => val = Some(utils::attr_value(&attr.value)),
+                                        b"w:themeColor" => {
+                                            theme_color = Some(utils::attr_value(&attr.value))
+                                        }
+                                        b"w:themeTint" => {
+                                            if let Ok(v) =
+                                                utils::attr_value(&attr.value).parse::<i64>()
+                                            {
+                                                tint = Some(v as f64);
+                                            }
+                                        }
+                                        b"w:themeShade" => {
+                                            if let Ok(v) =
+                                                utils::attr_value(&attr.value).parse::<i64>()
+                                            {
+                                                shade = Some(v as f64);
+                                            }
+                                        }
+                                        _ => {}
+                                    }
+                                }
+
+                                if let Some(t) = theme {
+                                    if let Some(c) = utils::resolve_word_color(
+                                        val.as_deref(),
+                                        theme_color.as_deref(),
+                                        tint,
+                                        shade,
+                                        t,
+                                    ) {
+                                        style.text_style.color = Some(c);
+                                    }
+                                }
+                                // Fallback
+                                if style.text_style.color.is_none() {
+                                    if let Some(v) = val {
+                                        if v != "auto" {
+                                            style.text_style.color = Some(format!("#{}", v));
                                         }
                                     }
                                 }
