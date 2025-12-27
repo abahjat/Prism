@@ -143,15 +143,18 @@ impl HtmlRenderer {
         styles
     }
 
-    /// Check if content contains embedded special viewers (PDF, single images)
+    /// Check if content contains embedded special viewers (PDF, HTML, single images)
     fn has_embedded_viewer(page: &prism_core::document::Page) -> bool {
-        // Check if this is a single-block page with PDF data or single image
+        // Check if this is a single-block page with PDF/HTML data or single image
         if page.content.len() == 1 {
             match &page.content[0] {
                 ContentBlock::Text(text_block) => {
-                    // Check for PDF embed marker
+                    // Check for PDF or HTML embed marker
                     if text_block.runs.len() == 1 {
-                        return text_block.runs[0].text.starts_with("__PDF_DATA__:");
+                        let text = &text_block.runs[0].text;
+                        return text.starts_with("__PDF_DATA__:")
+                            || text.starts_with("__HTML_RAW__:")
+                            || text.starts_with("__SVG_RAW__:");
                     }
                 }
                 ContentBlock::Image(_) => {
@@ -338,6 +341,17 @@ impl HtmlRenderer {
                 {
                     return Self::render_pdf_viewer(&text_block.runs[0].text);
                 }
+                // Check if this is raw HTML content
+                if text_block.runs.len() == 1
+                    && text_block.runs[0].text.starts_with("__HTML_RAW__:")
+                {
+                    return Self::render_raw_html(&text_block.runs[0].text);
+                }
+                // Check if this is raw SVG content
+                if text_block.runs.len() == 1 && text_block.runs[0].text.starts_with("__SVG_RAW__:")
+                {
+                    return Self::render_raw_svg(&text_block.runs[0].text);
+                }
                 Self::render_text_block(text_block)
             }
             ContentBlock::Image(image_block) => self.render_image_block(document, image_block),
@@ -347,6 +361,22 @@ impl HtmlRenderer {
                 self.render_container(document, container_block)
             }
         }
+    }
+
+    /// Render raw HTML content (passthrough)
+    fn render_raw_html(text: &str) -> String {
+        // Skip "__HTML_RAW__:" prefix (13 chars)
+        let html_content = &text[13..];
+        // Return the raw HTML content directly - it will be rendered as-is in the iframe
+        format!(r#"<div class="raw-html-content">{html_content}</div>"#)
+    }
+
+    /// Render raw SVG content (passthrough)
+    fn render_raw_svg(text: &str) -> String {
+        // Skip "__SVG_RAW__:" prefix (12 chars)
+        let svg_content = &text[12..];
+        // Return the SVG content directly - browser will render it natively
+        format!(r#"<div class="svg-content" style="text-align: center;">{svg_content}</div>"#)
     }
 
     /// Render embedded PDF viewer
@@ -690,12 +720,36 @@ impl Renderer for HtmlRenderer {
             margin: 1rem 0;
             font-size: 0.9rem;
             box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            table-layout: fixed;
         }}
-        .data-table td {{
+        .data-table th, .data-table td {{
             border: 1px solid #ddd;
             padding: 8px 12px;
             text-align: left;
             vertical-align: top;
+        }}
+        .data-table th {{
+            background-color: #f0f0f0;
+            font-weight: bold;
+        }}
+        .data-table td:first-child {{
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+            max-width: 0;
+            width: 50%;
+        }}
+        .data-table td:nth-child(2),
+        .data-table td:nth-child(3) {{
+            width: 15%;
+            white-space: nowrap;
+        }}
+        .data-table td:nth-child(4) {{
+            width: 20%;
+            white-space: nowrap;
+        }}
+        .data-table tr:first-child td {{
+            background-color: #f0f0f0;
+            font-weight: bold;
         }}
         .data-table tr:nth-child(even) {{
             background-color: #f9f9f9;

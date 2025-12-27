@@ -49,6 +49,14 @@ impl AppState {
         registry.register(Arc::new(prism_parsers::PngParser::new()));
         registry.register(Arc::new(prism_parsers::JpegParser::new()));
         registry.register(Arc::new(prism_parsers::TiffParser::new()));
+        registry.register(Arc::new(prism_parsers::GifParser::new()));
+        registry.register(Arc::new(prism_parsers::WebpParser::new()));
+        registry.register(Arc::new(prism_parsers::BmpParser::new()));
+        registry.register(Arc::new(prism_parsers::SvgParser::new()));
+        registry.register(Arc::new(prism_parsers::EmfParser::new()));
+        registry.register(Arc::new(prism_parsers::EmzParser::new()));
+        registry.register(Arc::new(prism_parsers::EpsParser::new()));
+        registry.register(Arc::new(prism_parsers::WmfParser::new()));
 
         // Register Office parsers (modern)
         registry.register(Arc::new(prism_parsers::DocxParser::new()));
@@ -60,6 +68,11 @@ impl AppState {
         registry.register(Arc::new(prism_parsers::PptParser::new()));
         registry.register(Arc::new(prism_parsers::XlsParser::new()));
 
+        // Register OpenDocument parsers
+        registry.register(Arc::new(prism_parsers::OdtParser::new()));
+        registry.register(Arc::new(prism_parsers::OdsParser::new()));
+        registry.register(Arc::new(prism_parsers::OdpParser::new()));
+
         // Register text-based parsers
         registry.register(Arc::new(prism_parsers::TextParser::new()));
         registry.register(Arc::new(prism_parsers::HtmlParser::new()));
@@ -68,6 +81,7 @@ impl AppState {
         registry.register(Arc::new(prism_parsers::CsvParser::new()));
         registry.register(Arc::new(prism_parsers::MarkdownParser::new()));
         registry.register(Arc::new(prism_parsers::LogParser::new()));
+        registry.register(Arc::new(prism_parsers::RtfParser::new()));
 
         // Register email parsers
         registry.register(Arc::new(prism_parsers::EmlParser::new()));
@@ -75,6 +89,17 @@ impl AppState {
         registry.register(Arc::new(prism_parsers::MboxParser::new()));
         registry.register(Arc::new(prism_parsers::VcfParser::new()));
         registry.register(Arc::new(prism_parsers::IcsParser::new()));
+
+        // Register archive parsers
+        registry.register(Arc::new(prism_parsers::ArchiveParser::new(
+            prism_core::format::Format::zip(),
+        )));
+        registry.register(Arc::new(prism_parsers::ArchiveParser::new(
+            prism_core::format::Format::tar(),
+        )));
+        registry.register(Arc::new(prism_parsers::ArchiveParser::new(
+            prism_core::format::Format::gzip(),
+        )));
 
         info!("Registered {} parsers", registry.count());
 

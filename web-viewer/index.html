@@ -1,11 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Prism Document Viewer</title>
     <link rel="stylesheet" href="styles.css">
 </head>
+
 <body>
     <div class="container">
         <header>
@@ -18,14 +20,18 @@
                 <div class="upload-icon">📁</div>
                 <h2>Select a file to view</h2>
                 <p class="supported-formats">
-                    <strong>16 Supported Formats:</strong><br>
-                    <span class="format-group"><strong>Documents:</strong> PDF</span><br>
-                    <span class="format-group"><strong>Images:</strong> PNG, JPEG, TIFF</span><br>
-                    <span class="format-group"><strong>Modern Office:</strong> DOCX, XLSX, PPTX</span><br>
-                    <span class="format-group"><strong>Legacy Office:</strong> DOC, XLS, PPT</span><br>
+                    <strong>28 Supported Formats:</strong><br>
+                    <span class="format-group"><strong>Documents:</strong> PDF, RTF</span><br>
+                    <span class="format-group"><strong>Images:</strong> PNG, JPEG, TIFF, GIF, WebP, BMP, SVG</span><br>
+                    <span class="format-group"><strong>Vector:</strong> EPS, EMF, EMZ, WMF</span><br>
+                    <span class="format-group"><strong>Microsoft Office:</strong> DOCX, XLSX, PPTX, DOC, XLS,
+                        PPT</span><br>
+                    <span class="format-group"><strong>OpenDocument:</strong> ODT, ODS, ODP</span><br>
                     <span class="format-group"><strong>Text:</strong> TXT, HTML, JSON, XML, CSV, Markdown, LOG</span>
                 </p>
-                <input type="file" id="fileInput" accept=".pdf,.png,.jpg,.jpeg,.tif,.tiff,.docx,.xlsx,.pptx,.doc,.xls,.ppt,.txt,.html,.htm,.log,.json,.xml,.csv,.md,.markdown" hidden>
+                <input type="file" id="fileInput"
+                    accept=".pdf,.rtf,.png,.jpg,.jpeg,.tif,.tiff,.gif,.webp,.bmp,.svg,.eps,.emf,.emz,.wmf,.docx,.xlsx,.pptx,.doc,.xls,.ppt,.odt,.ods,.odp,.txt,.html,.htm,.log,.json,.xml,.csv,.md,.markdown"
+                    hidden>
                 <button class="btn-primary" id="selectFileBtn">Choose File</button>
                 <p class="drag-drop-hint">or drag and drop a file here</p>
             </div>
@@ -54,6 +60,13 @@
         <div class="viewer-section" id="viewerSection" style="display: none;">
             <div class="viewer-header">
                 <h2>Document Content</h2>
+                <div class="zoom-controls" id="zoomControls" style="display: none;">
+                    <button class="zoom-btn" id="zoomOutBtn" title="Zoom Out">−</button>
+                    <span class="zoom-level" id="zoomLevel">100%</span>
+                    <button class="zoom-btn" id="zoomInBtn" title="Zoom In">+</button>
+                    <button class="zoom-btn" id="fitBtn" title="Fit to Window">⊞</button>
+                    <button class="zoom-btn" id="actualSizeBtn" title="Actual Size">1:1</button>
+                </div>
             </div>
             <div class="viewer-content" id="viewerContent">
                 <!-- Rendered document will appear here -->
@@ -79,4 +92,5 @@
 
     <script src="app.js"></script>
 </body>
+
 </html>
