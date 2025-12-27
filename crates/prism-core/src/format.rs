@@ -276,6 +276,54 @@ impl Format {
         }
     }
 
+    /// Create a new ICO (Windows Icon) format instance
+    #[must_use]
+    pub fn ico() -> Self {
+        Self {
+            mime_type: "image/x-icon".to_string(),
+            extension: "ico".to_string(),
+            family: FormatFamily::Image,
+            name: "ICO Image".to_string(),
+            is_container: false,
+        }
+    }
+
+    /// Create a new TGA (Truevision) format instance
+    #[must_use]
+    pub fn tga() -> Self {
+        Self {
+            mime_type: "image/x-tga".to_string(),
+            extension: "tga".to_string(),
+            family: FormatFamily::Image,
+            name: "TGA Image".to_string(),
+            is_container: false,
+        }
+    }
+
+    /// Create a new SVGZ (Compressed SVG) format instance
+    #[must_use]
+    pub fn svgz() -> Self {
+        Self {
+            mime_type: "image/svg+xml".to_string(),
+            extension: "svgz".to_string(),
+            family: FormatFamily::Image,
+            name: "Compressed SVG Image".to_string(),
+            is_container: false,
+        }
+    }
+
+    /// Create a new ODG (`OpenDocument` Graphics) format instance
+    #[must_use]
+    pub fn odg() -> Self {
+        Self {
+            mime_type: "application/vnd.oasis.opendocument.graphics".to_string(),
+            extension: "odg".to_string(),
+            family: FormatFamily::Office,
+            name: "OpenDocument Graphics (ODG)".to_string(),
+            is_container: true,
+        }
+    }
+
     /// Create a new plain text format instance
     #[must_use]
     pub fn text() -> Self {
@@ -734,6 +782,10 @@ static EXTENSION_MAP: &[(&str, fn() -> Format)] = &[
     ("emf", Format::emf),
     ("emz", Format::emz),
     ("wmf", Format::wmf),
+    ("ico", Format::ico),
+    ("tga", Format::tga),
+    ("svgz", Format::svgz),
+    ("odg", Format::odg),
     ("txt", Format::text),
     ("json", Format::json),
     ("xml", Format::xml),
@@ -856,6 +908,9 @@ fn detect_office_in_zip(data: &[u8]) -> Option<Format> {
         }
         if after_marker.starts_with(b"presentation") {
             return Some(Format::odp());
+        }
+        if after_marker.starts_with(b"graphics") {
+            return Some(Format::odg());
         }
     }
 

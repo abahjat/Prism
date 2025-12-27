@@ -45,6 +45,8 @@ image = { version = "0.25", default-features = false, features = [
     "gif",
     "webp",
     "bmp",
+    "ico",
+    "tga",
 ] }
 tiff = "0.10" # Direct TIFF support for multi-page handling
 

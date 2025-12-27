@@ -21,7 +21,7 @@ pub mod xlsx;
 // Re-export parsers
 pub use docx::DocxParser;
 pub use legacy::{DocParser, PptParser, XlsParser};
-pub use odf::{OdpParser, OdsParser, OdtParser};
+pub use odf::{OdgParser, OdpParser, OdsParser, OdtParser};
 pub use pptx::PptxParser;
 pub use theme::*;
 pub use xlsx::XlsxParser;

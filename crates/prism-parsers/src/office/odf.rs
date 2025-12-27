@@ -160,6 +160,52 @@ impl Parser for OdpParser {
     }
 }
 
+/// ODG (`OpenDocument` Graphics) parser
+#[derive(Debug, Clone)]
+pub struct OdgParser;
+
+impl OdgParser {
+    /// Create a new ODG parser
+    #[must_use]
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl Default for OdgParser {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[async_trait]
+impl Parser for OdgParser {
+    fn format(&self) -> Format {
+        Format::odg()
+    }
+
+    fn can_parse(&self, data: &[u8]) -> bool {
+        is_odf_zip(data, "application/vnd.oasis.opendocument.graphics")
+    }
+
+    async fn parse(&self, data: Bytes, context: ParseContext) -> Result<Document> {
+        debug!("Parsing ODG file: {:?}", context.filename);
+        parse_odf_document(data, "ODG", context)
+    }
+
+    fn metadata(&self) -> ParserMetadata {
+        ParserMetadata {
+            name: "ODG Parser".to_string(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            features: vec![
+                ParserFeature::TextExtraction,
+                ParserFeature::MetadataExtraction,
+            ],
+            requires_sandbox: false,
+        }
+    }
+}
+
 /// Check if data is a ZIP file with ODF mimetype
 fn is_odf_zip(data: &[u8], expected_mimetype: &str) -> bool {
     // Check ZIP signature first

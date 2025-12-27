@@ -73,12 +73,12 @@ pub mod text;
 pub use archive::ArchiveParser;
 pub use email::{EmlParser, IcsParser, MboxParser, MsgParser, VcfParser};
 pub use image::{
-    BmpParser, EmfParser, EmzParser, EpsParser, GifParser, JpegParser, PngParser, SvgParser,
-    TiffParser, WebpParser, WmfParser,
+    BmpParser, EmfParser, EmzParser, EpsParser, GifParser, IcoParser, JpegParser, PngParser,
+    SvgParser, SvgzParser, TgaParser, TiffParser, WebpParser, WmfParser,
 };
 pub use office::{
-    DocParser, DocxParser, OdpParser, OdsParser, OdtParser, PptParser, PptxParser, XlsParser,
-    XlsxParser,
+    DocParser, DocxParser, OdgParser, OdpParser, OdsParser, OdtParser, PptParser, PptxParser,
+    XlsParser, XlsxParser,
 };
 pub use pdf::PdfParser;
 pub use registry::ParserRegistry;
