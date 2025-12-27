@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+//! # Styles Module
+//!
+//! Management of Word styles, including paragraph and character styles.
+
 use crate::office::theme::Theme;
 use crate::office::utils;
 use prism_core::document::{ParagraphStyle, TextAlignment, TextStyle};

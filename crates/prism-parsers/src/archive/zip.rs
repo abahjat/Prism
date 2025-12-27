@@ -12,6 +12,7 @@ use prism_core::{
 use std::io::Cursor;
 use zip::ZipArchive;
 
+/// Parse a ZIP archive and return a document structure representing the file listing.
 pub async fn parse(_context: ParseContext, data: Bytes) -> Result<Document> {
     let reader = Cursor::new(data);
     let mut archive = ZipArchive::new(reader).map_err(|e| Error::ParseError(e.to_string()))?;

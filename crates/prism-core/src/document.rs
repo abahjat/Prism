@@ -1,4 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+//! # Document Model
+//!
+//! this module defines the core data structures for the Prism document model.
 //! # Unified Document Model (UDM)
 //!
 //! The UDM is the core intermediate representation that all document formats
@@ -109,7 +112,7 @@ impl Document {
     pub fn extract_text(&self) -> String {
         self.pages
             .iter()
-            .map(|page| page.extract_text())
+            .map(Page::extract_text)
             .collect::<Vec<_>>()
             .join("\n\n")
     }
@@ -281,8 +284,8 @@ impl Dimensions {
     #[must_use]
     pub fn from_mm(width: f64, height: f64) -> Self {
         Self {
-            width: width * 2.834645669,
-            height: height * 2.834645669,
+            width: width * 2.834_645_669,
+            height: height * 2.834_645_669,
         }
     }
 }
@@ -427,6 +430,7 @@ impl TextRun {
 
 /// Text styling properties
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct TextStyle {
     /// Font family name
     pub font_family: Option<String>,
@@ -527,7 +531,7 @@ impl TableBlock {
             .map(|row| {
                 row.cells
                     .iter()
-                    .map(|cell| cell.extract_text())
+                    .map(TableCell::extract_text)
                     .collect::<Vec<_>>()
                     .join("\t")
             })
@@ -590,7 +594,7 @@ pub struct VectorBlock {
 /// A vector path
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VectorPath {
-    /// Path commands (MoveTo, LineTo, CurveTo, etc.)
+    /// Path commands (`MoveTo`, `LineTo`, `CurveTo`, etc.)
     pub commands: Vec<PathCommand>,
 
     /// Fill color
@@ -611,9 +615,21 @@ pub enum PathCommand {
     /// Line to point
     LineTo(Point),
     /// Cubic bezier curve
-    CurveTo { cp1: Point, cp2: Point, end: Point },
+    CurveTo {
+        /// Control point 1
+        cp1: Point,
+        /// Control point 2
+        cp2: Point,
+        /// End point
+        end: Point,
+    },
     /// Quadratic bezier curve
-    QuadTo { cp: Point, end: Point },
+    QuadTo {
+        /// Control point
+        cp: Point,
+        /// End point
+        end: Point,
+    },
     /// Close the path
     Close,
 }
@@ -627,7 +643,7 @@ pub struct ContainerBlock {
     /// Nested content blocks
     pub children: Vec<ContentBlock>,
 
-    /// Container type (e.g., "group", "frame", "text-box")
+    /// Container type (e.g., `group`, `frame`, `text-box`)
     pub container_type: Option<String>,
 }
 
@@ -726,7 +742,10 @@ pub enum AnnotationType {
     /// Freehand drawing
     Ink,
     /// Link
-    Link { url: String },
+    Link {
+        /// Target URL
+        url: String,
+    },
 }
 
 /// Page-specific metadata
@@ -787,10 +806,14 @@ pub struct ParagraphStyle {
 /// Text alignment options
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
 pub enum TextAlignment {
+    /// Navigate text to the left
     #[default]
     Left,
+    /// Center the text
     Center,
+    /// Align text to the right
     Right,
+    /// Justify text to both edges
     Justify,
 }
 
@@ -807,7 +830,7 @@ pub struct ResourceStore {
 /// An embedded image resource
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ImageResource {
-    /// Resource identifier (referenced by ImageBlock)
+    /// Resource identifier (referenced by `ImageBlock`)
     pub id: String,
 
     /// MIME type

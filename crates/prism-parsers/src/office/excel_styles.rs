@@ -12,38 +12,56 @@ use quick_xml::Reader;
 /// Represents a font configuration in Excel
 #[derive(Debug, Clone, Default)]
 pub struct ExcelFont {
+    /// Font name (e.g., "Arial")
     pub name: String,
+    /// Font size in points
     pub size: f64,
+    /// Font color (RGB hex)
     pub color: Option<String>,
+    /// Whether the font is bold
     pub bold: bool,
+    /// Whether the font is italic
     pub italic: bool,
+    /// Whether the font is underlined
     pub underline: bool,
 }
 
 /// Represents a fill configuration (background color)
 #[derive(Debug, Clone, Default)]
 pub struct ExcelFill {
+    /// Pattern type (e.g., "solid")
     pub pattern_type: String,
+    /// Foreground color
     pub fg_color: Option<String>,
+    /// Background color
     pub bg_color: Option<String>,
 }
 
 /// Represents a cell format (XF) which links to font, fill, and border
 #[derive(Debug, Clone, Default)]
 pub struct CellXf {
+    /// Index into fonts list
     pub font_id: usize,
+    /// Index into fills list
     pub fill_id: usize,
+    /// Index into borders list
     pub border_id: usize,
+    /// Index into number formats list
     pub num_fmt_id: usize,
+    /// Horizontal alignment
     pub align_h: Option<String>,
+    /// Vertical alignment
     pub align_v: Option<String>,
 }
 
 /// Collection of all styles in the workbook
 #[derive(Debug, Clone, Default)]
 pub struct ExcelStyles {
+    /// List of fonts
     pub fonts: Vec<ExcelFont>,
+    /// List of fills
     pub fills: Vec<ExcelFill>,
+    /// List of cell formats
     pub cell_xfs: Vec<CellXf>,
 }
 

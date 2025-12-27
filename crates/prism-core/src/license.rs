@@ -1,4 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+//! # License Module
+//!
+//! Commercial license management and validation.
 
 /// Commercial License Manager
 ///
@@ -15,6 +18,7 @@ impl LicenseManager {
     ///
     /// # Returns
     /// * `true` if valid, `false` otherwise.
+    #[must_use]
     pub fn validate(key: &str) -> bool {
         // Placeholder validation logic
         // In a real scenario, this might check a JWT signature or online endpoint.
@@ -28,6 +32,7 @@ impl LicenseManager {
     }
 
     /// Get the current license type.
+    #[must_use]
     pub fn license_type() -> &'static str {
         "AGPL-3.0 (Community)"
     }

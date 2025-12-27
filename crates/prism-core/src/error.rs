@@ -107,6 +107,10 @@ impl Error {
 /// Extension trait for adding context to errors
 pub trait ResultExt<T> {
     /// Add context to an error
+    ///
+    /// # Errors
+    ///
+    /// Returns the original error wrapped with additional context.
     fn context<S: Into<String>>(self, msg: S) -> Result<T>;
 }
 

@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+//! # Slides Module
+//!
+//! Functionality for parsing PowerPoint slides.
+
 use crate::office::shapes;
 use prism_core::document::{ContentBlock, Dimensions, Page, PageMetadata};
 use quick_xml::events::Event;

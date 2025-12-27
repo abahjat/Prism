@@ -8,6 +8,9 @@ use prism_core::error::{Error, Result};
 ///
 /// Returns (row, column) as zero-based indices
 /// Example: "B5" -> (4, 1)
+///
+/// # Errors
+/// Returns an error if the cell reference is invalid (e.g., empty, missing row/col).
 pub fn parse_cell_ref(ref_str: &str) -> Result<(usize, usize)> {
     if ref_str.is_empty() {
         return Err(Error::ParseError("Empty cell reference".to_string()));
@@ -38,6 +41,9 @@ pub fn parse_cell_ref(ref_str: &str) -> Result<(usize, usize)> {
 /// - "Z" -> 25
 /// - "AA" -> 26
 /// - "AB" -> 27
+///
+/// # Errors
+/// Returns an error if the column string contains non-uppercase-alpha characters.
 pub fn excel_column_to_index(col: &str) -> Result<usize> {
     if col.is_empty() {
         return Err(Error::ParseError("Empty column reference".to_string()));
@@ -70,6 +76,8 @@ pub fn index_to_excel_column(mut index: usize) -> String {
 
     while index > 0 {
         let remainder = (index - 1) % 26;
+        // remainder is guaranteed to be < 26, so it fits in u8.
+        #[allow(clippy::cast_possible_truncation)]
         col.insert(0, (b'A' + remainder as u8) as char);
         index = (index - 1) / 26;
     }

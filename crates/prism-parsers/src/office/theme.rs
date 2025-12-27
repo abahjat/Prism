@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+//! # Theme Module
+//!
+//! Handles parsing of Office Theme files (theme1.xml) to support color schemes and font schemes.
+
 use crate::office::utils::attr_value;
 use prism_core::error::{Error, Result};
 use quick_xml::events::Event;

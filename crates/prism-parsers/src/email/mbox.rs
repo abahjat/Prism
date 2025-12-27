@@ -33,7 +33,7 @@ impl MboxParser {
         TextRun {
             text: format!("{}: {}\n", label, value),
             style: TextStyle {
-                bold: label == "From" || label == "To" || label == "Subject",
+                bold: matches!(label, "From" | "To" | "Subject"),
                 ..Default::default()
             },
             bounds: None,
@@ -60,13 +60,13 @@ impl MboxParser {
                             name,
                             addr.address
                                 .as_ref()
-                                .map(|a| a.to_string())
+                                .map(ToString::to_string)
                                 .unwrap_or_default()
                         )
                     } else {
                         addr.address
                             .as_ref()
-                            .map(|a| a.to_string())
+                            .map(ToString::to_string)
                             .unwrap_or_default()
                     }
                 })
@@ -90,13 +90,13 @@ impl MboxParser {
                             name,
                             addr.address
                                 .as_ref()
-                                .map(|a| a.to_string())
+                                .map(ToString::to_string)
                                 .unwrap_or_default()
                         )
                     } else {
                         addr.address
                             .as_ref()
-                            .map(|a| a.to_string())
+                            .map(ToString::to_string)
                             .unwrap_or_default()
                     }
                 })
@@ -196,7 +196,7 @@ impl Parser for MboxParser {
 
         for message_text in messages {
             // Skip the "From " envelope line and parse the actual message
-            if let Some(msg_start) = message_text.find("\n") {
+            if let Some(msg_start) = message_text.find('\n') {
                 let message_data = &message_text[msg_start + 1..];
 
                 match self.parse_message(message_data.as_bytes()) {

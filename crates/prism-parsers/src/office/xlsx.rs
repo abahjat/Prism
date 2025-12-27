@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //! XLSX (Excel) parser
 //!
-//! Parses XLSX (Office Open XML Spreadsheet) files into the Unified Document Model.
-//! Each worksheet becomes a Page containing a TableBlock with the cell grid.
+//! Parses `XLSX` (Office Open XML Spreadsheet) files into the Unified Document Model.
+//! Each worksheet becomes a Page containing a `TableBlock` with the cell grid.
 
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -46,7 +46,7 @@ impl XlsxParser {
     }
 
     /// Parse shared strings table
-    fn parse_shared_strings(archive: &mut ZipArchive<Cursor<&[u8]>>) -> Result<Vec<String>> {
+    fn parse_shared_strings(archive: &mut ZipArchive<Cursor<&[u8]>>) -> Vec<String> {
         let mut strings = Vec::new();
         if let Ok(mut file) = archive.by_name("xl/sharedStrings.xml") {
             let mut xml = String::new();
@@ -82,13 +82,11 @@ impl XlsxParser {
                 }
             }
         }
-        Ok(strings)
+        strings
     }
 
-    /// Parse workbook.xml to get sheets
-    fn parse_workbook_sheets(
-        archive: &mut ZipArchive<Cursor<&[u8]>>,
-    ) -> Result<Vec<(String, String)>> {
+    /// Parse `workbook.xml` to get sheets
+    fn parse_workbook_sheets(archive: &mut ZipArchive<Cursor<&[u8]>>) -> Vec<(String, String)> {
         let mut sheets = Vec::new();
         if let Ok(mut file) = archive.by_name("xl/workbook.xml") {
             let mut xml = String::new();
@@ -127,13 +125,13 @@ impl XlsxParser {
                 }
             }
         }
-        Ok(sheets)
+        sheets
     }
 
     /// Parse workbook rels
     fn parse_workbook_rels(
         archive: &mut ZipArchive<Cursor<&[u8]>>,
-    ) -> Result<std::collections::HashMap<String, String>> {
+    ) -> std::collections::HashMap<String, String> {
         let mut rels = std::collections::HashMap::new();
         if let Ok(mut file) = archive.by_name("xl/_rels/workbook.xml.rels") {
             let mut xml = String::new();
@@ -170,7 +168,7 @@ impl XlsxParser {
                 }
             }
         }
-        Ok(rels)
+        rels
     }
 
     /// Convert column letter to 0-based index (e.g. "A" -> 0, "Z" -> 25, "AA" -> 26)
@@ -191,7 +189,6 @@ impl XlsxParser {
     }
 
     /// Parse a single sheet
-    /// Parse a single sheet
     fn parse_sheet(
         xml: &str,
         shared_strings: &[String],
@@ -200,6 +197,7 @@ impl XlsxParser {
         Self::parse_sheet_clean(xml, shared_strings, styles)
     }
 
+    #[allow(clippy::too_many_lines)]
     fn parse_sheet_clean(
         xml: &str,
         shared_strings: &[String],
@@ -510,7 +508,7 @@ impl Parser for XlsxParser {
             ZipArchive::new(reader).map_err(|e| Error::ParseError(format!("ZIP error: {}", e)))?;
 
         // 1. Parse Shared Strings
-        let shared_strings = Self::parse_shared_strings(&mut archive)?;
+        let shared_strings = Self::parse_shared_strings(&mut archive);
         debug!("Parsed {} shared strings", shared_strings.len());
 
         // 2. Parse Theme
@@ -543,8 +541,8 @@ impl Parser for XlsxParser {
         }
 
         // 3. Parse Workbook & Rels to find sheets
-        let sheets = Self::parse_workbook_sheets(&mut archive)?;
-        let rels = Self::parse_workbook_rels(&mut archive)?;
+        let sheets = Self::parse_workbook_sheets(&mut archive);
+        let rels = Self::parse_workbook_rels(&mut archive);
 
         let mut pages = Vec::new();
 
@@ -571,6 +569,7 @@ impl Parser for XlsxParser {
                                 let mut page_meta = PageMetadata::default();
                                 page_meta.label = Some(name.clone());
 
+                                #[allow(clippy::cast_possible_truncation)]
                                 pages.push(Page {
                                     number: (i + 1) as u32,
                                     dimensions: Dimensions::LETTER,
@@ -594,6 +593,7 @@ impl Parser for XlsxParser {
         if let Some(ref f) = context.filename {
             metadata.title = Some(f.clone());
         }
+        #[allow(clippy::cast_possible_truncation)]
         metadata.add_custom("excel_sheet_count", sheets.len() as i64);
 
         let mut doc = Document::builder().metadata(metadata).build();
@@ -720,9 +720,9 @@ mod tests {
                         <c r="C1" t="str"><v>After Merge</v></c>
                     </row>
                     <row r="2">
-                        <c r="A2"><v>1</v></c>
-                        <c r="B2"><v>2</v></c>
-                        <c r="C2"><v>3</v></c>
+                        <c r="A2" s="1"><v>123</v></c>
+                        <c r="B2" s="2"><v>456</v></c>
+                         <c r="C2"><v>3</v></c>
                     </row>
                 </sheetData>
                 <mergeCells>
