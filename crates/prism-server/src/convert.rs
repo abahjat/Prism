@@ -29,6 +29,9 @@ pub struct FormatDetectionResponse {
     pub method: String,
     /// Message explaining the response
     pub message: String,
+    /// Preview of file content (up to 1000 characters)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preview: Option<String>,
 }
 
 /// Format information
@@ -155,6 +158,9 @@ pub async fn convert(
                     format_result.format.mime_type
                 );
 
+                // Extract a preview of the file content (up to 1000 chars)
+                let preview = extract_file_preview(&file_data);
+
                 let response = FormatDetectionResponse {
                     format: FormatInfo {
                         mime_type: format_result.format.mime_type.clone(),
@@ -169,6 +175,7 @@ pub async fn convert(
                         "Format detected as {} but no parser is available. Returning format detection information.",
                         format_result.format.name
                     ),
+                    preview,
                 };
 
                 Ok(Json(response).into_response())
@@ -208,4 +215,64 @@ async fn extract_file(multipart: &mut Multipart) -> Result<(Option<String>, Vec<
     Err(ApiError::BadRequest(
         "No file field found in multipart form".to_string(),
     ))
+}
+
+/// Extract a preview of file content (up to 1000 characters)
+///
+/// Attempts to extract readable text from the file data.
+/// For binary files, extracts printable ASCII characters.
+fn extract_file_preview(data: &[u8]) -> Option<String> {
+    const MAX_PREVIEW_CHARS: usize = 1000;
+
+    if data.is_empty() {
+        return None;
+    }
+
+    // First, try to interpret as UTF-8 text
+    if let Ok(text) = std::str::from_utf8(data) {
+        let preview: String = text
+            .chars()
+            .filter(|c| !c.is_control() || *c == '\n' || *c == '\t')
+            .take(MAX_PREVIEW_CHARS)
+            .collect();
+        if !preview.trim().is_empty() {
+            return Some(preview);
+        }
+    }
+
+    // For binary files, extract printable ASCII sequences
+    let mut preview = String::new();
+    let mut consecutive_printable = 0;
+    let mut buffer = String::new();
+
+    for &byte in data {
+        if (32..127).contains(&byte) || byte == b'\n' || byte == b'\t' {
+            buffer.push(byte as char);
+            consecutive_printable += 1;
+        } else {
+            // Only keep runs of 4+ consecutive printable chars
+            if consecutive_printable >= 4 {
+                preview.push_str(&buffer);
+                preview.push(' ');
+            }
+            buffer.clear();
+            consecutive_printable = 0;
+        }
+
+        if preview.len() >= MAX_PREVIEW_CHARS {
+            break;
+        }
+    }
+
+    // Add final buffer
+    if consecutive_printable >= 4 && preview.len() < MAX_PREVIEW_CHARS {
+        preview.push_str(&buffer);
+    }
+
+    let preview = preview.trim().to_string();
+    if preview.is_empty() {
+        None
+    } else {
+        Some(preview.chars().take(MAX_PREVIEW_CHARS).collect())
+    }
 }
