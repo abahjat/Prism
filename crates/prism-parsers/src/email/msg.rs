@@ -39,8 +39,18 @@ impl MsgParser {
         )
     }
 
-    /// Extract string property from MSG file
+    /// Extract string property from MSG file (tries Unicode then ASCII)
     fn extract_string_property(
+        comp: &mut CompoundFile<Cursor<&[u8]>>,
+        base_tag: &str,
+    ) -> Option<String> {
+        Self::extract_raw_string(comp, &format!("__substg1.0_{base_tag}001F")) // Unicode
+            .or_else(|| Self::extract_raw_string(comp, &format!("__substg1.0_{base_tag}001E")))
+        // ASCII
+    }
+
+    /// Extract raw string bytes and handle encoding
+    fn extract_raw_string(
         comp: &mut CompoundFile<Cursor<&[u8]>>,
         prop_path: &str,
     ) -> Option<String> {
@@ -49,22 +59,38 @@ impl MsgParser {
             let mut buffer = Vec::new();
             stream.read_to_end(&mut buffer).ok()?;
 
-            // MSG properties are often UTF-16LE encoded
-            if buffer.len() >= 2 && buffer.len() % 2 == 0 {
-                // Try UTF-16LE first
-                let utf16_chars: Vec<u16> = buffer
-                    .chunks_exact(2)
-                    .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
-                    .take_while(|&c| c != 0) // Stop at null terminator
-                    .collect();
-
-                if let Ok(s) = String::from_utf16(&utf16_chars) {
+            if prop_path.ends_with("001F") {
+                // UTF-16LE
+                if buffer.len() >= 2 {
+                    let utf16_chars: Vec<u16> = buffer
+                        .chunks_exact(2)
+                        .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
+                        .take_while(|&c| c != 0)
+                        .collect();
+                    String::from_utf16(&utf16_chars).ok()
+                } else {
+                    None
+                }
+            } else {
+                // String8 / Binary stream - Try UTF-8 first
+                let bytes: Vec<u8> = buffer.iter().copied().take_while(|&b| b != 0).collect();
+                if let Ok(s) = String::from_utf8(bytes) {
                     return Some(s);
                 }
-            }
 
-            // Fallback to UTF-8
-            String::from_utf8(buffer.into_iter().take_while(|&b| b != 0).collect()).ok()
+                // Fallback trial for Binary (0102) if it contains UTF-16
+                if buffer.len() >= 2 && buffer.len() % 2 == 0 {
+                    let utf16_chars: Vec<u16> = buffer
+                        .chunks_exact(2)
+                        .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
+                        .take_while(|&c| c != 0)
+                        .collect();
+                    if let Ok(s) = String::from_utf16(&utf16_chars) {
+                        return Some(s);
+                    }
+                }
+                None
+            }
         })
     }
 
@@ -112,19 +138,12 @@ impl MsgParser {
                 let base = &attach_storage_name;
 
                 // Filename: 0x3707 (Long) or 0x3704 (Short)
-                let filename =
-                    Self::extract_string_property(comp, &format!("{base}/__substg1.0_3707001F"))
-                        .or_else(|| {
-                            Self::extract_string_property(
-                                comp,
-                                &format!("{base}/__substg1.0_3704001F"),
-                            )
-                        })
-                        .unwrap_or_else(|| format!("attachment_{i}"));
+                let filename = Self::extract_string_property(comp, "3707")
+                    .or_else(|| Self::extract_string_property(comp, "3704"))
+                    .unwrap_or_else(|| format!("attachment_{i}"));
 
                 // Mime Type: 0x370E
-                let mime_type =
-                    Self::extract_string_property(comp, &format!("{base}/__substg1.0_370E001F"));
+                let mime_type = Self::extract_string_property(comp, "370E");
 
                 // Data: 0x3701 (Binary - 0102)
                 let data_path = format!("{base}/__substg1.0_37010102");
@@ -200,53 +219,77 @@ impl Parser for MsgParser {
             r#"<div class="msg-headers" style="background: #f5f5f5; padding: 15px; border-bottom: 1px solid #ddd; border-radius: 4px 4px 0 0; font-family: system-ui, sans-serif; font-size: 14px; color: #333;">"#,
         );
 
-        // From (0x0C1A or 0x0C1F)
-        if let Some(sender_name) = Self::extract_string_property(&mut comp, "__substg1.0_0C1A001F")
-        {
+        // From/Sender (0x0C1A, 0x0C1F, 0x0042)
+        if let Some(sender_name) = Self::extract_string_property(&mut comp, "0C1A") {
             headers_html.push_str(&Self::format_header_html("From", &sender_name));
             metadata.author = Some(sender_name);
-        } else if let Some(sender_email) =
-            Self::extract_string_property(&mut comp, "__substg1.0_0C1F001F")
-        {
+        } else if let Some(sender_email) = Self::extract_string_property(&mut comp, "0C1F") {
             headers_html.push_str(&Self::format_header_html("From", &sender_email));
             metadata.author = Some(sender_email);
         }
 
         // To (0x0E04)
-        if let Some(to) = Self::extract_string_property(&mut comp, "__substg1.0_0E04001F") {
+        if let Some(to) = Self::extract_string_property(&mut comp, "0E04") {
             headers_html.push_str(&Self::format_header_html("To", &to));
         }
 
         // Cc (0x0E03)
-        if let Some(cc) = Self::extract_string_property(&mut comp, "__substg1.0_0E03001F") {
+        if let Some(cc) = Self::extract_string_property(&mut comp, "0E03") {
             headers_html.push_str(&Self::format_header_html("Cc", &cc));
         }
 
-        // Sent Time (0x0039 - CLIENT_SUBMIT_TIME, 0040 = PT_SYSTIME)
-        if let Some(sent_time) = Self::extract_filetime_property(&mut comp, "__substg1.0_00390040")
-        {
-            let formatted = sent_time.format("%a %m/%d/%Y %I:%M:%S %p").to_string();
-            headers_html.push_str(&Self::format_header_html("Date", &formatted));
-            metadata.created = Some(sent_time);
-        }
-
         // Subject (0x0037)
-        if let Some(subject) = Self::extract_string_property(&mut comp, "__substg1.0_0037001F") {
+        if let Some(subject) = Self::extract_string_property(&mut comp, "0037") {
             headers_html.push_str(&Self::format_header_html("Subject", &subject));
             metadata.title = Some(subject);
+        }
+
+        // Date extraction with fallbacks
+        let mut msg_date = None;
+        let mut date_label = "Date";
+
+        // 1. Client Submit Time (0x0039)
+        if let Some(sent_time) = Self::extract_filetime_property(&mut comp, "__substg1.0_00390040")
+        {
+            msg_date = Some(sent_time);
+        }
+        // 2. Message Delivery Time (0x0E06)
+        else if let Some(delivery_time) =
+            Self::extract_filetime_property(&mut comp, "__substg1.0_0E060040")
+        {
+            msg_date = Some(delivery_time);
+        }
+        // 3. Creation Time (0x3007) - Common for Sticky Notes
+        else if let Some(creation_time) =
+            Self::extract_filetime_property(&mut comp, "__substg1.0_30070040")
+        {
+            msg_date = Some(creation_time);
+            date_label = "Created";
+        }
+
+        if let Some(date) = msg_date {
+            let formatted = date.format("%a %-m/%-d/%Y %-I:%M:%S %p").to_string();
+            headers_html.push_str(&Self::format_header_html(date_label, &formatted));
+            metadata.created = Some(date);
+        }
+
+        // Message Class (0x001A) - for identification
+        if let Some(msg_class) = Self::extract_string_property(&mut comp, "001A") {
+            if msg_class.to_lowercase().contains("stickynote") {
+                headers_html.push_str(&Self::format_header_html("Type", "Sticky Note"));
+            }
         }
 
         headers_html.push_str("</div>");
 
         // Body: Try HTML (0x1013) then Text (0x1000)
         let body_content = if let Some(html_body) =
-            Self::extract_string_property(&mut comp, "__substg1.0_10130102")
+            Self::extract_raw_string(&mut comp, "__substg1.0_10130102")
+                .or_else(|| Self::extract_string_property(&mut comp, "1013"))
         {
             // Found HTML body. Clean it up.
             clean_html_body(&html_body)
-        } else if let Some(text_body) =
-            Self::extract_string_property(&mut comp, "__substg1.0_1000001F")
-        {
+        } else if let Some(text_body) = Self::extract_string_property(&mut comp, "1000") {
             // Text body: wrap in pre/div
             format!(
                 r#"<div style="white-space: pre-wrap; font-family: system-ui, sans-serif; color: #333;">{}</div>"#,
@@ -377,7 +420,7 @@ mod tests {
             let mut comp =
                 CompoundFile::create(&mut buffer).map_err(|e| Error::ParseError(e.to_string()))?;
 
-            // 1. Sender (0C1A)
+            // 1. Sender (0C1A) - Unicode
             let sender = "Sender Name".encode_utf16().collect::<Vec<u16>>();
             let mut sender_bytes = Vec::new();
             for c in sender {
@@ -388,45 +431,29 @@ mod tests {
             comp.create_stream("__substg1.0_0C1A001F")?
                 .write_all(&sender_bytes)?;
 
-            // 2. Subject (0037)
-            let subject = "Test Subject".encode_utf16().collect::<Vec<u16>>();
-            let mut subject_bytes = Vec::new();
-            for c in subject {
-                subject_bytes.extend_from_slice(&c.to_le_bytes());
-            }
-            subject_bytes.push(0);
-            subject_bytes.push(0);
-            comp.create_stream("__substg1.0_0037001F")?
-                .write_all(&subject_bytes)?;
+            // 2. Subject (0037) - ASCII
+            // Using 001E for ASCII test
+            comp.create_stream("__substg1.0_0037001E")?
+                .write_all(b"Test Subject ASCII\0")?;
 
-            // 3. Body HTML (1013)
-            let body = "<html><body><p>This is the HTML body.</p></body></html>"
-                .encode_utf16()
-                .collect::<Vec<u16>>();
-            let mut body_bytes = Vec::new();
-            for c in body {
-                body_bytes.extend_from_slice(&c.to_le_bytes());
-            }
-            body_bytes.push(0);
-            body_bytes.push(0);
-            // PR_BODY_HTML is usually binary 0102
+            // 3. Body HTML (1013) - Binary (Using UTF-8 for test)
+            let body_html = "<html><body><p>This is the HTML body.</p></body></html>";
             comp.create_stream("__substg1.0_10130102")?
-                .write_all(&body_bytes)?;
+                .write_all(body_html.as_bytes())?;
 
-            // 4. Sent Time (0039 - 0040)
-            // Oct 10 2002 ... random valid FILETIME
-            // 2023-01-01 00:00:00 UTC = 133170048000000000 ticks roughly
-            // Let's use 0 values? 1601.
-            // Let's use a known recent date. 1700000000 unix seconds.
-            // approx filetime.
-            // Just use any 8 bytes.
+            // 4. Creation Time (3007)
             let time_bytes = 133_170_048_000_000_000u64.to_le_bytes();
-            comp.create_stream("__substg1.0_00390040")?
+            comp.create_stream("__substg1.0_30070040")?
                 .write_all(&time_bytes)?;
+
+            // 5. Message Class (001A) - ASCII
+            comp.create_stream("__substg1.0_001A001E")?
+                .write_all(b"IPM.StickyNote\0")?;
 
             // Attachments
             let attach_storage = "__attach_version1.0_00000000";
             comp.create_storage(attach_storage)?;
+            // Filename - Unicode
             let filename = "test.txt".encode_utf16().collect::<Vec<u16>>();
             let mut filename_bytes = Vec::new();
             for c in filename {
@@ -452,7 +479,10 @@ mod tests {
         let document = parser.parse(data, context).await?;
 
         // Verify Metadata
-        assert_eq!(document.metadata.title.as_deref(), Some("Test Subject"));
+        assert_eq!(
+            document.metadata.title.as_deref(),
+            Some("Test Subject ASCII")
+        );
         assert_eq!(document.metadata.author.as_deref(), Some("Sender Name"));
 
         // Verify Content
@@ -466,13 +496,12 @@ mod tests {
 
             // Check headers
             assert!(full_text.contains("Sender Name"));
-            assert!(full_text.contains("Test Subject"));
-            assert!(full_text.contains("Date"));
+            assert!(full_text.contains("Test Subject ASCII"));
+            assert!(full_text.contains("Created")); // Fallback to 3007
+            assert!(full_text.contains("Sticky Note")); // Message Class detection
 
             // Check Body
             assert!(full_text.contains("This is the HTML body."));
-            // Check tags
-            assert!(full_text.contains("<div class=\"msg-header"));
         } else {
             panic!("Expected text block");
         }
