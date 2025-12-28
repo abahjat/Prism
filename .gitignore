@@ -28,3 +28,8 @@ nul
 
 # OS specific
 Thumbs.db
+
+# Dotnet
+**/bin/
+**/obj/
+.vs/

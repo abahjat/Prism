@@ -1562,6 +1562,7 @@ dependencies = [
 name = "prism-bindings"
 version = "0.1.0"
 dependencies = [
+ "bytes",
  "libc",
  "prism-core",
  "prism-parsers",

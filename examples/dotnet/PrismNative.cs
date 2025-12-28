@@ -16,6 +16,9 @@ public static class PrismNative
     public static extern IntPtr prism_preview_file(byte[] data, UIntPtr len);
 
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern IntPtr prism_convert_to_html(byte[] data, UIntPtr len);
+
+    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
     public static extern void prism_free_string(IntPtr ptr);
 
     // Helper to marshal string result and free it

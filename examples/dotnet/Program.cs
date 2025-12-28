@@ -37,5 +37,20 @@ var preview = PrismNative.PtrToStringAndFree(previewPtr);
 
 Console.WriteLine($"✅ Preview Content:\n{preview}");
 
+// 3. Testing HTML Conversion
+Console.WriteLine($"\n🌍 Testing HTML Conversion (PDF Header)...");
+var htmlPtr = PrismNative.prism_convert_to_html(pdfData, (UIntPtr)pdfData.Length);
+var html = PrismNative.PtrToStringAndFree(htmlPtr);
+
+if (html != null)
+{
+    Console.WriteLine($"✅ Generated HTML (First 100 chars):");
+    Console.WriteLine(html.Length > 100 ? html.Substring(0, 100) + "..." : html);
+}
+else
+{
+    Console.WriteLine("❌ HTML Conversion Failed or Returned Null");
+}
+
 Console.WriteLine("\nDone. Press any key to exit.");
 Console.ReadLine();
