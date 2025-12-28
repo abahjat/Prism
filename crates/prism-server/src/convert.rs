@@ -246,9 +246,10 @@ async fn extract_file(multipart: &mut Multipart) -> Result<(Option<String>, Vec<
 /// Extract a preview of file content (up to 1000 characters)
 ///
 /// Attempts to extract readable text from the file data.
-/// For binary files, extracts printable ASCII characters.
+/// For binary files, shows a hex dump if no readable text is found.
 fn extract_file_preview(data: &[u8]) -> Option<String> {
     const MAX_PREVIEW_CHARS: usize = 1000;
+    const MAX_HEX_BYTES: usize = 256;
 
     if data.is_empty() {
         return None;
@@ -296,9 +297,45 @@ fn extract_file_preview(data: &[u8]) -> Option<String> {
     }
 
     let preview = preview.trim().to_string();
-    if preview.is_empty() {
-        None
-    } else {
-        Some(preview.chars().take(MAX_PREVIEW_CHARS).collect())
+    if !preview.is_empty() {
+        return Some(preview.chars().take(MAX_PREVIEW_CHARS).collect());
     }
+
+    // Fallback: show hex dump for pure binary files
+    let bytes_to_show = data.len().min(MAX_HEX_BYTES);
+    let mut hex_preview = String::from("Binary file - Hex dump:\n");
+
+    for (i, chunk) in data[..bytes_to_show].chunks(16).enumerate() {
+        // Offset
+        hex_preview.push_str(&format!("{:04X}: ", i * 16));
+
+        // Hex bytes
+        for byte in chunk {
+            hex_preview.push_str(&format!("{:02X} ", byte));
+        }
+
+        // Padding for incomplete lines
+        for _ in 0..(16 - chunk.len()) {
+            hex_preview.push_str("   ");
+        }
+
+        hex_preview.push_str(" | ");
+
+        // ASCII representation
+        for &byte in chunk {
+            if (32..127).contains(&byte) {
+                hex_preview.push(byte as char);
+            } else {
+                hex_preview.push('.');
+            }
+        }
+
+        hex_preview.push('\n');
+    }
+
+    if data.len() > bytes_to_show {
+        hex_preview.push_str(&format!("... ({} more bytes)", data.len() - bytes_to_show));
+    }
+
+    Some(hex_preview)
 }
