@@ -13,7 +13,7 @@ fn main() {
         _ => "unknown".to_string(),
     };
 
-    println!("cargo:rustc-env=GIT_HASH={}", git_hash);
+    println!("cargo:rustc-env=GIT_HASH={git_hash}");
 
     // Re-run build script if git HEAD changes
     println!("cargo:rerun-if-changed=../../.git/HEAD");
