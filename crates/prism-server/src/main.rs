@@ -77,6 +77,9 @@ impl AppState {
         registry.register(Arc::new(prism_parsers::OdpParser::new()));
         registry.register(Arc::new(prism_parsers::OdgParser::new()));
 
+        // Register OneNote parser
+        registry.register(Arc::new(prism_parsers::OneNoteParser::new()));
+
         // Register text-based parsers
         registry.register(Arc::new(prism_parsers::TextParser::new()));
         registry.register(Arc::new(prism_parsers::HtmlParser::new()));

@@ -77,8 +77,8 @@ pub use image::{
     SvgParser, SvgzParser, TgaParser, TiffParser, WebpParser, WmfParser,
 };
 pub use office::{
-    DocParser, DocxParser, OdgParser, OdpParser, OdsParser, OdtParser, PptParser, PptxParser,
-    XlsParser, XlsxParser,
+    DocParser, DocxParser, OdgParser, OdpParser, OdsParser, OdtParser, OneNoteParser, PptParser,
+    PptxParser, XlsParser, XlsxParser,
 };
 pub use pdf::PdfParser;
 pub use registry::ParserRegistry;

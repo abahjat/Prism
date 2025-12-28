@@ -324,6 +324,18 @@ impl Format {
         }
     }
 
+    /// Create a new Microsoft `OneNote` format instance
+    #[must_use]
+    pub fn onenote() -> Self {
+        Self {
+            mime_type: "application/onenote".to_string(),
+            extension: "one".to_string(),
+            family: FormatFamily::Office,
+            name: "Microsoft OneNote".to_string(),
+            is_container: true,
+        }
+    }
+
     /// Create a new plain text format instance
     #[must_use]
     pub fn text() -> Self {
@@ -786,6 +798,7 @@ static EXTENSION_MAP: &[(&str, fn() -> Format)] = &[
     ("tga", Format::tga),
     ("svgz", Format::svgz),
     ("odg", Format::odg),
+    ("one", Format::onenote),
     ("txt", Format::text),
     ("json", Format::json),
     ("xml", Format::xml),
