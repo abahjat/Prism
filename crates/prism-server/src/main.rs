@@ -57,6 +57,9 @@ impl AppState {
         registry.register(Arc::new(prism_parsers::EmzParser::new()));
         registry.register(Arc::new(prism_parsers::EpsParser::new()));
         registry.register(Arc::new(prism_parsers::WmfParser::new()));
+        registry.register(Arc::new(prism_parsers::IcoParser::new()));
+        registry.register(Arc::new(prism_parsers::TgaParser::new()));
+        registry.register(Arc::new(prism_parsers::SvgzParser::new()));
 
         // Register Office parsers (modern)
         registry.register(Arc::new(prism_parsers::DocxParser::new()));
@@ -72,6 +75,16 @@ impl AppState {
         registry.register(Arc::new(prism_parsers::OdtParser::new()));
         registry.register(Arc::new(prism_parsers::OdsParser::new()));
         registry.register(Arc::new(prism_parsers::OdpParser::new()));
+        registry.register(Arc::new(prism_parsers::OdgParser::new()));
+
+        // Register OneNote parser
+        registry.register(Arc::new(prism_parsers::OneNoteParser::new()));
+
+        // Register Visio parser
+        registry.register(Arc::new(prism_parsers::VsdxParser::new()));
+
+        // Register Microsoft Project parser
+        registry.register(Arc::new(prism_parsers::MppParser::new()));
 
         // Register text-based parsers
         registry.register(Arc::new(prism_parsers::TextParser::new()));

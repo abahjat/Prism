@@ -35,6 +35,7 @@ uuid = { workspace = true }
 bytes = { workspace = true }
 chrono = { workspace = true }
 base64 = "0.22"
+tempfile = "3.10"
 
 # Image processing (use 0.25 to match pdfium-render)
 image = { version = "0.25", default-features = false, features = [
@@ -44,6 +45,8 @@ image = { version = "0.25", default-features = false, features = [
     "gif",
     "webp",
     "bmp",
+    "ico",
+    "tga",
 ] }
 tiff = "0.10" # Direct TIFF support for multi-page handling
 
@@ -55,7 +58,8 @@ flate2 = "1.0"
 quick-xml = { version = "0.31", features = ["serialize"] }
 
 # Office parsing (legacy - OLE2/CFB)
-cfb = "0.7" # Compound File Binary format reader
+cfb = "0.7"              # Compound File Binary format reader
+onenote_parser = "0.4.1" # OneNote file parser
 
 # PDF parsing
 lopdf = "0.38" # For metadata extraction and basic parsing

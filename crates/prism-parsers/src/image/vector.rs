@@ -1,25 +1,27 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //! Vector/metafile image parsers (EMF, EMZ, WMF, EPS)
 //!
-//! Basic parsers for Windows Metafile formats and EPS.
-//! These formats are complex and full rendering is not supported.
-//! The parsers extract metadata and provide basic format information.
+//! Parsers for Windows Metafile formats and EPS.
+//! When `ImageMagick` is available, these formats are converted to PNG for display.
+//! Otherwise, format information is displayed as a fallback.
 
 use async_trait::async_trait;
 use bytes::Bytes;
 use flate2::read::GzDecoder;
 use prism_core::{
     document::{
-        ContentBlock, Dimensions, Document, Page, PageMetadata, Rect, ShapeStyle, TextBlock,
-        TextRun,
+        ContentBlock, Dimensions, Document, ImageBlock, ImageResource, Page, PageMetadata, Rect,
+        ShapeStyle, TextBlock, TextRun,
     },
     error::{Error, Result},
     format::Format,
     metadata::Metadata,
     parser::{ParseContext, Parser, ParserFeature, ParserMetadata},
 };
-use std::io::Read;
-use tracing::debug;
+use std::io::{Cursor, Read};
+use tracing::{debug, warn};
+
+use super::converter;
 
 /// EMF (Enhanced Metafile) parser
 #[derive(Debug, Clone)]
@@ -32,14 +34,24 @@ impl EmfParser {
         Self
     }
 
-    /// Check for EMF signature (0x00000001 at offset 0, "EMF" at offset 40)
+    /// Check if data appears to be an EMF file
+    ///
+    /// EMF files start with a header containing record type 0x00000001 (`EMR_HEADER`)
     #[must_use]
-    fn is_emf(data: &[u8]) -> bool {
+    pub fn is_emf(data: &[u8]) -> bool {
+        // EMF starts with record type 1 (EMR_HEADER) as little-endian u32
         if data.len() < 44 {
             return false;
         }
-        // Check record type (0x00000001 = EMR_HEADER)
-        data[0..4] == [0x01, 0x00, 0x00, 0x00] && &data[40..43] == b" EM"
+
+        // First 4 bytes: record type (0x00000001 = EMR_HEADER)
+        let record_type = u32::from_le_bytes([data[0], data[1], data[2], data[3]]);
+        if record_type != 1 {
+            return false;
+        }
+
+        // Check for signature at offset 40: " EMF" (with leading space)
+        &data[40..44] == b" EMF"
     }
 }
 
@@ -65,6 +77,13 @@ impl Parser for EmfParser {
             context.size, context.filename
         );
 
+        // Try ImageMagick conversion first
+        if let Ok(png_data) = converter::convert_to_png(&data, "emf") {
+            debug!("Successfully converted EMF to PNG via ImageMagick");
+            return create_converted_image_document(png_data, "EMF", context);
+        }
+
+        warn!("ImageMagick not available, showing format info for EMF");
         create_vector_info_document("EMF", "Enhanced Windows Metafile", data.len(), context)
     }
 
@@ -72,7 +91,10 @@ impl Parser for EmfParser {
         ParserMetadata {
             name: "EMF Parser".to_string(),
             version: env!("CARGO_PKG_VERSION").to_string(),
-            features: vec![ParserFeature::MetadataExtraction],
+            features: vec![
+                ParserFeature::MetadataExtraction,
+                ParserFeature::ImageExtraction,
+            ],
             requires_sandbox: false,
         }
     }
@@ -287,7 +309,7 @@ fn create_vector_info_document(
         Format: {format_name} ({format_description})\n\
         File Size: {size} bytes\n\n\
         Note: This is a vector graphics format. \
-        Full rendering requires specialized software."
+        Full rendering requires ImageMagick to be installed."
     );
 
     let text_run = TextRun {
@@ -322,6 +344,74 @@ fn create_vector_info_document(
 
     let mut document = Document::builder().metadata(metadata).build();
     document.pages.push(page);
+
+    Ok(document)
+}
+
+/// Create a document from converted PNG image data
+#[allow(clippy::needless_pass_by_value, clippy::unnecessary_wraps)]
+fn create_converted_image_document(
+    png_data: Vec<u8>,
+    original_format: &str,
+    context: ParseContext,
+) -> Result<Document> {
+    // Decode PNG to get dimensions
+    let cursor = Cursor::new(&png_data);
+    let img = image::load(cursor, image::ImageFormat::Png)
+        .map_err(|e| Error::ParseError(format!("Failed to decode converted PNG: {e}")))?;
+
+    let width = img.width();
+    let height = img.height();
+
+    debug!(
+        "Converted {} to PNG: {}x{} pixels",
+        original_format, width, height
+    );
+
+    // Create resource ID
+    let resource_id = format!("img_{}", uuid::Uuid::new_v4());
+
+    // Create image resource
+    let image_resource = ImageResource {
+        id: resource_id.clone(),
+        mime_type: "image/png".to_string(),
+        data: Some(png_data),
+        url: None,
+        width,
+        height,
+    };
+
+    // Create image block
+    let image_block = ImageBlock {
+        bounds: Rect::new(0.0, 0.0, f64::from(width), f64::from(height)),
+        resource_id: resource_id.clone(),
+        alt_text: Some(format!("Converted from {original_format}")),
+        format: Some("image/png".to_string()),
+        original_size: Some(Dimensions::new(f64::from(width), f64::from(height))),
+        style: ShapeStyle::default(),
+        rotation: 0.0,
+    };
+
+    // Create page
+    let page = Page {
+        number: 1,
+        dimensions: Dimensions::new(f64::from(width), f64::from(height)),
+        content: vec![ContentBlock::Image(image_block)],
+        metadata: PageMetadata::default(),
+        annotations: Vec::new(),
+    };
+
+    // Create metadata
+    let mut metadata = Metadata::default();
+    if let Some(ref filename) = context.filename {
+        metadata.title = Some(filename.clone());
+    }
+    metadata.add_custom("original_format", original_format);
+    metadata.add_custom("converted_to", "PNG");
+
+    let mut document = Document::builder().metadata(metadata).build();
+    document.pages.push(page);
+    document.resources.images.push(image_resource);
 
     Ok(document)
 }

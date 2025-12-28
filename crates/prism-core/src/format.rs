@@ -276,6 +276,90 @@ impl Format {
         }
     }
 
+    /// Create a new ICO (Windows Icon) format instance
+    #[must_use]
+    pub fn ico() -> Self {
+        Self {
+            mime_type: "image/x-icon".to_string(),
+            extension: "ico".to_string(),
+            family: FormatFamily::Image,
+            name: "ICO Image".to_string(),
+            is_container: false,
+        }
+    }
+
+    /// Create a new TGA (Truevision) format instance
+    #[must_use]
+    pub fn tga() -> Self {
+        Self {
+            mime_type: "image/x-tga".to_string(),
+            extension: "tga".to_string(),
+            family: FormatFamily::Image,
+            name: "TGA Image".to_string(),
+            is_container: false,
+        }
+    }
+
+    /// Create a new SVGZ (Compressed SVG) format instance
+    #[must_use]
+    pub fn svgz() -> Self {
+        Self {
+            mime_type: "image/svg+xml".to_string(),
+            extension: "svgz".to_string(),
+            family: FormatFamily::Image,
+            name: "Compressed SVG Image".to_string(),
+            is_container: false,
+        }
+    }
+
+    /// Create a new ODG (`OpenDocument` Graphics) format instance
+    #[must_use]
+    pub fn odg() -> Self {
+        Self {
+            mime_type: "application/vnd.oasis.opendocument.graphics".to_string(),
+            extension: "odg".to_string(),
+            family: FormatFamily::Office,
+            name: "OpenDocument Graphics (ODG)".to_string(),
+            is_container: true,
+        }
+    }
+
+    /// Create a new Microsoft `OneNote` format instance
+    #[must_use]
+    pub fn onenote() -> Self {
+        Self {
+            mime_type: "application/onenote".to_string(),
+            extension: "one".to_string(),
+            family: FormatFamily::Office,
+            name: "Microsoft OneNote".to_string(),
+            is_container: true,
+        }
+    }
+
+    /// Create a new Microsoft Visio format instance
+    #[must_use]
+    pub fn vsdx() -> Self {
+        Self {
+            mime_type: "application/vnd.ms-visio.drawing.main+xml".to_string(),
+            extension: "vsdx".to_string(),
+            family: FormatFamily::Office,
+            name: "Microsoft Visio".to_string(),
+            is_container: true,
+        }
+    }
+
+    /// Create a new Microsoft Project format instance
+    #[must_use]
+    pub fn mpp() -> Self {
+        Self {
+            mime_type: "application/vnd.ms-project".to_string(),
+            extension: "mpp".to_string(),
+            family: FormatFamily::Office,
+            name: "Microsoft Project".to_string(),
+            is_container: true,
+        }
+    }
+
     /// Create a new plain text format instance
     #[must_use]
     pub fn text() -> Self {
@@ -734,6 +818,13 @@ static EXTENSION_MAP: &[(&str, fn() -> Format)] = &[
     ("emf", Format::emf),
     ("emz", Format::emz),
     ("wmf", Format::wmf),
+    ("ico", Format::ico),
+    ("tga", Format::tga),
+    ("svgz", Format::svgz),
+    ("odg", Format::odg),
+    ("one", Format::onenote),
+    ("vsdx", Format::vsdx),
+    ("mpp", Format::mpp),
     ("txt", Format::text),
     ("json", Format::json),
     ("xml", Format::xml),
@@ -839,6 +930,29 @@ fn detect_by_extension(filename: &str) -> Option<DetectionResult> {
 
 /// Check if a ZIP file is actually an Office document
 fn detect_office_in_zip(data: &[u8]) -> Option<Format> {
+    // Check for ODF formats first - they have a "mimetype" file at the start
+    // ODF mimetype file is typically uncompressed and at the beginning of the ZIP
+    let mimetype_marker = b"mimetypeapplication/vnd.oasis.opendocument.";
+    if let Some(pos) = data
+        .windows(mimetype_marker.len())
+        .position(|w| w == mimetype_marker)
+    {
+        // Check what type of ODF document
+        let after_marker = &data[pos + mimetype_marker.len()..];
+        if after_marker.starts_with(b"text") {
+            return Some(Format::odt());
+        }
+        if after_marker.starts_with(b"spreadsheet") {
+            return Some(Format::ods());
+        }
+        if after_marker.starts_with(b"presentation") {
+            return Some(Format::odp());
+        }
+        if after_marker.starts_with(b"graphics") {
+            return Some(Format::odg());
+        }
+    }
+
     // Simple check: look for "[Content_Types].xml" which is present in OOXML
     // In a real implementation, you'd actually parse the ZIP
 
