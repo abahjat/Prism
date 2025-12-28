@@ -83,6 +83,9 @@ impl AppState {
         // Register Visio parser
         registry.register(Arc::new(prism_parsers::VsdxParser::new()));
 
+        // Register Microsoft Project parser
+        registry.register(Arc::new(prism_parsers::MppParser::new()));
+
         // Register text-based parsers
         registry.register(Arc::new(prism_parsers::TextParser::new()));
         registry.register(Arc::new(prism_parsers::HtmlParser::new()));

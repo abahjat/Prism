@@ -348,6 +348,18 @@ impl Format {
         }
     }
 
+    /// Create a new Microsoft Project format instance
+    #[must_use]
+    pub fn mpp() -> Self {
+        Self {
+            mime_type: "application/vnd.ms-project".to_string(),
+            extension: "mpp".to_string(),
+            family: FormatFamily::Office,
+            name: "Microsoft Project".to_string(),
+            is_container: true,
+        }
+    }
+
     /// Create a new plain text format instance
     #[must_use]
     pub fn text() -> Self {
@@ -812,6 +824,7 @@ static EXTENSION_MAP: &[(&str, fn() -> Format)] = &[
     ("odg", Format::odg),
     ("one", Format::onenote),
     ("vsdx", Format::vsdx),
+    ("mpp", Format::mpp),
     ("txt", Format::text),
     ("json", Format::json),
     ("xml", Format::xml),

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-//! Legacy Office format parsers (DOC, XLS, PPT)
+//! Legacy Office format parsers (DOC, XLS, PPT, MPP)
 //!
 //! Parses legacy Microsoft Office files that use OLE2/CFB format.
 
@@ -9,8 +9,8 @@ use calamine::Reader;
 use cfb::CompoundFile;
 use prism_core::{
     document::{
-        ContentBlock, Dimensions, Document, Page, PageMetadata, ShapeStyle, TextBlock, TextRun,
-        TextStyle,
+        ContentBlock, Dimensions, Document, Page, PageMetadata, Rect, ShapeStyle, TextBlock,
+        TextRun, TextStyle,
     },
     error::{Error, Result},
     format::Format,
@@ -491,6 +491,165 @@ impl Parser for PptParser {
     fn metadata(&self) -> ParserMetadata {
         ParserMetadata {
             name: "PPT Parser (Legacy)".to_string(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            features: vec![
+                ParserFeature::TextExtraction,
+                ParserFeature::MetadataExtraction,
+            ],
+            requires_sandbox: false,
+        }
+    }
+}
+
+/// Microsoft Project (MPP) parser
+#[derive(Debug, Clone)]
+pub struct MppParser;
+
+impl MppParser {
+    /// Create a new MPP parser
+    #[must_use]
+    pub fn new() -> Self {
+        Self
+    }
+
+    /// Check if the data has OLE2/CFB signature
+    #[must_use]
+    fn is_ole2_file(data: &[u8]) -> bool {
+        data.starts_with(&[0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1])
+    }
+
+    /// Check if OLE2 file is a Project file by looking for Project streams
+    #[must_use]
+    fn is_mpp_file(data: &[u8]) -> bool {
+        let cursor = Cursor::new(data);
+        if let Ok(comp) = CompoundFile::open(cursor) {
+            // MPP files typically have these streams
+            for entry in comp.walk() {
+                let name = entry.name();
+                // Common MPP stream names - look for Props or specific MPP markers
+                if name == "Props" || name.contains("MSProject") || name == "Props12" {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    /// Extract project info from MPP streams
+    fn extract_project_info(data: &[u8]) -> Result<Vec<String>> {
+        let cursor = Cursor::new(data);
+        let comp = CompoundFile::open(cursor)
+            .map_err(|e| Error::ParseError(format!("Failed to open OLE2 file: {e}")))?;
+
+        let mut info_parts = Vec::new();
+
+        // List all streams for debugging
+        let stream_names: Vec<String> = comp.walk().map(|e| e.name().to_string()).collect();
+
+        info_parts.push("Microsoft Project File".to_string());
+        info_parts.push(String::new());
+        info_parts.push(format!("Streams found: {}", stream_names.len()));
+
+        // Try to extract any readable text from various streams
+        for entry in comp.walk() {
+            if entry.is_stream() {
+                let name = entry.name().to_string();
+                // Re-open to read
+                let cursor = Cursor::new(data);
+                if let Ok(mut comp) = CompoundFile::open(cursor) {
+                    if let Ok(mut stream) = comp.open_stream(entry.path()) {
+                        use std::io::Read;
+                        let mut buffer = Vec::new();
+                        if stream.read_to_end(&mut buffer).is_ok() && !buffer.is_empty() {
+                            let text = extract_printable_text(&buffer);
+                            if text.len() > 20 && !text.trim().is_empty() {
+                                info_parts.push(format!("\n--- {name} ---"));
+                                // Limit text per stream
+                                let truncated: String = text.chars().take(500).collect();
+                                info_parts.push(truncated);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if info_parts.len() <= 3 {
+            info_parts.push(String::new());
+            info_parts.push("Note: MPP format is complex and proprietary.".to_string());
+            info_parts.push(
+                "Full project data extraction requires specialized tools like MPXJ.".to_string(),
+            );
+        }
+
+        Ok(info_parts)
+    }
+}
+
+impl Default for MppParser {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[async_trait]
+impl Parser for MppParser {
+    fn format(&self) -> Format {
+        Format::mpp()
+    }
+
+    fn can_parse(&self, data: &[u8]) -> bool {
+        Self::is_ole2_file(data) && Self::is_mpp_file(data)
+    }
+
+    async fn parse(&self, data: Bytes, context: ParseContext) -> Result<Document> {
+        debug!("Parsing MPP file: {:?}", context.filename);
+
+        let info_parts = Self::extract_project_info(&data)?;
+        let content_text = info_parts.join("\n");
+
+        // Create a single page with extracted content
+        let text_run = TextRun {
+            text: content_text,
+            style: prism_core::document::TextStyle::default(),
+            bounds: None,
+            char_positions: None,
+        };
+
+        let text_block = TextBlock {
+            runs: vec![text_run],
+            paragraph_style: None,
+            bounds: Rect::new(50.0, 50.0, 700.0, 900.0),
+            style: ShapeStyle::default(),
+            rotation: 0.0,
+        };
+
+        let page = Page {
+            number: 1,
+            dimensions: Dimensions::LETTER,
+            content: vec![ContentBlock::Text(text_block)],
+            metadata: PageMetadata::default(),
+            annotations: Vec::new(),
+        };
+
+        let mut metadata = Metadata::default();
+        if let Some(ref filename) = context.filename {
+            metadata.title = Some(filename.clone());
+        }
+        metadata.add_custom("format", "MPP");
+        metadata.add_custom("legacy_format", true);
+
+        let mut document = Document::builder().metadata(metadata).build();
+        document.pages = vec![page];
+
+        info!("Successfully parsed MPP file");
+
+        Ok(document)
+    }
+
+    fn metadata(&self) -> ParserMetadata {
+        ParserMetadata {
+            name: "MPP Parser (Microsoft Project)".to_string(),
             version: env!("CARGO_PKG_VERSION").to_string(),
             features: vec![
                 ParserFeature::TextExtraction,
