@@ -170,6 +170,22 @@ async fn render_to_html(document: &Document) -> prism_core::Result<String> {
 }
 ```
 
+### .NET Integration (Windows)
+
+Prism can be integrated into .NET applications (Windows Forms, WPF, MAUI) via the `prism-bindings` crate, which exposes a standard C API.
+
+1.  **Build the DLL**:
+    ```bash
+    cargo build -p prism-bindings --release
+    ```
+    This produces `target/release/prism_bindings.dll`.
+
+2.  **Add to C# Project**:
+    -   Copy the DLL to your project output directory.
+    -   Use `[DllImport]` to call the functions.
+
+    See `examples/dotnet/` for a complete working example.
+
 ## 🏗️ Architecture
 
 ### Unified Document Model (UDM)
