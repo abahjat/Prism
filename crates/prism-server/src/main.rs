@@ -80,6 +80,9 @@ impl AppState {
         // Register OneNote parser
         registry.register(Arc::new(prism_parsers::OneNoteParser::new()));
 
+        // Register Visio parser
+        registry.register(Arc::new(prism_parsers::VsdxParser::new()));
+
         // Register text-based parsers
         registry.register(Arc::new(prism_parsers::TextParser::new()));
         registry.register(Arc::new(prism_parsers::HtmlParser::new()));

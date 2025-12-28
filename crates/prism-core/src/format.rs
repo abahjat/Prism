@@ -336,6 +336,18 @@ impl Format {
         }
     }
 
+    /// Create a new Microsoft Visio format instance
+    #[must_use]
+    pub fn vsdx() -> Self {
+        Self {
+            mime_type: "application/vnd.ms-visio.drawing.main+xml".to_string(),
+            extension: "vsdx".to_string(),
+            family: FormatFamily::Office,
+            name: "Microsoft Visio".to_string(),
+            is_container: true,
+        }
+    }
+
     /// Create a new plain text format instance
     #[must_use]
     pub fn text() -> Self {
@@ -799,6 +811,7 @@ static EXTENSION_MAP: &[(&str, fn() -> Format)] = &[
     ("svgz", Format::svgz),
     ("odg", Format::odg),
     ("one", Format::onenote),
+    ("vsdx", Format::vsdx),
     ("txt", Format::text),
     ("json", Format::json),
     ("xml", Format::xml),

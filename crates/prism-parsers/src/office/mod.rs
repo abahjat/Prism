@@ -2,7 +2,7 @@
 //! Office format parsers
 //!
 //! Parsers for Microsoft Office Open XML formats (DOCX, XLSX, PPTX),
-//! legacy Office binary formats, OpenDocument formats (ODT, ODS, ODP), and OneNote.
+//! legacy Office binary formats, OpenDocument formats, OneNote, and Visio.
 
 pub mod docx;
 pub mod excel_styles;
@@ -17,6 +17,7 @@ pub mod styles;
 pub mod tables;
 pub mod theme;
 pub mod utils;
+pub mod vsdx;
 pub mod xlsx;
 
 // Re-export parsers
@@ -26,4 +27,5 @@ pub use odf::{OdgParser, OdpParser, OdsParser, OdtParser};
 pub use onenote::OneNoteParser;
 pub use pptx::PptxParser;
 pub use theme::*;
+pub use vsdx::VsdxParser;
 pub use xlsx::XlsxParser;

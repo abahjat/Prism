@@ -78,7 +78,7 @@ pub use image::{
 };
 pub use office::{
     DocParser, DocxParser, OdgParser, OdpParser, OdsParser, OdtParser, OneNoteParser, PptParser,
-    PptxParser, XlsParser, XlsxParser,
+    PptxParser, VsdxParser, XlsParser, XlsxParser,
 };
 pub use pdf::PdfParser;
 pub use registry::ParserRegistry;
