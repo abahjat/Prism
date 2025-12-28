@@ -19,6 +19,7 @@ pub mod theme;
 pub mod utils;
 pub mod vsdx;
 pub mod xlsx;
+pub mod xps;
 
 // Re-export parsers
 pub use docx::DocxParser;
@@ -29,3 +30,4 @@ pub use pptx::PptxParser;
 pub use theme::*;
 pub use vsdx::VsdxParser;
 pub use xlsx::XlsxParser;
+pub use xps::XpsParser;

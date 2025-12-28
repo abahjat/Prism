@@ -71,19 +71,20 @@ pub mod text;
 
 // Re-export commonly used types
 pub use archive::ArchiveParser;
-pub use email::{EmlParser, IcsParser, MboxParser, MsgParser, VcfParser};
+pub use email::{EmlParser, IcsParser, MboxParser, MhtParser, MsgParser, VcfParser};
 pub use image::{
     BmpParser, EmfParser, EmzParser, EpsParser, GifParser, IcoParser, JpegParser, PngParser,
     SvgParser, SvgzParser, TgaParser, TiffParser, WebpParser, WmfParser,
 };
 pub use office::{
     DocParser, DocxParser, MppParser, OdgParser, OdpParser, OdsParser, OdtParser, OneNoteParser,
-    PptParser, PptxParser, VsdxParser, XlsParser, XlsxParser,
+    PptParser, PptxParser, VsdxParser, XlsParser, XlsxParser, XpsParser,
 };
 pub use pdf::PdfParser;
 pub use registry::ParserRegistry;
 pub use text::{
-    CsvParser, HtmlParser, JsonParser, LogParser, MarkdownParser, RtfParser, TextParser, XmlParser,
+    CsvParser, EpubParser, HtmlParser, JsonParser, LogParser, MarkdownParser, RtfParser,
+    TextParser, XmlParser,
 };
 
 /// Archive format parsers

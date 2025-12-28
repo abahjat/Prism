@@ -444,6 +444,42 @@ impl Format {
         }
     }
 
+    /// Create a new MHT format instance (MIME HTML)
+    #[must_use]
+    pub fn mht() -> Self {
+        Self {
+            mime_type: "multipart/related".to_string(),
+            extension: "mht".to_string(),
+            family: FormatFamily::Archive, // Acts as a web archive
+            name: "MIME HTML Archive".to_string(),
+            is_container: true,
+        }
+    }
+
+    /// Create a new EPUB format instance
+    #[must_use]
+    pub fn epub() -> Self {
+        Self {
+            mime_type: "application/epub+zip".to_string(),
+            extension: "epub".to_string(),
+            family: FormatFamily::Document,
+            name: "EPUB E-Book".to_string(),
+            is_container: true,
+        }
+    }
+
+    /// Create a new XPS format instance
+    #[must_use]
+    pub fn xps() -> Self {
+        Self {
+            mime_type: "application/vnd.ms-xpsdocument".to_string(),
+            extension: "xps".to_string(),
+            family: FormatFamily::Document,
+            name: "XPS Document".to_string(),
+            is_container: true,
+        }
+    }
+
     /// Create a new RTF format instance (Rich Text Format)
     #[must_use]
     pub fn rtf() -> Self {
@@ -836,6 +872,11 @@ static EXTENSION_MAP: &[(&str, fn() -> Format)] = &[
     ("eml", Format::eml),
     ("msg", Format::msg),
     ("mbox", Format::mbox),
+    ("mht", Format::mht),
+    ("mhtml", Format::mht),
+    ("epub", Format::epub),
+    ("xps", Format::xps),
+    ("oxps", Format::xps),
     ("vcf", Format::vcf),
     ("vcard", Format::vcf),
     ("ics", Format::ics),
@@ -984,21 +1025,52 @@ fn detect_office_in_zip(data: &[u8]) -> Option<Format> {
 /// Note: This function should only be called if magic bytes already confirmed OLE2/CFB format
 fn detect_office_in_ole(data: &[u8], filename: Option<&str>) -> Option<Format> {
     // Look for stream names in the OLE2 structure
-    // Word documents have "WordDocument" stream
-    if data.windows(12).any(|w| w == b"WordDocument") {
+    // Note: CFB Directory Entry names are UTF-16LE encoded
+
+    // Word: "WordDocument" in UTF-16LE
+    let word_doc_utf16 = b"W\0o\0r\0d\0D\0o\0c\0u\0m\0e\0n\0t";
+    if data
+        .windows(word_doc_utf16.len())
+        .any(|w| w == word_doc_utf16)
+        || data.windows(12).any(|w| w == b"WordDocument")
+    {
         return Some(Format::doc());
     }
 
-    // Excel documents have "Workbook" or "Book" stream
-    if data.windows(8).any(|w| w == b"Workbook") || data.windows(4).any(|w| w == b"Book") {
+    // Excel: "Workbook" or "Book"
+    let workbook_utf16 = b"W\0o\0r\0k\0b\0o\0o\0k";
+    let book_utf16 = b"B\0o\0o\0k";
+    if data
+        .windows(workbook_utf16.len())
+        .any(|w| w == workbook_utf16)
+        || data.windows(book_utf16.len()).any(|w| w == book_utf16)
+        || data.windows(8).any(|w| w == b"Workbook")
+        || data.windows(4).any(|w| w == b"Book")
+    {
         return Some(Format::xls());
     }
 
-    // PowerPoint documents have "PowerPoint Document" or "Current User" stream
-    if data.windows(18).any(|w| w == b"PowerPoint Document")
+    // PowerPoint: "PowerPoint Document" or "Current User"
+    let ppt_doc_utf16 = b"P\0o\0w\0e\0r\0P\0o\0i\0n\0t\0 \0D\0o\0c\0u\0m\0e\0n\0t";
+    let current_user_utf16 = b"C\0u\0r\0r\0e\0n\0t\0 \0U\0s\0e\0r";
+    if data
+        .windows(ppt_doc_utf16.len())
+        .any(|w| w == ppt_doc_utf16)
+        || data
+            .windows(current_user_utf16.len())
+            .any(|w| w == current_user_utf16)
+        || data.windows(19).any(|w| w == b"PowerPoint Document")
         || data.windows(12).any(|w| w == b"Current User")
     {
         return Some(Format::ppt());
+    }
+
+    // Project: "MSProject"
+    let mpp_utf16 = b"M\0S\0P\0r\0o\0j\0e\0c\0t";
+    if data.windows(mpp_utf16.len()).any(|w| w == mpp_utf16)
+        || data.windows(9).any(|w| w == b"MSProject")
+    {
+        return Some(Format::mpp());
     }
 
     // MSG files don't have a distinctive stream name that's easy to detect,
@@ -1029,6 +1101,9 @@ pub fn format_by_mime(mime_type: &str) -> Option<Format> {
         "image/jpeg" => Some(Format::jpeg()),
         "image/tiff" => Some(Format::tiff()),
         "text/html" => Some(Format::html()),
+        "multipart/related" => Some(Format::mht()),
+        "application/epub+zip" => Some(Format::epub()),
+        "application/vnd.ms-xpsdocument" | "application/oxps" => Some(Format::xps()),
         _ => None,
     }
 }
