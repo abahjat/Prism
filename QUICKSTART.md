@@ -97,6 +97,9 @@ Upload files with these extensions:
 - `.csv` - CSV data
 - `.md` - Markdown files
 - `.xlsx` - Excel spreadsheets
+- `.one` - OneNote notebooks
+- `.vsdx` - Visio diagrams
+- `.mpp` - Microsoft Project files
 - `.png` - PNG images
 
 ### Use the API Directly

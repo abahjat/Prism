@@ -29,6 +29,9 @@ pub struct FormatDetectionResponse {
     pub method: String,
     /// Message explaining the response
     pub message: String,
+    /// Preview of file content (up to 1000 characters)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preview: Option<String>,
 }
 
 /// Format information
@@ -71,9 +74,35 @@ pub async fn convert(
     }
 
     // Detect format
-    let format_result = detect_format(&file_data, filename.as_deref()).ok_or_else(|| {
-        ApiError::UnsupportedMediaType("Unable to detect file format".to_string())
-    })?;
+    let format_result = match detect_format(&file_data, filename.as_deref()) {
+        Some(result) => result,
+        None => {
+            // Format not detected - return preview with unknown format info
+            warn!("Unable to detect file format, returning preview");
+
+            let preview = extract_file_preview(&file_data);
+
+            let response = FormatDetectionResponse {
+                format: FormatInfo {
+                    mime_type: "application/octet-stream".to_string(),
+                    extension: filename
+                        .as_ref()
+                        .and_then(|f| f.rsplit('.').next())
+                        .unwrap_or("unknown")
+                        .to_string(),
+                    family: "Unknown".to_string(),
+                    name: "Unknown Format".to_string(),
+                    is_container: false,
+                },
+                confidence: 0.0,
+                method: "None".to_string(),
+                message: "Unable to detect file format. Showing file content preview.".to_string(),
+                preview,
+            };
+
+            return Ok(Json(response).into_response());
+        }
+    };
 
     debug!(
         "Detected format: {} (confidence: {:.2}%), MIME: {}",
@@ -155,6 +184,9 @@ pub async fn convert(
                     format_result.format.mime_type
                 );
 
+                // Extract a preview of the file content (up to 1000 chars)
+                let preview = extract_file_preview(&file_data);
+
                 let response = FormatDetectionResponse {
                     format: FormatInfo {
                         mime_type: format_result.format.mime_type.clone(),
@@ -169,6 +201,7 @@ pub async fn convert(
                         "Format detected as {} but no parser is available. Returning format detection information.",
                         format_result.format.name
                     ),
+                    preview,
                 };
 
                 Ok(Json(response).into_response())
@@ -208,4 +241,101 @@ async fn extract_file(multipart: &mut Multipart) -> Result<(Option<String>, Vec<
     Err(ApiError::BadRequest(
         "No file field found in multipart form".to_string(),
     ))
+}
+
+/// Extract a preview of file content (up to 1000 characters)
+///
+/// Attempts to extract readable text from the file data.
+/// For binary files, shows a hex dump if no readable text is found.
+fn extract_file_preview(data: &[u8]) -> Option<String> {
+    const MAX_PREVIEW_CHARS: usize = 1000;
+    const MAX_HEX_BYTES: usize = 256;
+
+    if data.is_empty() {
+        return None;
+    }
+
+    // First, try to interpret as UTF-8 text
+    if let Ok(text) = std::str::from_utf8(data) {
+        let preview: String = text
+            .chars()
+            .filter(|c| !c.is_control() || *c == '\n' || *c == '\t')
+            .take(MAX_PREVIEW_CHARS)
+            .collect();
+        if !preview.trim().is_empty() {
+            return Some(preview);
+        }
+    }
+
+    // For binary files, extract printable ASCII sequences
+    let mut preview = String::new();
+    let mut consecutive_printable = 0;
+    let mut buffer = String::new();
+
+    for &byte in data {
+        if (32..127).contains(&byte) || byte == b'\n' || byte == b'\t' {
+            buffer.push(byte as char);
+            consecutive_printable += 1;
+        } else {
+            // Only keep runs of 4+ consecutive printable chars
+            if consecutive_printable >= 4 {
+                preview.push_str(&buffer);
+                preview.push(' ');
+            }
+            buffer.clear();
+            consecutive_printable = 0;
+        }
+
+        if preview.len() >= MAX_PREVIEW_CHARS {
+            break;
+        }
+    }
+
+    // Add final buffer
+    if consecutive_printable >= 4 && preview.len() < MAX_PREVIEW_CHARS {
+        preview.push_str(&buffer);
+    }
+
+    let preview = preview.trim().to_string();
+    if !preview.is_empty() {
+        return Some(preview.chars().take(MAX_PREVIEW_CHARS).collect());
+    }
+
+    // Fallback: show hex dump for pure binary files
+    let bytes_to_show = data.len().min(MAX_HEX_BYTES);
+    let mut hex_preview = String::from("Binary file - Hex dump:\n");
+
+    for (i, chunk) in data[..bytes_to_show].chunks(16).enumerate() {
+        // Offset
+        hex_preview.push_str(&format!("{:04X}: ", i * 16));
+
+        // Hex bytes
+        for byte in chunk {
+            hex_preview.push_str(&format!("{:02X} ", byte));
+        }
+
+        // Padding for incomplete lines
+        for _ in 0..(16 - chunk.len()) {
+            hex_preview.push_str("   ");
+        }
+
+        hex_preview.push_str(" | ");
+
+        // ASCII representation
+        for &byte in chunk {
+            if (32..127).contains(&byte) {
+                hex_preview.push(byte as char);
+            } else {
+                hex_preview.push('.');
+            }
+        }
+
+        hex_preview.push('\n');
+    }
+
+    if data.len() > bytes_to_show {
+        hex_preview.push_str(&format!("... ({} more bytes)", data.len() - bytes_to_show));
+    }
+
+    Some(hex_preview)
 }

@@ -257,22 +257,42 @@ function displayFormatInfo(file, data) {
     // Show viewer with format info
     viewerSection.style.display = 'block';
 
+    // Build preview section if available
+    let previewHtml = '';
+    if (data.preview) {
+        previewHtml = `
+            <div style="margin-top: 1.5rem;">
+                <h4 style="color: #667eea; margin-bottom: 0.5rem;">File Content Preview</h4>
+                <pre style="background: #1a1a2e; color: #00ff88; padding: 1rem; border-radius: 8px; overflow-x: auto; text-align: left; font-family: 'Courier New', monospace; font-size: 12px; max-height: 400px; overflow-y: auto; white-space: pre-wrap; word-wrap: break-word;">${escapeHtml(data.preview)}</pre>
+            </div>
+        `;
+    }
+
     viewerContent.innerHTML = `
         <div style="padding: 2rem; text-align: center;">
             <h3 style="color: #667eea; margin-bottom: 1rem;">Format Detected</h3>
             <div style="background: #f8f9fa; padding: 1.5rem; border-radius: 8px; text-align: left; max-width: 600px; margin: 0 auto;">
-                <p style="margin-bottom: 0.5rem;"><strong>Format:</strong> ${data.format.name}</p>
-                <p style="margin-bottom: 0.5rem;"><strong>MIME Type:</strong> ${data.format.mime_type}</p>
-                <p style="margin-bottom: 0.5rem;"><strong>Extension:</strong> .${data.format.extension}</p>
-                <p style="margin-bottom: 0.5rem;"><strong>Family:</strong> ${data.format.family}</p>
+                <p style="margin-bottom: 0.5rem;"><strong>Format:</strong> ${escapeHtml(data.format.name)}</p>
+                <p style="margin-bottom: 0.5rem;"><strong>MIME Type:</strong> ${escapeHtml(data.format.mime_type)}</p>
+                <p style="margin-bottom: 0.5rem;"><strong>Extension:</strong> .${escapeHtml(data.format.extension)}</p>
+                <p style="margin-bottom: 0.5rem;"><strong>Family:</strong> ${escapeHtml(data.format.family)}</p>
                 <p style="margin-bottom: 0.5rem;"><strong>Confidence:</strong> ${(data.confidence * 100).toFixed(1)}%</p>
-                <p style="margin-bottom: 0.5rem;"><strong>Detection Method:</strong> ${data.method}</p>
+                <p style="margin-bottom: 0.5rem;"><strong>Detection Method:</strong> ${escapeHtml(data.method)}</p>
             </div>
             <p style="margin-top: 1.5rem; color: #666; font-style: italic;">
-                ${data.message}
+                ${escapeHtml(data.message)}
             </p>
+            ${previewHtml}
         </div>
     `;
+}
+
+// Escape HTML to prevent XSS
+function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
 }
 
 // Show error
