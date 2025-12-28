@@ -74,9 +74,35 @@ pub async fn convert(
     }
 
     // Detect format
-    let format_result = detect_format(&file_data, filename.as_deref()).ok_or_else(|| {
-        ApiError::UnsupportedMediaType("Unable to detect file format".to_string())
-    })?;
+    let format_result = match detect_format(&file_data, filename.as_deref()) {
+        Some(result) => result,
+        None => {
+            // Format not detected - return preview with unknown format info
+            warn!("Unable to detect file format, returning preview");
+
+            let preview = extract_file_preview(&file_data);
+
+            let response = FormatDetectionResponse {
+                format: FormatInfo {
+                    mime_type: "application/octet-stream".to_string(),
+                    extension: filename
+                        .as_ref()
+                        .and_then(|f| f.rsplit('.').next())
+                        .unwrap_or("unknown")
+                        .to_string(),
+                    family: "Unknown".to_string(),
+                    name: "Unknown Format".to_string(),
+                    is_container: false,
+                },
+                confidence: 0.0,
+                method: "None".to_string(),
+                message: "Unable to detect file format. Showing file content preview.".to_string(),
+                preview,
+            };
+
+            return Ok(Json(response).into_response());
+        }
+    };
 
     debug!(
         "Detected format: {} (confidence: {:.2}%), MIME: {}",
