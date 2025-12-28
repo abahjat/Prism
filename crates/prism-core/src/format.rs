@@ -1059,7 +1059,7 @@ mod tests {
         assert!(result.is_some());
         let result = result.unwrap();
         assert_eq!(result.format.mime_type, "application/pdf");
-        assert_eq!(result.confidence, 0.99);
+        assert!((result.confidence - 0.99).abs() < f64::EPSILON);
         assert_eq!(result.method, DetectionMethod::MagicBytes);
     }
 

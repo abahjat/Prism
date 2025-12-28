@@ -1559,6 +1559,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "prism-bindings"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "prism-core",
+ "prism-parsers",
+ "prism-render",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "prism-cli"
 version = "0.1.0"
 dependencies = [

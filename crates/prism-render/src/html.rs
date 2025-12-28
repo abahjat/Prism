@@ -805,6 +805,7 @@ impl Renderer for HtmlRenderer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use prism_core::document::PageMetadata;
     use prism_core::document::{Dimensions, Page};
     use prism_core::metadata::Metadata;
 
@@ -842,7 +843,7 @@ mod tests {
             number: 1,
             dimensions: Dimensions::LETTER,
             content: vec![],
-            metadata: Default::default(),
+            metadata: PageMetadata::default(),
             annotations: vec![],
         };
 
@@ -850,7 +851,7 @@ mod tests {
             number: 2,
             dimensions: Dimensions::LETTER,
             content: vec![],
-            metadata: Default::default(),
+            metadata: PageMetadata::default(),
             annotations: vec![],
         };
 
@@ -877,13 +878,14 @@ mod tests {
     async fn test_render_with_styles() {
         let renderer = HtmlRenderer::new();
 
-        let mut style = prism_core::document::ShapeStyle::default();
-        style.fill_color = Some("#FF0000".to_string());
-        style.stroke_color = Some("#000000".to_string());
-        style.stroke_width = Some(2.0);
-        style.shadow = Some("2px 2px 5px black".to_string());
-        style.opacity = Some(0.5);
-        style.z_index = Some(10);
+        let style = prism_core::document::ShapeStyle {
+            fill_color: Some("#FF0000".to_string()),
+            stroke_color: Some("#000000".to_string()),
+            stroke_width: Some(2.0),
+            shadow: Some("2px 2px 5px black".to_string()),
+            opacity: Some(0.5),
+            z_index: Some(10),
+        };
 
         let block = ContentBlock::Text(prism_core::document::TextBlock {
             bounds: prism_core::document::Rect::new(0.0, 0.0, 100.0, 100.0),
@@ -897,7 +899,7 @@ mod tests {
             number: 1,
             dimensions: Dimensions::LETTER,
             content: vec![block],
-            metadata: Default::default(),
+            metadata: PageMetadata::default(),
             annotations: vec![],
         };
 

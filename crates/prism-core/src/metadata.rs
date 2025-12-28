@@ -244,7 +244,7 @@ mod tests {
     fn test_metadata_value_conversions() {
         let _string_val: MetadataValue = "test".into();
         let _int_val: MetadataValue = 42_i64.into();
-        let _float_val: MetadataValue = 3.14.into();
+        let _float_val: MetadataValue = std::f64::consts::PI.into();
         let _bool_val: MetadataValue = true.into();
     }
 }

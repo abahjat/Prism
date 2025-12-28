@@ -1,0 +1,18 @@
+[package]
+name = "prism-bindings"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+prism-core = { path = "../prism-core" }
+prism-parsers = { path = "../prism-parsers" }
+prism-render = { path = "../prism-render" }
+libc = "0.2"
+tokio = { version = "1.35", features = ["rt", "macros"] }
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
