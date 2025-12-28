@@ -11,6 +11,7 @@ prism-core = { path = "../prism-core" }
 prism-parsers = { path = "../prism-parsers" }
 prism-render = { path = "../prism-render" }
 libc = "0.2"
+bytes = "1.0"
 tokio = { version = "1.35", features = ["rt", "macros"] }
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
