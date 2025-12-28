@@ -12,8 +12,13 @@ pub extern "C" fn prism_init() {
         .try_init();
 }
 
+/// Detect format from raw bytes
+///
+/// # Safety
+///
+/// The `data` pointer must point to a valid memory region of size `len`.
 #[no_mangle]
-pub extern "C" fn prism_detect_format(data: *const u8, len: size_t) -> *mut c_char {
+pub unsafe extern "C" fn prism_detect_format(data: *const u8, len: size_t) -> *mut c_char {
     let slice = unsafe { slice::from_raw_parts(data, len) };
 
     // We can't determine filename from raw bytes easily, passing None
@@ -26,9 +31,13 @@ pub extern "C" fn prism_detect_format(data: *const u8, len: size_t) -> *mut c_ch
     }
 }
 
-// Helper to free strings returned by Rust
+/// Free a string returned by the library
+///
+/// # Safety
+///
+/// The pointer `s` must have been returned by a function in this library.
 #[no_mangle]
-pub extern "C" fn prism_free_string(s: *mut c_char) {
+pub unsafe extern "C" fn prism_free_string(s: *mut c_char) {
     if s.is_null() {
         return;
     }
@@ -37,9 +46,13 @@ pub extern "C" fn prism_free_string(s: *mut c_char) {
     }
 }
 
-// Helper: extract preview
+/// Generate a preview string for a file buffer
+///
+/// # Safety
+///
+/// The `data` pointer must point to a valid memory region of size `len`.
 #[no_mangle]
-pub extern "C" fn prism_preview_file(data: *const u8, len: size_t) -> *mut c_char {
+pub unsafe extern "C" fn prism_preview_file(data: *const u8, len: size_t) -> *mut c_char {
     let slice = unsafe { slice::from_raw_parts(data, len) };
 
     // Simple text extraction logic
