@@ -150,6 +150,8 @@ pub unsafe extern "C" fn prism_convert_to_html(data: *const u8, len: size_t) -> 
             "application/vnd.ms-xpsdocument" | "application/oxps" => {
                 Box::new(prism_parsers::office::XpsParser::new())
             }
+            // CAD
+            "image/vnd.dxf" => Box::new(prism_parsers::cad::DxfParser::new()),
             // Fallback for generic OLE CFB to let legacy parsers try
             "application/x-cfb" => {
                 // If we detect CFB, we can try to guess or just return null if we can't dispatch.

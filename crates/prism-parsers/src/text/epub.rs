@@ -209,16 +209,110 @@ impl Parser for EpubParser {
                         continue;
                     }
                 } else {
-                    // Paths might be tricky (Windows vs Unix separators)
-                    // Try replacing / with \ or vice versa?
-                    // ZipArchive usually uses /
                     warn!("Missing content file: {}", full_href);
                     continue;
                 };
 
+                // Embed images
+                // Find all src="..." and replace with data:image/...;base64,...
+                // We do a simple string replacement for now.
+                // A better approach would be to parse HTML, but that's heavy.
+                // We'll scan for src=" and match until ".
+
+                let mut processed_content = content_str;
+                let current_dir = std::path::Path::new(&full_href)
+                    .parent()
+                    .map(|p| p.to_string_lossy().to_string())
+                    .unwrap_or_default();
+
+                // Find all image references
+                // We look for src="([^"]+)"
+                // This is a naive regex-like search
+                let mut search_idx = 0;
+                while let Some(start) = processed_content[search_idx..].find("src=\"") {
+                    let absolute_start = search_idx + start + 5; // skip src="
+                    if let Some(end) = processed_content[absolute_start..].find('"') {
+                        let absolute_end = absolute_start + end;
+                        let img_path = &processed_content[absolute_start..absolute_end];
+
+                        // Check if it's an external link or data URI already
+                        if !img_path.starts_with("http") && !img_path.starts_with("data:") {
+                            // Resolve path relative to current HTML file
+                            let full_img_path = if current_dir.is_empty() {
+                                img_path.to_string()
+                            } else {
+                                // Handle ../ resolution if needed, but for now simple join
+                                // EPUB paths are usually clean
+                                format!("{current_dir}/{img_path}").replace("//", "/")
+                                // basic cleanup
+                            };
+
+                            // Try to read image from zip
+                            let mut img_data = Vec::new();
+                            let mut found = false;
+
+                            // Try exact path
+                            if let Ok(mut file) = zip.by_name(&full_img_path) {
+                                if std::io::Read::read_to_end(&mut file, &mut img_data).is_ok() {
+                                    found = true;
+                                }
+                            }
+
+                            // If not found, try canonicalizing .. components
+                            // (Naive implementation)
+                            if !found {
+                                // Try finding in OPF directory content if path fails
+                                let opf_rel = format!("{opf_dir}/{img_path}");
+                                if let Ok(mut file) = zip.by_name(&opf_rel) {
+                                    if std::io::Read::read_to_end(&mut file, &mut img_data).is_ok()
+                                    {
+                                        found = true;
+                                    }
+                                }
+                            }
+
+                            if found {
+                                use base64::{engine::general_purpose, Engine as _};
+                                let b64 = general_purpose::STANDARD.encode(&img_data);
+                                let path = std::path::Path::new(img_path);
+                                let ext = path
+                                    .extension()
+                                    .and_then(|e| e.to_str())
+                                    .unwrap_or("")
+                                    .to_lowercase();
+
+                                let mime = match ext.as_str() {
+                                    "png" => "image/png",
+                                    "jpg" | "jpeg" => "image/jpeg",
+                                    "gif" => "image/gif",
+                                    "svg" => "image/svg+xml",
+                                    "webp" => "image/webp",
+                                    _ => "application/octet-stream",
+                                };
+
+                                let new_src = format!("data:{mime};base64,{b64}");
+
+                                // Replace in string (inefficient but works for MVP)
+                                // We replace ONLY this occurrence
+                                let prefix = &processed_content[..absolute_start];
+                                let suffix = &processed_content[absolute_end..];
+                                processed_content = format!("{prefix}{new_src}{suffix}");
+
+                                // Update search index to skip the data URI we just inserted
+                                search_idx = absolute_start + new_src.len();
+                                continue;
+                            }
+                        }
+                        search_idx = absolute_end;
+                    } else {
+                        break;
+                    }
+                }
+
                 // Treat as HTML page
                 let text_run = TextRun {
-                    text: format!("__HTML_RAW__:{content_str}"),
+                    text: format!("__HTML_RAW__:{processed_content}"),
+
                     style: TextStyle::default(),
                     bounds: Some(Rect::default()),
                     char_positions: Some(Vec::new()),

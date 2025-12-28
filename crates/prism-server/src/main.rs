@@ -108,6 +108,9 @@ impl AppState {
         registry.register(Arc::new(prism_parsers::IcsParser::new()));
         registry.register(Arc::new(prism_parsers::MhtParser::new()));
 
+        // Register CAD parsers
+        registry.register(Arc::new(prism_parsers::DxfParser::new()));
+
         // Register archive parsers
         registry.register(Arc::new(prism_parsers::ArchiveParser::new(
             prism_core::format::Format::zip(),
@@ -198,6 +201,8 @@ async fn health() -> Json<HealthResponse> {
 async fn version() -> Json<serde_json::Value> {
     Json(serde_json::json!({
         "server": env!("CARGO_PKG_VERSION"),
+        "commit": prism_core::GIT_HASH,
+        "full_version": prism_core::FULL_VERSION,
         "core": prism_core::VERSION,
         "parsers": prism_parsers::VERSION,
         "render": prism_render::VERSION,

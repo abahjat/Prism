@@ -622,6 +622,18 @@ impl Format {
             is_container: false, // It's a compressor, but effectively behaves like single-file container
         }
     }
+
+    /// Create a new DXF format instance (`AutoCAD` Drawing Exchange Format)
+    #[must_use]
+    pub fn dxf() -> Self {
+        Self {
+            mime_type: "image/vnd.dxf".to_string(),
+            extension: "dxf".to_string(),
+            family: FormatFamily::Cad,
+            name: "AutoCAD DXF".to_string(),
+            is_container: false,
+        }
+    }
 }
 
 /// Format families for categorization
@@ -826,6 +838,114 @@ static SIGNATURES: &[FormatSignature] = &[
         offset: 0,
         format: Format::rtf,
     },
+    // =========================================
+    // Legacy Office formats (pre-OLE2)
+    // =========================================
+    // Word 2.0 for Windows
+    FormatSignature {
+        bytes: &[0xDB, 0xA5, 0x2D, 0x00],
+        offset: 0,
+        format: Format::doc,
+    },
+    // Word for Mac 1.0 / Write for Atari ST
+    FormatSignature {
+        bytes: &[0xFE, 0x32, 0x00],
+        offset: 0,
+        format: Format::doc,
+    },
+    // Word for Mac 3.0
+    FormatSignature {
+        bytes: &[0xFE, 0x34, 0x00],
+        offset: 0,
+        format: Format::doc,
+    },
+    // Word for Mac 4.0
+    FormatSignature {
+        bytes: &[0xFE, 0x37, 0x00, 0x1C],
+        offset: 0,
+        format: Format::doc,
+    },
+    // Word for Mac 5.0
+    FormatSignature {
+        bytes: &[0xFE, 0x37, 0x00, 0x23],
+        offset: 0,
+        format: Format::doc,
+    },
+    // Windows Write document
+    FormatSignature {
+        bytes: &[0x31, 0xBE, 0x00, 0x00, 0x00, 0xAB, 0x00],
+        offset: 0,
+        format: || Format {
+            mime_type: "application/x-mswrite".to_string(),
+            extension: "wri".to_string(),
+            family: FormatFamily::Legacy,
+            name: "Windows Write".to_string(),
+            is_container: false,
+        },
+    },
+    // Windows Write document with OLE objects
+    FormatSignature {
+        bytes: &[0x32, 0xBE, 0x00, 0x00, 0x00, 0xAB, 0x00],
+        offset: 0,
+        format: || Format {
+            mime_type: "application/x-mswrite".to_string(),
+            extension: "wri".to_string(),
+            family: FormatFamily::Legacy,
+            name: "Windows Write (OLE)".to_string(),
+            is_container: false,
+        },
+    },
+    // PowerPoint 2.0 (pre-OLE2)
+    FormatSignature {
+        bytes: &[0xED, 0xDE, 0xAD, 0x0B, 0x02, 0x00, 0x00, 0x00],
+        offset: 0,
+        format: Format::ppt,
+    },
+    // PowerPoint 3.0 (pre-OLE2)
+    FormatSignature {
+        bytes: &[0xED, 0xDE, 0xAD, 0x0B, 0x03, 0x00, 0x00, 0x00],
+        offset: 0,
+        format: Format::ppt,
+    },
+    // Excel 4.0 worksheet
+    FormatSignature {
+        bytes: &[0x09, 0x04, 0x06, 0x00, 0x00],
+        offset: 0,
+        format: Format::xls,
+    },
+    // Excel for OS/2 (various versions)
+    FormatSignature {
+        bytes: &[0x09, 0x00, 0x04, 0x00, 0x05, 0x00],
+        offset: 0,
+        format: Format::xls,
+    },
+    // Excel generic older format
+    FormatSignature {
+        bytes: &[0x09, 0x08],
+        offset: 0,
+        format: Format::xls,
+    },
+    // WordStar document
+    FormatSignature {
+        bytes: &[0x1D, 0x7D, 0x00, 0x00],
+        offset: 0,
+        format: || Format {
+            mime_type: "application/x-wordstar".to_string(),
+            extension: "ws".to_string(),
+            family: FormatFamily::Legacy,
+            name: "WordStar Document".to_string(),
+            is_container: false,
+        },
+    },
+    // =========================================
+    // CAD formats
+    // =========================================
+    // DXF (Binary)
+    FormatSignature {
+        bytes: b"AutoCAD Binary DXF",
+        offset: 0,
+        format: Format::dxf,
+    },
 ];
 
 /// Extension to format mapping
@@ -886,6 +1006,22 @@ static EXTENSION_MAP: &[(&str, fn() -> Format)] = &[
     ("gzip", Format::gzip),
     ("tgz", Format::gzip), // Often treated as gzip then tar
     ("rtf", Format::rtf),
+    ("wri", || Format {
+        mime_type: "application/x-mswrite".to_string(),
+        extension: "wri".to_string(),
+        family: FormatFamily::Legacy,
+        name: "Windows Write".to_string(),
+        is_container: false,
+    }),
+    ("ws", || Format {
+        mime_type: "application/x-wordstar".to_string(),
+        extension: "ws".to_string(),
+        family: FormatFamily::Legacy,
+        name: "WordStar Document".to_string(),
+        is_container: false,
+    }),
+    // CAD formats
+    ("dxf", Format::dxf),
 ];
 
 /// Detect the format of a document from its content
@@ -992,6 +1128,20 @@ fn detect_office_in_zip(data: &[u8]) -> Option<Format> {
         if after_marker.starts_with(b"graphics") {
             return Some(Format::odg());
         }
+    }
+
+    // Check for EPUB
+    let epub_marker = b"mimetypeapplication/epub+zip";
+    if data.windows(epub_marker.len()).any(|w| w == epub_marker) {
+        return Some(Format::epub());
+    }
+
+    // Check for XPS
+    if data
+        .windows(27)
+        .any(|w| w == b"FixedDocumentSequence.fdseq")
+    {
+        return Some(Format::xps());
     }
 
     // Simple check: look for "[Content_Types].xml" which is present in OOXML

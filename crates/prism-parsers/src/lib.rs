@@ -90,5 +90,10 @@ pub use text::{
 /// Archive format parsers
 pub mod archive;
 
+/// CAD format parsers
+pub mod cad;
+
+pub use cad::DxfParser;
+
 /// Prism parsers version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

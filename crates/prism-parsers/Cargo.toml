@@ -72,6 +72,9 @@ csv = "1.4.0"
 # RTF parsing
 rtf-parser = "0.4"
 
+# CAD parsing
+dxf = "0.6"
+
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
 tempfile = { workspace = true }
