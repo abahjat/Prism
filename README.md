@@ -198,6 +198,7 @@ Prism can be integrated into .NET applications (Windows Forms, WPF, MAUI) via th
 
     See `examples/dotnet/` for a complete working example.
 
+
 ## 🏗️ Architecture
 
 ### Unified Document Model (UDM)
@@ -514,3 +515,4 @@ Prism is inspired by and aims to be a modern alternative to:
 
 For more information, see:
 - [CLAUDE.md](CLAUDE.md) - Project context for AI assistants
+- [Prism-PRD-Document-SDK.md](Prism-PRD-Document-SDK.md) - Full Product Requirements Document
