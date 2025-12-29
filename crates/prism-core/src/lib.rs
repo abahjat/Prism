@@ -48,6 +48,10 @@ pub use parser::{ParseContext, ParseOptions, Parser};
 
 /// Prism SDK version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+/// Git commit hash
+pub const GIT_HASH: &str = env!("GIT_HASH");
+/// Full version string
+pub const FULL_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "+", env!("GIT_HASH"));
 
 /// Initialize the Prism library
 ///

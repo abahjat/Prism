@@ -444,6 +444,42 @@ impl Format {
         }
     }
 
+    /// Create a new MHT format instance (MIME HTML)
+    #[must_use]
+    pub fn mht() -> Self {
+        Self {
+            mime_type: "multipart/related".to_string(),
+            extension: "mht".to_string(),
+            family: FormatFamily::Archive, // Acts as a web archive
+            name: "MIME HTML Archive".to_string(),
+            is_container: true,
+        }
+    }
+
+    /// Create a new EPUB format instance
+    #[must_use]
+    pub fn epub() -> Self {
+        Self {
+            mime_type: "application/epub+zip".to_string(),
+            extension: "epub".to_string(),
+            family: FormatFamily::Document,
+            name: "EPUB E-Book".to_string(),
+            is_container: true,
+        }
+    }
+
+    /// Create a new XPS format instance
+    #[must_use]
+    pub fn xps() -> Self {
+        Self {
+            mime_type: "application/vnd.ms-xpsdocument".to_string(),
+            extension: "xps".to_string(),
+            family: FormatFamily::Document,
+            name: "XPS Document".to_string(),
+            is_container: true,
+        }
+    }
+
     /// Create a new RTF format instance (Rich Text Format)
     #[must_use]
     pub fn rtf() -> Self {
@@ -584,6 +620,18 @@ impl Format {
             family: FormatFamily::Archive,
             name: "GZIP Compressed File".to_string(),
             is_container: false, // It's a compressor, but effectively behaves like single-file container
+        }
+    }
+
+    /// Create a new DXF format instance (`AutoCAD` Drawing Exchange Format)
+    #[must_use]
+    pub fn dxf() -> Self {
+        Self {
+            mime_type: "image/vnd.dxf".to_string(),
+            extension: "dxf".to_string(),
+            family: FormatFamily::Cad,
+            name: "AutoCAD DXF".to_string(),
+            is_container: false,
         }
     }
 }
@@ -790,6 +838,114 @@ static SIGNATURES: &[FormatSignature] = &[
         offset: 0,
         format: Format::rtf,
     },
+    // =========================================
+    // Legacy Office formats (pre-OLE2)
+    // =========================================
+    // Word 2.0 for Windows
+    FormatSignature {
+        bytes: &[0xDB, 0xA5, 0x2D, 0x00],
+        offset: 0,
+        format: Format::doc,
+    },
+    // Word for Mac 1.0 / Write for Atari ST
+    FormatSignature {
+        bytes: &[0xFE, 0x32, 0x00],
+        offset: 0,
+        format: Format::doc,
+    },
+    // Word for Mac 3.0
+    FormatSignature {
+        bytes: &[0xFE, 0x34, 0x00],
+        offset: 0,
+        format: Format::doc,
+    },
+    // Word for Mac 4.0
+    FormatSignature {
+        bytes: &[0xFE, 0x37, 0x00, 0x1C],
+        offset: 0,
+        format: Format::doc,
+    },
+    // Word for Mac 5.0
+    FormatSignature {
+        bytes: &[0xFE, 0x37, 0x00, 0x23],
+        offset: 0,
+        format: Format::doc,
+    },
+    // Windows Write document
+    FormatSignature {
+        bytes: &[0x31, 0xBE, 0x00, 0x00, 0x00, 0xAB, 0x00],
+        offset: 0,
+        format: || Format {
+            mime_type: "application/x-mswrite".to_string(),
+            extension: "wri".to_string(),
+            family: FormatFamily::Legacy,
+            name: "Windows Write".to_string(),
+            is_container: false,
+        },
+    },
+    // Windows Write document with OLE objects
+    FormatSignature {
+        bytes: &[0x32, 0xBE, 0x00, 0x00, 0x00, 0xAB, 0x00],
+        offset: 0,
+        format: || Format {
+            mime_type: "application/x-mswrite".to_string(),
+            extension: "wri".to_string(),
+            family: FormatFamily::Legacy,
+            name: "Windows Write (OLE)".to_string(),
+            is_container: false,
+        },
+    },
+    // PowerPoint 2.0 (pre-OLE2)
+    FormatSignature {
+        bytes: &[0xED, 0xDE, 0xAD, 0x0B, 0x02, 0x00, 0x00, 0x00],
+        offset: 0,
+        format: Format::ppt,
+    },
+    // PowerPoint 3.0 (pre-OLE2)
+    FormatSignature {
+        bytes: &[0xED, 0xDE, 0xAD, 0x0B, 0x03, 0x00, 0x00, 0x00],
+        offset: 0,
+        format: Format::ppt,
+    },
+    // Excel 4.0 worksheet
+    FormatSignature {
+        bytes: &[0x09, 0x04, 0x06, 0x00, 0x00],
+        offset: 0,
+        format: Format::xls,
+    },
+    // Excel for OS/2 (various versions)
+    FormatSignature {
+        bytes: &[0x09, 0x00, 0x04, 0x00, 0x05, 0x00],
+        offset: 0,
+        format: Format::xls,
+    },
+    // Excel generic older format
+    FormatSignature {
+        bytes: &[0x09, 0x08],
+        offset: 0,
+        format: Format::xls,
+    },
+    // WordStar document
+    FormatSignature {
+        bytes: &[0x1D, 0x7D, 0x00, 0x00],
+        offset: 0,
+        format: || Format {
+            mime_type: "application/x-wordstar".to_string(),
+            extension: "ws".to_string(),
+            family: FormatFamily::Legacy,
+            name: "WordStar Document".to_string(),
+            is_container: false,
+        },
+    },
+    // =========================================
+    // CAD formats
+    // =========================================
+    // DXF (Binary)
+    FormatSignature {
+        bytes: b"AutoCAD Binary DXF",
+        offset: 0,
+        format: Format::dxf,
+    },
 ];
 
 /// Extension to format mapping
@@ -836,6 +992,11 @@ static EXTENSION_MAP: &[(&str, fn() -> Format)] = &[
     ("eml", Format::eml),
     ("msg", Format::msg),
     ("mbox", Format::mbox),
+    ("mht", Format::mht),
+    ("mhtml", Format::mht),
+    ("epub", Format::epub),
+    ("xps", Format::xps),
+    ("oxps", Format::xps),
     ("vcf", Format::vcf),
     ("vcard", Format::vcf),
     ("ics", Format::ics),
@@ -845,6 +1006,22 @@ static EXTENSION_MAP: &[(&str, fn() -> Format)] = &[
     ("gzip", Format::gzip),
     ("tgz", Format::gzip), // Often treated as gzip then tar
     ("rtf", Format::rtf),
+    ("wri", || Format {
+        mime_type: "application/x-mswrite".to_string(),
+        extension: "wri".to_string(),
+        family: FormatFamily::Legacy,
+        name: "Windows Write".to_string(),
+        is_container: false,
+    }),
+    ("ws", || Format {
+        mime_type: "application/x-wordstar".to_string(),
+        extension: "ws".to_string(),
+        family: FormatFamily::Legacy,
+        name: "WordStar Document".to_string(),
+        is_container: false,
+    }),
+    // CAD formats
+    ("dxf", Format::dxf),
 ];
 
 /// Detect the format of a document from its content
@@ -953,6 +1130,20 @@ fn detect_office_in_zip(data: &[u8]) -> Option<Format> {
         }
     }
 
+    // Check for EPUB
+    let epub_marker = b"mimetypeapplication/epub+zip";
+    if data.windows(epub_marker.len()).any(|w| w == epub_marker) {
+        return Some(Format::epub());
+    }
+
+    // Check for XPS
+    if data
+        .windows(27)
+        .any(|w| w == b"FixedDocumentSequence.fdseq")
+    {
+        return Some(Format::xps());
+    }
+
     // Simple check: look for "[Content_Types].xml" which is present in OOXML
     // In a real implementation, you'd actually parse the ZIP
 
@@ -984,21 +1175,52 @@ fn detect_office_in_zip(data: &[u8]) -> Option<Format> {
 /// Note: This function should only be called if magic bytes already confirmed OLE2/CFB format
 fn detect_office_in_ole(data: &[u8], filename: Option<&str>) -> Option<Format> {
     // Look for stream names in the OLE2 structure
-    // Word documents have "WordDocument" stream
-    if data.windows(12).any(|w| w == b"WordDocument") {
+    // Note: CFB Directory Entry names are UTF-16LE encoded
+
+    // Word: "WordDocument" in UTF-16LE
+    let word_doc_utf16 = b"W\0o\0r\0d\0D\0o\0c\0u\0m\0e\0n\0t";
+    if data
+        .windows(word_doc_utf16.len())
+        .any(|w| w == word_doc_utf16)
+        || data.windows(12).any(|w| w == b"WordDocument")
+    {
         return Some(Format::doc());
     }
 
-    // Excel documents have "Workbook" or "Book" stream
-    if data.windows(8).any(|w| w == b"Workbook") || data.windows(4).any(|w| w == b"Book") {
+    // Excel: "Workbook" or "Book"
+    let workbook_utf16 = b"W\0o\0r\0k\0b\0o\0o\0k";
+    let book_utf16 = b"B\0o\0o\0k";
+    if data
+        .windows(workbook_utf16.len())
+        .any(|w| w == workbook_utf16)
+        || data.windows(book_utf16.len()).any(|w| w == book_utf16)
+        || data.windows(8).any(|w| w == b"Workbook")
+        || data.windows(4).any(|w| w == b"Book")
+    {
         return Some(Format::xls());
     }
 
-    // PowerPoint documents have "PowerPoint Document" or "Current User" stream
-    if data.windows(18).any(|w| w == b"PowerPoint Document")
+    // PowerPoint: "PowerPoint Document" or "Current User"
+    let ppt_doc_utf16 = b"P\0o\0w\0e\0r\0P\0o\0i\0n\0t\0 \0D\0o\0c\0u\0m\0e\0n\0t";
+    let current_user_utf16 = b"C\0u\0r\0r\0e\0n\0t\0 \0U\0s\0e\0r";
+    if data
+        .windows(ppt_doc_utf16.len())
+        .any(|w| w == ppt_doc_utf16)
+        || data
+            .windows(current_user_utf16.len())
+            .any(|w| w == current_user_utf16)
+        || data.windows(19).any(|w| w == b"PowerPoint Document")
         || data.windows(12).any(|w| w == b"Current User")
     {
         return Some(Format::ppt());
+    }
+
+    // Project: "MSProject"
+    let mpp_utf16 = b"M\0S\0P\0r\0o\0j\0e\0c\0t";
+    if data.windows(mpp_utf16.len()).any(|w| w == mpp_utf16)
+        || data.windows(9).any(|w| w == b"MSProject")
+    {
+        return Some(Format::mpp());
     }
 
     // MSG files don't have a distinctive stream name that's easy to detect,
@@ -1029,6 +1251,9 @@ pub fn format_by_mime(mime_type: &str) -> Option<Format> {
         "image/jpeg" => Some(Format::jpeg()),
         "image/tiff" => Some(Format::tiff()),
         "text/html" => Some(Format::html()),
+        "multipart/related" => Some(Format::mht()),
+        "application/epub+zip" => Some(Format::epub()),
+        "application/vnd.ms-xpsdocument" | "application/oxps" => Some(Format::xps()),
         _ => None,
     }
 }

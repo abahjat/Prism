@@ -31,10 +31,17 @@ impl DocParser {
         Self
     }
 
-    /// Check if the data has OLE2/CFB signature
+    /// Check if the data has OLE2/CFB signature (Word 97-2003)
     #[must_use]
     fn is_ole2_file(data: &[u8]) -> bool {
         data.starts_with(&[0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1])
+    }
+
+    /// Check if the data has Word 2.0/Word for Windows signature
+    #[must_use]
+    fn is_word2_file(data: &[u8]) -> bool {
+        // Word 2.0/6.0 magic bytes: DB A5 2D 00
+        data.starts_with(&[0xDB, 0xA5, 0x2D, 0x00])
     }
 
     /// Extract text parts from DOC stream
@@ -86,6 +93,36 @@ impl DocParser {
 
         Ok(text_parts)
     }
+
+    /// Extract text from Word 2.0/6.0 format (non-OLE2)
+    ///
+    /// Word 2.0 files store text directly after a header. This is a basic extraction.
+    #[must_use]
+    fn extract_text_from_word2(data: &[u8]) -> Vec<String> {
+        // Word 2.0 stores text after a header. The text usually starts around offset 128.
+        // We'll use the general printable text extraction with some heuristics.
+        let mut text_parts = Vec::new();
+
+        // Skip the header (roughly 128 bytes) and extract printable text
+        let start_offset = 128.min(data.len());
+        let text = extract_printable_text(&data[start_offset..]);
+
+        if text.is_empty() {
+            // Fallback: try extracting from the entire file
+            let text = extract_printable_text(data);
+            if !text.is_empty() {
+                text_parts.push(text);
+            }
+        } else {
+            text_parts.push(text);
+        }
+
+        if text_parts.is_empty() {
+            text_parts.push("Unable to extract text from Word 2.0 file.".to_string());
+        }
+
+        text_parts
+    }
 }
 
 impl Default for DocParser {
@@ -107,11 +144,17 @@ impl Parser for DocParser {
     }
 
     fn can_parse(&self, data: &[u8]) -> bool {
+        // Accept Word 2.0/6.0 format (non-OLE2)
+        if Self::is_word2_file(data) {
+            return true;
+        }
+
+        // Accept OLE2/CFB format (Word 97-2003)
         if !Self::is_ole2_file(data) {
             return false;
         }
 
-        // Check if it's likely a Word document by looking for Word-specific markers
+        // Check if it's likely a Word document by looking for WordDocument stream
         let cursor = Cursor::new(data);
         if let Ok(comp) = CompoundFile::open(cursor) {
             // Word documents have a "WordDocument" stream
@@ -127,7 +170,13 @@ impl Parser for DocParser {
             context.size, context.filename
         );
 
-        let text_parts = Self::extract_text_from_doc(&data)?;
+        // Choose extraction method based on file format
+        let text_parts = if Self::is_word2_file(&data) {
+            info!("Detected Word 2.0/6.0 format, using legacy extraction");
+            Self::extract_text_from_word2(&data)
+        } else {
+            Self::extract_text_from_doc(&data)?
+        };
 
         // Create pages with extracted text
         let mut content_blocks = Vec::new();

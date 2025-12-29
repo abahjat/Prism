@@ -4,12 +4,24 @@
 
 Prism is a next-generation document processing SDK built in Rust, designed to view, convert, and extract content from 600+ file formats. It's the modern, developer-friendly alternative to Oracle Outside In.
 
+## 🖼️ Visuals
+
+<p align="center">
+  <img src="assets/screenshots/viewer_home.png" width="800" alt="Prism Home">
+</p>
+
+<p align="center">
+  <img src="assets/screenshots/viewer_mht.png" width="400" alt="MHT Viewing">
+  <img src="assets/screenshots/viewer_image.png" width="400" alt="Image Viewing">
+</p>
+
+
 ## 🚀 Features
 
 - **Comprehensive Format Support**: Support for 600+ document formats (200+ in Phase 1)
-  - Office: DOCX, XLSX, PPTX, DOC, XLS, PPT, RTF, ONE, VSDX, MPP
+  - Office: DOCX, XLSX, PPTX, DOC, XLS, PPT, RTF, ONE, VSDX, MPP, XPS, EPUB
   - PDF: PDF 1.x-2.0, PDF/A
-  - Email: MSG, EML, PST
+  - Email: MSG, EML, PST, MHT
   - Images: JPEG, PNG, TIFF, GIF, BMP, WebP, HEIC
   - Archives: ZIP, RAR, 7z, TAR, GZIP
   - CAD: DWG, DXF
@@ -502,4 +514,3 @@ Prism is inspired by and aims to be a modern alternative to:
 
 For more information, see:
 - [CLAUDE.md](CLAUDE.md) - Project context for AI assistants
-- [Prism-PRD-Document-SDK.md](Prism-PRD-Document-SDK.md) - Full Product Requirements Document

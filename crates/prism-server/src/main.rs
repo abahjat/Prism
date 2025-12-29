@@ -86,8 +86,12 @@ impl AppState {
         // Register Microsoft Project parser
         registry.register(Arc::new(prism_parsers::MppParser::new()));
 
+        // Register XPS parser
+        registry.register(Arc::new(prism_parsers::XpsParser::new()));
+
         // Register text-based parsers
         registry.register(Arc::new(prism_parsers::TextParser::new()));
+        registry.register(Arc::new(prism_parsers::EpubParser::new()));
         registry.register(Arc::new(prism_parsers::HtmlParser::new()));
         registry.register(Arc::new(prism_parsers::JsonParser::new()));
         registry.register(Arc::new(prism_parsers::XmlParser::new()));
@@ -102,6 +106,10 @@ impl AppState {
         registry.register(Arc::new(prism_parsers::MboxParser::new()));
         registry.register(Arc::new(prism_parsers::VcfParser::new()));
         registry.register(Arc::new(prism_parsers::IcsParser::new()));
+        registry.register(Arc::new(prism_parsers::MhtParser::new()));
+
+        // Register CAD parsers
+        registry.register(Arc::new(prism_parsers::DxfParser::new()));
 
         // Register archive parsers
         registry.register(Arc::new(prism_parsers::ArchiveParser::new(
@@ -193,6 +201,8 @@ async fn health() -> Json<HealthResponse> {
 async fn version() -> Json<serde_json::Value> {
     Json(serde_json::json!({
         "server": env!("CARGO_PKG_VERSION"),
+        "commit": prism_core::GIT_HASH,
+        "full_version": prism_core::FULL_VERSION,
         "core": prism_core::VERSION,
         "parsers": prism_parsers::VERSION,
         "render": prism_render::VERSION,

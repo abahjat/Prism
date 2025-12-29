@@ -172,7 +172,10 @@ impl HtmlRenderer {
         // Check if this is an email or contact format (no page concept)
         let is_email_format = document.metadata.custom.get("format").is_some_and(|v| {
             if let prism_core::metadata::MetadataValue::String(s) = v {
-                matches!(s.as_str(), "EML" | "MSG" | "MBOX" | "VCF" | "ICS")
+                matches!(
+                    s.as_str(),
+                    "EML" | "MSG" | "MBOX" | "VCF" | "ICS" | "EPUB" | "MHT" | "XPS"
+                )
             } else {
                 false
             }
