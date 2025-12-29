@@ -236,8 +236,119 @@ macro_rules! impl_text_parser {
 impl_text_parser!(JsonParser, Format::json, "JSON Parser");
 impl_text_parser!(XmlParser, Format::xml, "XML Parser");
 // CsvParser moved to csv.rs
-impl_text_parser!(MarkdownParser, Format::markdown, "Markdown Parser");
+// MarkdownParser implemented separately
 impl_text_parser!(LogParser, Format::log, "Log Parser");
+
+impl MarkdownParser {
+    /// Create a new parser instance
+    #[must_use]
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl Default for MarkdownParser {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[async_trait]
+impl Parser for MarkdownParser {
+    fn format(&self) -> Format {
+        Format::markdown()
+    }
+
+    fn can_parse(&self, data: &[u8]) -> bool {
+        TextParser::is_likely_text(data)
+    }
+
+    async fn parse(&self, data: Bytes, context: ParseContext) -> Result<Document> {
+        debug!(
+            "Parsing markdown file, size: {} bytes, filename: {:?}",
+            context.size, context.filename
+        );
+
+        // Convert bytes to UTF-8 string
+        let text = std::str::from_utf8(&data)
+            .map_err(|e| Error::ParseError(format!("Invalid UTF-8: {e}")))?;
+
+        // Convert parsed markdown to HTML
+        let parser = pulldown_cmark::Parser::new(text);
+        let mut html_output = String::new();
+        pulldown_cmark::html::push_html(&mut html_output, parser);
+
+        // Prefix with __HTML_RAW__: to indicate to the renderer that this is raw HTML
+        let raw_html = format!("__HTML_RAW__:{html_output}");
+
+        // Create a single text run with all the content
+        let text_run = TextRun {
+            text: raw_html,
+            style: TextStyle::default(),
+            bounds: None,
+            char_positions: None,
+        };
+
+        // Create text block with wrapping enabled
+        let text_block = TextBlock {
+            bounds: Rect {
+                x: 0.0,
+                y: 0.0,
+                width: 0.0,
+                height: 0.0,
+            },
+            runs: vec![text_run],
+            paragraph_style: None,
+            style: ShapeStyle::default(),
+            rotation: 0.0,
+        };
+
+        // Create single page
+        let page = Page {
+            number: 1,
+            dimensions: Dimensions::LETTER,
+            content: vec![ContentBlock::Text(text_block)],
+            metadata: PageMetadata::default(),
+            annotations: Vec::new(),
+        };
+
+        // Create metadata
+        let mut metadata = Metadata::default();
+        if let Some(ref filename) = context.filename {
+            metadata.title = Some(filename.clone());
+            if let Some(extension) = filename.rsplit('.').next() {
+                metadata.add_custom("file_extension", extension.to_string());
+            }
+        }
+
+        metadata.add_custom("character_count", i64::try_from(text.len()).unwrap_or(0));
+        #[allow(clippy::naive_bytecount)]
+        let line_count = data.iter().filter(|&&b| b == b'\n').count();
+        metadata.add_custom("line_count", i64::try_from(line_count).unwrap_or(0));
+
+        let mut document = Document::builder().metadata(metadata).build();
+        document.pages = vec![page];
+
+        info!(
+            "Successfully parsed markdown file with {} characters",
+            context.size
+        );
+
+        Ok(document)
+    }
+
+    fn metadata(&self) -> ParserMetadata {
+        ParserMetadata {
+            name: "Markdown Parser".to_string(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            features: vec![
+                ParserFeature::TextExtraction,
+                ParserFeature::MetadataExtraction,
+            ],
+            requires_sandbox: false,
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -349,5 +460,39 @@ mod tests {
         assert_eq!(metadata.name, "Text Parser");
         assert!(!metadata.requires_sandbox);
         assert!(metadata.features.contains(&ParserFeature::TextExtraction));
+    }
+
+    #[tokio::test]
+    async fn test_parse_markdown() {
+        let parser = MarkdownParser::new();
+        let content = "# Header\n**Bold** text";
+        let data = Bytes::from(content);
+
+        let parse_context = ParseContext {
+            format: parser.format(),
+            filename: Some("test.md".to_string()),
+            size: data.len(),
+            options: prism_core::parser::ParseOptions::default(),
+        };
+
+        let result = parser.parse(data, parse_context).await;
+        assert!(result.is_ok());
+
+        let document = result.unwrap();
+        assert_eq!(document.page_count(), 1);
+
+        if let ContentBlock::Text(text_block) = &document.pages[0].content[0] {
+            assert_eq!(text_block.runs.len(), 1);
+            let text = &text_block.runs[0].text;
+
+            // Check for raw HTML prefix
+            assert!(text.starts_with("__HTML_RAW__:"));
+
+            // Check for HTML content
+            assert!(text.contains("<h1>Header</h1>"));
+            assert!(text.contains("<strong>Bold</strong>"));
+        } else {
+            panic!("Expected text block");
+        }
     }
 }
