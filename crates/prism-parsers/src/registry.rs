@@ -35,9 +35,60 @@ impl ParserRegistry {
         // Register text parsers
         registry.register(Arc::new(crate::text::CsvParser::new()));
         registry.register(Arc::new(crate::text::RtfParser::new()));
+        registry.register(Arc::new(crate::text::TextParser::new()));
+        registry.register(Arc::new(crate::text::MarkdownParser::new()));
+        registry.register(Arc::new(crate::text::JsonParser::new()));
+        registry.register(Arc::new(crate::text::XmlParser::new()));
+        registry.register(Arc::new(crate::text::LogParser::new()));
+        registry.register(Arc::new(crate::text::HtmlParser::new()));
+        registry.register(Arc::new(crate::text::EpubParser::new()));
+
+        // Register office parsers
+        registry.register(Arc::new(crate::office::DocxParser::new()));
+        registry.register(Arc::new(crate::office::XlsxParser::new()));
+        registry.register(Arc::new(crate::office::PptxParser::new()));
+        registry.register(Arc::new(crate::office::DocParser::new()));
+        registry.register(Arc::new(crate::office::XlsParser::new()));
+        registry.register(Arc::new(crate::office::PptParser::new()));
+        registry.register(Arc::new(crate::office::MppParser::new()));
+        registry.register(Arc::new(crate::office::OdtParser::new()));
+        registry.register(Arc::new(crate::office::OdsParser::new()));
+        registry.register(Arc::new(crate::office::OdpParser::new()));
+        registry.register(Arc::new(crate::office::OdgParser::new()));
+        registry.register(Arc::new(crate::office::OneNoteParser::new()));
+        registry.register(Arc::new(crate::office::VsdxParser::new()));
+        registry.register(Arc::new(crate::office::XpsParser::new()));
+
+        // Register PDF parsers
+        registry.register(Arc::new(crate::pdf::PdfParser::new()));
 
         // Register email parsers
         registry.register(Arc::new(crate::email::MsgParser::new()));
+        registry.register(Arc::new(crate::email::EmlParser::new()));
+        registry.register(Arc::new(crate::email::MboxParser::new()));
+        registry.register(Arc::new(crate::email::MhtParser::new()));
+        // IcsParser and VcfParser are also available in lib.rs
+        registry.register(Arc::new(crate::email::IcsParser::new()));
+        registry.register(Arc::new(crate::email::VcfParser::new()));
+
+        // Register image parsers
+        registry.register(Arc::new(crate::image::TiffParser::new()));
+        registry.register(Arc::new(crate::image::PngParser::new()));
+        registry.register(Arc::new(crate::image::JpegParser::new()));
+        registry.register(Arc::new(crate::image::GifParser::new()));
+        registry.register(Arc::new(crate::image::WebpParser::new()));
+        registry.register(Arc::new(crate::image::BmpParser::new()));
+        registry.register(Arc::new(crate::image::IcoParser::new()));
+        registry.register(Arc::new(crate::image::SvgParser::new()));
+        registry.register(Arc::new(crate::image::SvgzParser::new()));
+        registry.register(Arc::new(crate::image::TgaParser::new()));
+        registry.register(Arc::new(crate::image::EmfParser::new()));
+        registry.register(Arc::new(crate::image::EmzParser::new()));
+        registry.register(Arc::new(crate::image::WmfParser::new()));
+        registry.register(Arc::new(crate::image::EpsParser::new()));
+
+        // Register CAD parsers
+        registry.register(Arc::new(crate::cad::DxfParser::new()));
 
         registry
     }
