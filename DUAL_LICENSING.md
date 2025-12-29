@@ -21,7 +21,7 @@ If you wish to use Prism in a proprietary application (closed source) and do *no
 - **Support**: Priority access to the development team.
 
 **How to Purchase:**
-Contact [Email Address] or visit [Website URL] to acquire a commercial license key.
+Contact abahjat@gmail.com to acquire a commercial license key.
 
 ## Usage Guide
 | Your Use Case | Required License | Cost |
