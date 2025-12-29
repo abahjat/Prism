@@ -1224,7 +1224,35 @@ fn detect_office_in_ole(data: &[u8], filename: Option<&str>) -> Option<Format> {
     }
 
     // MSG files don't have a distinctive stream name that's easy to detect,
-    // so use extension as fallback (but only if we already know it's OLE2)
+    // so we check for Outlook-specific property streams or use extension as fallback.
+    // Outlook property streams often start with "__substg1.0_"
+    // The properties version stream is "__properties_version1.0"
+    // Note: OLE directory names are UTF-16, so we must check for wide strings.
+
+    // "__properties_version1.0" in UTF-16LE
+    let prop_ver_utf16: &[u8] = &[
+        0x5F, 0x00, 0x5F, 0x00, 0x70, 0x00, 0x72, 0x00, 0x6F, 0x00, 0x70, 0x00, 0x65, 0x00, 0x72,
+        0x00, 0x74, 0x00, 0x69, 0x00, 0x65, 0x00, 0x73, 0x00, 0x5F, 0x00, 0x76, 0x00, 0x65, 0x00,
+        0x72, 0x00, 0x73, 0x00, 0x69, 0x00, 0x6F, 0x00, 0x6E, 0x00, 0x31, 0x00, 0x2E, 0x00, 0x30,
+        0x00,
+    ];
+
+    // "__substg1.0_" in UTF-16LE
+    let substg_utf16: &[u8] = &[
+        0x5F, 0x00, 0x5F, 0x00, 0x73, 0x00, 0x75, 0x00, 0x62, 0x00, 0x73, 0x00, 0x74, 0x00, 0x67,
+        0x00, 0x31, 0x00, 0x2E, 0x00, 0x30, 0x00, 0x5F, 0x00,
+    ];
+
+    if data.windows(prop_ver_utf16.len()).any(|w| w == prop_ver_utf16)
+        || data.windows(substg_utf16.len()).any(|w| w == substg_utf16)
+        // Keep ASCII check just in case of weird implementations or non-OLE containers reusing this logic
+        || data.windows(23).any(|w| w == b"__properties_version1.0")
+        || data.windows(12).any(|w| w == b"__substg1.0_")
+    {
+        return Some(Format::msg());
+    }
+
+    // fallback (but only if we already know it's OLE2)
     if let Some(filename) = filename {
         let ext = filename.rsplit('.').next()?.to_lowercase();
         if ext == "msg" {
@@ -1319,5 +1347,29 @@ mod tests {
     fn test_format_family() {
         assert_eq!(FormatFamily::Document.name(), "Document");
         assert_eq!(FormatFamily::Office.name(), "Office");
+    }
+
+    #[test]
+    fn test_detect_msg_by_content() {
+        // Mock OLE file with MSG properties
+        let mut data = vec![
+            0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1, // OLE magic
+        ];
+        // Padding
+        data.extend_from_slice(&[0; 100]);
+        // MSG property signature (UTF-16 "__properties_version1.0")
+        data.extend_from_slice(&[
+            0x5F, 0x00, 0x5F, 0x00, 0x70, 0x00, 0x72, 0x00, 0x6F, 0x00, 0x70, 0x00, 0x65, 0x00,
+            0x72, 0x00, 0x74, 0x00, 0x69, 0x00, 0x65, 0x00, 0x73, 0x00, 0x5F, 0x00, 0x76, 0x00,
+            0x65, 0x00, 0x72, 0x00, 0x73, 0x00, 0x69, 0x00, 0x6F, 0x00, 0x6E, 0x00, 0x31, 0x00,
+            0x2E, 0x00, 0x30, 0x00,
+        ]);
+
+        // Should detect as MSG even without extension
+        let result = detect_format(&data, None);
+        assert!(result.is_some());
+        let result = result.unwrap();
+        assert_eq!(result.format.name, "Outlook Message");
+        assert_eq!(result.format.mime_type, "application/vnd.ms-outlook");
     }
 }
