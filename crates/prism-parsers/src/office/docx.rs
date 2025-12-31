@@ -76,6 +76,7 @@ impl Parser for DocxParser {
 
     #[allow(clippy::too_many_lines)]
     async fn parse(&self, data: Bytes, context: ParseContext) -> Result<Document> {
+        use std::io::Read;
         const PARAS_PER_PAGE: usize = 50;
         debug!("Parsing DOCX file: {:?}", context.filename);
 
@@ -134,6 +135,7 @@ impl Parser for DocxParser {
 
         let mut pages = Vec::new();
         let mut current_page_content = Vec::new();
+        let mut images_found: Vec<prism_core::document::ImageResource> = Vec::new();
 
         // State for paragraph parsing
         let mut in_paragraph = false;
@@ -145,6 +147,10 @@ impl Parser for DocxParser {
         let mut current_run_text = String::new();
         let mut current_run_style = TextStyle::default();
         let mut in_run_props = false;
+
+        // State for drawing parsing
+        let mut in_drawing = false;
+        let mut current_drawing_image_id: Option<String> = None;
 
         // Count paragraphs for approximate pagination
         let mut para_count = 0;
@@ -251,6 +257,17 @@ impl Parser for DocxParser {
                                 }
                             }
                         }
+                        b"w:drawing" => {
+                            in_drawing = true;
+                            current_drawing_image_id = None;
+                        }
+                        b"a:blip" if in_drawing => {
+                            for attr in e.attributes().flatten() {
+                                if attr.key.as_ref() == b"r:embed" {
+                                    current_drawing_image_id = Some(utils::attr_value(&attr.value));
+                                }
+                            }
+                        }
                         b"w:tbl" => {
                             // Delegate to table parser
                             // Note: parse_table expects we just consumed <w:tbl>
@@ -271,10 +288,31 @@ impl Parser for DocxParser {
                         b"w:b" if in_run_props => current_run_style.bold = true,
                         b"w:i" if in_run_props => current_run_style.italic = true,
                         b"w:u" if in_run_props => current_run_style.underline = true,
+                        b"w:color" if in_run_props => {
+                            // Handle self-closing color tag if present (unlikely for w:color but possible)
+                            let mut val: Option<String> = None;
+                            for attr in e.attributes().flatten() {
+                                if attr.key.as_ref() == b"w:val" {
+                                    val = Some(utils::attr_value(&attr.value));
+                                }
+                            }
+                            if let Some(v) = val {
+                                if v != "auto" {
+                                    current_run_style.color = Some(format!("#{v}"));
+                                }
+                            }
+                        }
                         b"w:pStyle" => {
                             for attr in e.attributes().flatten() {
                                 if attr.key.as_ref() == b"w:val" {
                                     current_paragraph_style = Some(utils::attr_value(&attr.value));
+                                }
+                            }
+                        }
+                        b"a:blip" if in_drawing => {
+                            for attr in e.attributes().flatten() {
+                                if attr.key.as_ref() == b"r:embed" {
+                                    current_drawing_image_id = Some(utils::attr_value(&attr.value));
                                 }
                             }
                         }
@@ -327,6 +365,49 @@ impl Parser for DocxParser {
                             in_run = false;
                         }
                         b"w:rPr" => in_run_props = false,
+                        b"w:drawing" => {
+                            in_drawing = false;
+                            if let Some(r_id) = current_drawing_image_id.take() {
+                                if let Some(rel) = _rels.get(&r_id) {
+                                    // Construct path in zip
+                                    let mut path = rel.target.clone();
+                                    if path.starts_with('/') {
+                                        path = path.trim_start_matches('/').to_string();
+                                    } else {
+                                        path = format!("word/{path}");
+                                    }
+
+                                    if let Ok(mut image_file) = archive.by_name(&path) {
+                                        let mut image_data = Vec::new();
+                                        if image_file.read_to_end(&mut image_data).is_ok() {
+                                            let image_resource =
+                                                prism_core::document::ImageResource {
+                                                    id: r_id.clone(),
+                                                    mime_type: "image/png".to_string(), // TODO: Detect mime type
+                                                    data: Some(image_data),
+                                                    url: None,
+                                                    width: 0, // TODO: Parse dimensions from extent
+                                                    height: 0,
+                                                };
+
+                                            images_found.push(image_resource);
+
+                                            let image_block = prism_core::document::ImageBlock {
+                                                bounds: Rect::default(),
+                                                resource_id: r_id.clone(),
+                                                alt_text: None,
+                                                format: None,
+                                                original_size: None,
+                                                style: prism_core::document::ShapeStyle::default(),
+                                                rotation: 0.0,
+                                            };
+                                            current_page_content
+                                                .push(ContentBlock::Image(image_block));
+                                        }
+                                    }
+                                }
+                            }
+                        }
                         _ => {}
                     }
                 }
@@ -373,6 +454,8 @@ impl Parser for DocxParser {
         let mut document = Document::builder().metadata(metadata).build();
         document.pages = pages;
         document.structure.headings = Vec::new(); // TODO: Extract headings from structure
+
+        document.resources.images = images_found;
 
         Ok(document)
     }

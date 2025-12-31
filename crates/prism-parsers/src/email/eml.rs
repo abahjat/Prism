@@ -6,7 +6,7 @@
 use async_trait::async_trait;
 use bytes::Bytes;
 use chrono::DateTime;
-use mail_parser::MessageParser;
+use mail_parser::{MessageParser, MimeHeaders};
 use prism_core::{
     document::{
         ContentBlock, Dimensions, Document, Page, PageMetadata, ShapeStyle, TextBlock, TextRun,
@@ -139,6 +139,43 @@ impl Parser for EmlParser {
             text_runs.push(Self::format_email_header("Subject", subject));
         }
 
+        // Extract attachments
+        let mut attachments = Vec::new();
+        for attachment in message.attachments() {
+            // Get filename from content_disposition attribute or use default
+            let filename = attachment
+                .content_disposition()
+                .and_then(|cd| cd.attribute("filename"))
+                .map_or_else(|| "attachment.bin".to_string(), String::from);
+
+            // Get MIME type from content_type
+            let mime_type = attachment.content_type().map(|ct| ct.ctype().to_string());
+
+            // Get raw bytes using contents()
+            let data = attachment.contents().to_vec();
+
+            if !data.is_empty() {
+                attachments.push(prism_core::document::Attachment {
+                    filename,
+                    mime_type,
+                    description: None,
+                    data,
+                    created: None,
+                    modified: None,
+                });
+            }
+        }
+
+        // Add Attachment header row if there are attachments
+        if !attachments.is_empty() {
+            let attachment_names: Vec<String> =
+                attachments.iter().map(|a| a.filename.clone()).collect();
+            text_runs.push(Self::format_email_header(
+                "Attachment",
+                &attachment_names.join(" ; "),
+            ));
+        }
+
         // Add empty line separator
         text_runs.push(TextRun {
             text: "\n".to_string(),
@@ -205,11 +242,16 @@ impl Parser for EmlParser {
             }
         }
         metadata.add_custom("format", "EML");
+        metadata.add_custom(
+            "attachment_count",
+            i64::try_from(attachments.len()).unwrap_or(0),
+        );
 
         // Create document
         let mut document = Document::new();
         document.pages = vec![page];
         document.metadata = metadata;
+        document.attachments = attachments;
 
         info!("Successfully parsed EML email");
 

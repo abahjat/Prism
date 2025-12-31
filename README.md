@@ -57,7 +57,7 @@ Prism is a next-generation document processing SDK built in Rust, designed to vi
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-org/prism.git
+git clone https://github.com/abahjat/prism.git
 cd prism
 
 # Build all crates
@@ -512,7 +512,4 @@ Prism is inspired by and aims to be a modern alternative to:
 ---
 
 **Built with ❤️ in Rust**
-
-For more information, see:
-- [CLAUDE.md](CLAUDE.md) - Project context for AI assistants
 
