@@ -1,7 +1,24 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //! Server configuration
 
+use clap::Parser;
 use serde::{Deserialize, Serialize};
+use std::net::IpAddr;
+
+/// Command-line arguments for Prism Server
+#[derive(Parser, Debug)]
+#[command(name = "prism-server")]
+#[command(about = "REST API server for Prism document processing")]
+#[command(version)]
+pub struct ServerArgs {
+    /// Host address to bind to
+    #[arg(short = 'H', long, default_value = "127.0.0.1", env = "PRISM_HOST")]
+    pub host: IpAddr,
+
+    /// Port to listen on
+    #[arg(short, long, default_value = "8080", env = "PRISM_PORT")]
+    pub port: u16,
+}
 
 /// Server configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
