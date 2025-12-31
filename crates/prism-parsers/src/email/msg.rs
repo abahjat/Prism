@@ -35,7 +35,7 @@ impl MsgParser {
     fn format_header_html(label: &str, value: &str) -> String {
         let value_escaped = html_escape(value);
         format!(
-            r#"<div class="header-row" style="margin-bottom: 4px;"><span class="header-label" style="font-weight: bold; display: inline-block; width: 60px; color: #555;">{label}:</span> <span class="header-value">{value_escaped}</span></div>"#
+            r#"<div class="header-row" style="margin-bottom: 4px; display: flex; flex-wrap: wrap;"><span class="header-label" style="font-weight: bold; min-width: 85px; color: #555;">{label}:</span> <span class="header-value" style="flex: 1; word-break: break-word;">{value_escaped}</span></div>"#
         )
     }
 
@@ -128,48 +128,85 @@ impl MsgParser {
     ) -> Vec<prism_core::document::Attachment> {
         use std::io::Read;
         let mut attachments = Vec::new();
+        let mut attach_paths = Vec::new();
 
-        // CFB crate doesn't easily list root entries matching a pattern.
-        // We iterate indices 0..100 mostly.
-        for i in 0..100 {
-            let attach_storage_name = format!("__attach_version1.0_{i:08}");
+        // Pass 1: Find all attachment storages
+        for entry in comp.walk() {
+            if entry.is_storage() {
+                let name = entry.name();
+                if name.starts_with("__attach_version1.0_") {
+                    attach_paths.push(entry.path().to_path_buf());
+                }
+            }
+        }
 
-            if comp.is_storage(&attach_storage_name) {
-                let base = &attach_storage_name;
+        // Pass 2: Extract data from each
+        for path in attach_paths {
+            let path_str = path.to_string_lossy();
+            let base = &path_str;
 
-                // Filename: 0x3707 (Long) or 0x3704 (Short)
-                let filename = Self::extract_string_property(comp, "3707")
-                    .or_else(|| Self::extract_string_property(comp, "3704"))
-                    .unwrap_or_else(|| format!("attachment_{i}"));
+            // Filename: 0x3707 (Long) or 0x3704 (Short)
+            // Note: properties inside the attachment storage are relative to it
+            // We need to construct absolute paths for extract_props, or use a helper that takes a base path
+            // But extract_string_property uses absolute paths mostly?
+            // Actually extract_string_property takes `comp` and `base_tag`.
+            // It constructs `__substg1.0_{base_tag}...`. This assumes root.
 
-                // Mime Type: 0x370E
-                let mime_type = Self::extract_string_property(comp, "370E");
+            // We need to manually extract properties relative to the attachment storage.
+            // Let's implement local extraction here for simplicity.
 
-                // Data: 0x3701 (Binary - 0102)
-                let data_path = format!("{base}/__substg1.0_37010102");
-                let data = if let Ok(mut stream) = comp.open_stream(&data_path) {
+            let get_prop = |comp: &mut CompoundFile<Cursor<&[u8]>>, tag: &str| -> Option<String> {
+                let p1 = format!("{base}/__substg1.0_{tag}001F"); // Unicode
+                if let Ok(mut stream) = comp.open_stream(&p1) {
+                    let mut buf = Vec::new();
+                    if stream.read_to_end(&mut buf).is_ok() && buf.len() >= 2 {
+                        let chars: Vec<u16> = buf
+                            .chunks_exact(2)
+                            .map(|c| u16::from_le_bytes([c[0], c[1]]))
+                            .take_while(|&c| c != 0)
+                            .collect();
+                        return String::from_utf16(&chars).ok();
+                    }
+                }
+                let p2 = format!("{base}/__substg1.0_{tag}001E"); // ASCII
+                if let Ok(mut stream) = comp.open_stream(&p2) {
                     let mut buf = Vec::new();
                     if stream.read_to_end(&mut buf).is_ok() {
-                        buf
-                    } else {
-                        Vec::new()
+                        let bytes: Vec<u8> = buf.iter().copied().take_while(|&b| b != 0).collect();
+                        return String::from_utf8(bytes).ok();
                     }
+                }
+                None
+            };
+
+            let filename = get_prop(comp, "3707")
+                .or_else(|| get_prop(comp, "3704"))
+                .unwrap_or_else(|| "attachment.bin".to_string());
+
+            let mime_type = get_prop(comp, "370E");
+
+            // Data: 0x3701 (Binary - 0102)
+            let data_path = format!("{base}/__substg1.0_37010102");
+            let data = if let Ok(mut stream) = comp.open_stream(&data_path) {
+                let mut buf = Vec::new();
+                if stream.read_to_end(&mut buf).is_ok() {
+                    buf
                 } else {
                     Vec::new()
-                };
-
-                if !data.is_empty() {
-                    attachments.push(prism_core::document::Attachment {
-                        filename,
-                        mime_type,
-                        description: None,
-                        data,
-                        created: None,
-                        modified: None,
-                    });
                 }
             } else {
-                break;
+                Vec::new()
+            };
+
+            if !data.is_empty() {
+                attachments.push(prism_core::document::Attachment {
+                    filename,
+                    mime_type,
+                    description: None,
+                    data,
+                    created: None,
+                    modified: None,
+                });
             }
         }
 
@@ -280,6 +317,24 @@ impl Parser for MsgParser {
             }
         }
 
+        // Extract attachments BEFORE closing headers so we can add the Attachment row
+        let attachments = Self::extract_attachments(&mut comp);
+        metadata.add_custom("format", "MSG");
+        metadata.add_custom(
+            "attachment_count",
+            i64::try_from(attachments.len()).unwrap_or(0),
+        );
+
+        // Add Attachment row to headers if there are any attachments
+        if !attachments.is_empty() {
+            let attachment_names: Vec<String> =
+                attachments.iter().map(|a| a.filename.clone()).collect();
+            headers_html.push_str(&Self::format_header_html(
+                "Attachment",
+                &attachment_names.join(" ; "),
+            ));
+        }
+
         headers_html.push_str("</div>");
 
         // Body: Try HTML (0x1013) then Text (0x1000)
@@ -304,12 +359,7 @@ impl Parser for MsgParser {
             r#"__HTML_RAW__:<div class="msg-container" style="background: white; border: 1px solid #ddd; border-radius: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); margin: 20px;">{headers_html}<div class="msg-body" style="padding: 20px; font-family: system-ui, sans-serif;">{body_content}</div></div>"#
         );
 
-        let attachments = Self::extract_attachments(&mut comp);
-        metadata.add_custom("format", "MSG");
-        metadata.add_custom(
-            "attachment_count",
-            i64::try_from(attachments.len()).unwrap_or(0),
-        );
+        // (attachments already extracted above)
 
         let text_run = TextRun {
             text: full_html,

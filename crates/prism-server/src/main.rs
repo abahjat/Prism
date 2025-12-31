@@ -212,6 +212,10 @@ async fn version() -> Json<serde_json::Value> {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // Parse CLI arguments
+    use clap::Parser;
+    let args = config::ServerArgs::parse();
+
     // Initialize tracing
     tracing_subscriber::fmt()
         .with_max_level(Level::INFO)
@@ -237,8 +241,8 @@ async fn main() -> anyhow::Result<()> {
         .nest_service("/", ServeDir::new("web-viewer"))
         .layer(CorsLayer::permissive());
 
-    // Start server
-    let addr = SocketAddr::from(([127, 0, 0, 1], 8080));
+    // Start server with configurable host and port
+    let addr = SocketAddr::from((args.host, args.port));
     info!("Server listening on {}", addr);
 
     let listener = tokio::net::TcpListener::bind(addr).await?;

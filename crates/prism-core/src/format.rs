@@ -1177,6 +1177,38 @@ fn detect_office_in_ole(data: &[u8], filename: Option<&str>) -> Option<Format> {
     // Look for stream names in the OLE2 structure
     // Note: CFB Directory Entry names are UTF-16LE encoded
 
+    // MSG detection - Prioritize this as it has very specific signatures
+    // "__properties_version1.0" in UTF-16LE
+    let prop_ver_utf16: &[u8] = &[
+        0x5F, 0x00, 0x5F, 0x00, 0x70, 0x00, 0x72, 0x00, 0x6F, 0x00, 0x70, 0x00, 0x65, 0x00, 0x72,
+        0x00, 0x74, 0x00, 0x69, 0x00, 0x65, 0x00, 0x73, 0x00, 0x5F, 0x00, 0x76, 0x00, 0x65, 0x00,
+        0x72, 0x00, 0x73, 0x00, 0x69, 0x00, 0x6F, 0x00, 0x6E, 0x00, 0x31, 0x00, 0x2E, 0x00, 0x30,
+        0x00,
+    ];
+
+    // "__substg1.0_" in UTF-16LE
+    let substg_utf16: &[u8] = &[
+        0x5F, 0x00, 0x5F, 0x00, 0x73, 0x00, 0x75, 0x00, 0x62, 0x00, 0x73, 0x00, 0x74, 0x00, 0x67,
+        0x00, 0x31, 0x00, 0x2E, 0x00, 0x30, 0x00, 0x5F, 0x00,
+    ];
+
+    if data.windows(prop_ver_utf16.len()).any(|w| w == prop_ver_utf16)
+        || data.windows(substg_utf16.len()).any(|w| w == substg_utf16)
+        // Keep ASCII check just in case of weird implementations or non-OLE containers reusing this logic
+        || data.windows(23).any(|w| w == b"__properties_version1.0")
+        || data.windows(12).any(|w| w == b"__substg1.0_")
+    {
+        return Some(Format::msg());
+    }
+
+    // fallback MSG check by extension
+    if let Some(filename) = filename {
+        let ext = filename.rsplit('.').next().unwrap_or("").to_lowercase();
+        if ext == "msg" {
+            return Some(Format::msg());
+        }
+    }
+
     // Word: "WordDocument" in UTF-16LE
     let word_doc_utf16 = b"W\0o\0r\0d\0D\0o\0c\0u\0m\0e\0n\0t";
     if data
@@ -1195,7 +1227,6 @@ fn detect_office_in_ole(data: &[u8], filename: Option<&str>) -> Option<Format> {
         .any(|w| w == workbook_utf16)
         || data.windows(book_utf16.len()).any(|w| w == book_utf16)
         || data.windows(8).any(|w| w == b"Workbook")
-        || data.windows(4).any(|w| w == b"Book")
     {
         return Some(Format::xls());
     }
@@ -1221,43 +1252,6 @@ fn detect_office_in_ole(data: &[u8], filename: Option<&str>) -> Option<Format> {
         || data.windows(9).any(|w| w == b"MSProject")
     {
         return Some(Format::mpp());
-    }
-
-    // MSG files don't have a distinctive stream name that's easy to detect,
-    // so we check for Outlook-specific property streams or use extension as fallback.
-    // Outlook property streams often start with "__substg1.0_"
-    // The properties version stream is "__properties_version1.0"
-    // Note: OLE directory names are UTF-16, so we must check for wide strings.
-
-    // "__properties_version1.0" in UTF-16LE
-    let prop_ver_utf16: &[u8] = &[
-        0x5F, 0x00, 0x5F, 0x00, 0x70, 0x00, 0x72, 0x00, 0x6F, 0x00, 0x70, 0x00, 0x65, 0x00, 0x72,
-        0x00, 0x74, 0x00, 0x69, 0x00, 0x65, 0x00, 0x73, 0x00, 0x5F, 0x00, 0x76, 0x00, 0x65, 0x00,
-        0x72, 0x00, 0x73, 0x00, 0x69, 0x00, 0x6F, 0x00, 0x6E, 0x00, 0x31, 0x00, 0x2E, 0x00, 0x30,
-        0x00,
-    ];
-
-    // "__substg1.0_" in UTF-16LE
-    let substg_utf16: &[u8] = &[
-        0x5F, 0x00, 0x5F, 0x00, 0x73, 0x00, 0x75, 0x00, 0x62, 0x00, 0x73, 0x00, 0x74, 0x00, 0x67,
-        0x00, 0x31, 0x00, 0x2E, 0x00, 0x30, 0x00, 0x5F, 0x00,
-    ];
-
-    if data.windows(prop_ver_utf16.len()).any(|w| w == prop_ver_utf16)
-        || data.windows(substg_utf16.len()).any(|w| w == substg_utf16)
-        // Keep ASCII check just in case of weird implementations or non-OLE containers reusing this logic
-        || data.windows(23).any(|w| w == b"__properties_version1.0")
-        || data.windows(12).any(|w| w == b"__substg1.0_")
-    {
-        return Some(Format::msg());
-    }
-
-    // fallback (but only if we already know it's OLE2)
-    if let Some(filename) = filename {
-        let ext = filename.rsplit('.').next()?.to_lowercase();
-        if ext == "msg" {
-            return Some(Format::msg());
-        }
     }
 
     None

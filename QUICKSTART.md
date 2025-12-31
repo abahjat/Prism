@@ -27,6 +27,15 @@ INFO Starting Prism Server v0.1.0
 INFO Server listening on 127.0.0.1:8080
 ```
 
+**Custom host/port:**
+```bash
+# Via CLI arguments
+cargo run --bin prism-server -- --host 0.0.0.0 --port 3000
+
+# Via environment variables
+PRISM_HOST=0.0.0.0 PRISM_PORT=3000 cargo run --bin prism-server
+```
+
 Keep this terminal window open - the server needs to stay running.
 
 ## Step 3: Open the Web Viewer
@@ -156,7 +165,7 @@ Response:
 
 **Error: "Address already in use"**
 - Another process is using port 8080
-- Stop the other process or change the port in `main.rs`
+- Use a different port: `--port 3000` or set `PRISM_PORT=3000`
 
 **Error: "Failed to compile"**
 - Run `cargo clean` and try building again
@@ -166,7 +175,7 @@ Response:
 
 1. Make sure the server is running (Step 2)
 2. Check the server terminal for errors
-3. Verify the server is on port 8080
+3. Verify the server port matches the URL
 4. Try refreshing the web page
 
 ### File Upload Fails

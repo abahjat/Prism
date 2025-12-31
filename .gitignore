@@ -36,3 +36,7 @@ Thumbs.db
 
 # Scripts
 scripts/parse_magics.py
+
+# LibreOffice/Office lock files
+.~lock.*
+~$*

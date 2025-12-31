@@ -50,6 +50,9 @@ bytes = { workspace = true }
 chrono = { workspace = true }
 mime = { workspace = true }
 
+# CLI argument parsing
+clap = { version = "4", features = ["derive", "env"] }
+
 [dev-dependencies]
 tempfile = { workspace = true }
 

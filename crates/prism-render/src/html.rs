@@ -723,31 +723,19 @@ impl Renderer for HtmlRenderer {
             margin: 1rem 0;
             font-size: 0.9rem;
             box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-            table-layout: fixed;
+            table-layout: auto;
         }}
         .data-table th, .data-table td {{
             border: 1px solid #ddd;
             padding: 8px 12px;
             text-align: left;
             vertical-align: top;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
         }}
         .data-table th {{
             background-color: #f0f0f0;
             font-weight: bold;
-        }}
-        .data-table td:first-child {{
-            word-wrap: break-word;
-            overflow-wrap: break-word;
-            max-width: 0;
-            width: 50%;
-        }}
-        .data-table td:nth-child(2),
-        .data-table td:nth-child(3) {{
-            width: 15%;
-            white-space: nowrap;
-        }}
-        .data-table td:nth-child(4) {{
-            width: 20%;
             white-space: nowrap;
         }}
         .data-table tr:first-child td {{
