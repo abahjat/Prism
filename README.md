@@ -97,16 +97,20 @@ prism metadata document.pdf
 ### Using the REST API Server
 
 ```bash
-# Start the server
+# Start the server (default: 127.0.0.1:8080)
 cargo run --bin prism-server
 
-# Server runs on http://localhost:8080
+# Custom host and port
+cargo run --bin prism-server -- --host 0.0.0.0 --port 3000
+
+# Or use environment variables
+PRISM_HOST=0.0.0.0 PRISM_PORT=3000 cargo run --bin prism-server
 
 # Health check
-curl http://localhost:8080/health
+curl http://localhost:8080/api/health
 
 # Version information
-curl http://localhost:8080/version
+curl http://localhost:8080/api/version
 ```
 
 ### Using the Rust Library
@@ -360,7 +364,7 @@ RUN cargo build --release --bin prism-server
 FROM debian:bookworm-slim
 COPY --from=builder /app/target/release/prism-server /usr/local/bin/
 EXPOSE 8080
-CMD ["prism-server"]
+CMD ["prism-server", "--host", "0.0.0.0"]
 ```
 
 Build and run:
@@ -371,6 +375,9 @@ docker build -t prism-server .
 
 # Run container
 docker run -p 8080:8080 prism-server
+
+# Custom port
+docker run -p 3000:3000 -e PRISM_PORT=3000 prism-server
 ```
 
 ### Docker Compose
@@ -383,8 +390,8 @@ services:
     ports:
       - "8080:8080"
     environment:
-      - PRISM_WORKERS=4
-      - PRISM_MAX_FILE_SIZE=100MB
+      - PRISM_HOST=0.0.0.0
+      - PRISM_PORT=8080
     volumes:
       - ./data:/data
       - ./cache:/cache
@@ -412,6 +419,11 @@ spec:
         image: prism/server:latest
         ports:
         - containerPort: 8080
+        env:
+        - name: PRISM_HOST
+          value: "0.0.0.0"
+        - name: PRISM_PORT
+          value: "8080"
         resources:
           requests:
             memory: "2Gi"
