@@ -58,7 +58,7 @@ flate2 = "1.0"
 quick-xml = { version = "0.31", features = ["serialize"] }
 
 # Office parsing (legacy - OLE2/CFB)
-cfb = "0.7"              # Compound File Binary format reader
+cfb = "0.10"             # Compound File Binary format reader (0.10+ supports lenient mode)
 onenote_parser = "0.4.1" # OneNote file parser
 
 # PDF parsing

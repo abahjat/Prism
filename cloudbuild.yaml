@@ -1,0 +1,58 @@
+# ============================================================================
+# Prism Server - Google Cloud Build Configuration
+# ============================================================================
+# Builds and deploys to Cloud Run with auto-scaling
+# ============================================================================
+
+steps:
+  # Step 1: Build Docker image
+  - name: "gcr.io/cloud-builders/docker"
+    args:
+      - "build"
+      - "-t"
+      - "gcr.io/$PROJECT_ID/prism-server:$COMMIT_SHA"
+      - "-t"
+      - "gcr.io/$PROJECT_ID/prism-server:latest"
+      - "."
+
+  # Step 2: Push image to Container Registry
+  - name: "gcr.io/cloud-builders/docker"
+    args:
+      - "push"
+      - "gcr.io/$PROJECT_ID/prism-server:$COMMIT_SHA"
+
+  - name: "gcr.io/cloud-builders/docker"
+    args:
+      - "push"
+      - "gcr.io/$PROJECT_ID/prism-server:latest"
+
+  # Step 3: Deploy to Cloud Run
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
+    entrypoint: gcloud
+    args:
+      - "run"
+      - "deploy"
+      - "prism-server"
+      - "--image=gcr.io/$PROJECT_ID/prism-server:$COMMIT_SHA"
+      - "--region=us-central1"
+      - "--platform=managed"
+      - "--allow-unauthenticated"
+      - "--memory=2Gi"
+      - "--cpu=2"
+      - "--min-instances=0"
+      - "--max-instances=10"
+      - "--concurrency=80"
+      - "--timeout=300"
+
+# Store images in Container Registry
+images:
+  - "gcr.io/$PROJECT_ID/prism-server:$COMMIT_SHA"
+  - "gcr.io/$PROJECT_ID/prism-server:latest"
+
+# Build timeout (Rust builds can take a while)
+timeout: "1800s"
+
+# Build options
+options:
+  machineType: "E2_HIGHCPU_8"
+  logging: CLOUD_LOGGING_ONLY

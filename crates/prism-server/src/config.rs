@@ -18,6 +18,11 @@ pub struct ServerArgs {
     /// Port to listen on
     #[arg(short, long, default_value = "8080", env = "PRISM_PORT")]
     pub port: u16,
+
+    /// Allowed CORS origins (comma-separated). If empty, defaults to documain.ai domains.
+    /// Use "*" for permissive mode (development only).
+    #[arg(long, env = "PRISM_CORS_ORIGINS", default_value = "")]
+    pub cors_origins: String,
 }
 
 /// Server configuration
