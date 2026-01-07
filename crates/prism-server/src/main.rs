@@ -8,6 +8,7 @@
 mod config;
 mod convert;
 
+use axum::http::{header, HeaderValue, Method};
 use axum::{
     extract::{DefaultBodyLimit, Json},
     http::StatusCode,
@@ -20,7 +21,7 @@ use prism_render::html::HtmlRenderer;
 use serde::Serialize;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tower_http::cors::CorsLayer;
+use tower_http::cors::{AllowOrigin, CorsLayer};
 use tower_http::services::ServeDir;
 use tracing::{info, Level};
 
@@ -235,11 +236,22 @@ async fn main() -> anyhow::Result<()> {
         .layer(DefaultBodyLimit::max(5 * 1024 * 1024 * 1024)) // 5GB limit
         .with_state(state);
 
+    // Build CORS layer based on configuration
+    let cors_layer = build_cors_layer(&args.cors_origins);
+    info!(
+        "CORS configured for: {}",
+        if args.cors_origins.is_empty() {
+            "documain.ai (default)"
+        } else {
+            &args.cors_origins
+        }
+    );
+
     // Combine API routes with static file serving
     let app = Router::new()
         .nest("/api", api_router)
         .nest_service("/", ServeDir::new("web-viewer"))
-        .layer(CorsLayer::permissive());
+        .layer(cors_layer);
 
     // Start server with configurable host and port
     let addr = SocketAddr::from((args.host, args.port));
@@ -249,4 +261,54 @@ async fn main() -> anyhow::Result<()> {
     axum::serve(listener, app).await?;
 
     Ok(())
+}
+
+/// Build CORS layer based on configuration
+///
+/// If origins is empty, defaults to allowing documain.ai and all its subdomains.
+/// If origins is "*", allows all origins (development only).
+/// Otherwise, parses comma-separated list of allowed origins.
+fn build_cors_layer(origins: &str) -> CorsLayer {
+    let origins = origins.trim();
+
+    if origins == "*" {
+        // Permissive mode (development only)
+        info!("CORS: Permissive mode enabled (all origins allowed)");
+        return CorsLayer::permissive();
+    }
+
+    if origins.is_empty() {
+        // Default: allow documain.ai and all subdomains
+        info!("CORS: Restricting to documain.ai and subdomains");
+        CorsLayer::new()
+            .allow_origin(AllowOrigin::predicate(|origin: &HeaderValue, _| {
+                if let Ok(origin_str) = origin.to_str() {
+                    // Allow exact matches and subdomains
+                    origin_str == "https://documain.ai"
+                        || origin_str == "http://documain.ai"
+                        || origin_str.ends_with(".documain.ai")
+                } else {
+                    false
+                }
+            }))
+            .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
+            .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION, header::ACCEPT])
+            .expose_headers([header::CONTENT_TYPE])
+            .allow_credentials(true)
+    } else {
+        // Parse comma-separated origins
+        let allowed_origins: Vec<HeaderValue> = origins
+            .split(',')
+            .filter_map(|s| s.trim().parse().ok())
+            .collect();
+
+        info!("CORS: Allowing {} custom origins", allowed_origins.len());
+
+        CorsLayer::new()
+            .allow_origin(allowed_origins)
+            .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
+            .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION, header::ACCEPT])
+            .expose_headers([header::CONTENT_TYPE])
+            .allow_credentials(true)
+    }
 }
