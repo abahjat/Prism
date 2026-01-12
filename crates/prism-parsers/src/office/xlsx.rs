@@ -256,6 +256,7 @@ impl XlsxParser {
                                         col_span: 1,
                                         row_span: 1,
                                         background_color: None,
+                                        borders: None,
                                     });
                                 }
                             }
@@ -322,6 +323,7 @@ impl XlsxParser {
                                 col_span: 1,
                                 row_span: 1,
                                 background_color: bg_color,
+                                borders: None,
                             });
                         }
                         _ => {}
@@ -381,6 +383,7 @@ impl XlsxParser {
                                     col_span: 1,
                                     row_span: 1,
                                     background_color: None,
+                                    borders: None,
                                 });
                             }
                         }
@@ -396,6 +399,7 @@ impl XlsxParser {
                             col_span: 1,
                             row_span: 1,
                             background_color: bg_color,
+                            borders: None,
                         });
                     }
                 }
@@ -469,6 +473,7 @@ impl XlsxParser {
             bounds: prism_core::document::Rect::default(),
             rows,
             column_count: max_col,
+            column_widths: Vec::new(),
             style: prism_core::document::ShapeStyle::default(),
             rotation: 0.0,
         }

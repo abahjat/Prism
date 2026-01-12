@@ -51,6 +51,7 @@ pub fn parse_table<R: BufRead>(reader: &mut Reader<R>) -> Result<TableBlock> {
                             col_span: 1,
                             row_span: 1,
                             background_color: None,
+                            borders: None,
                         });
                         cell_content.clear();
                         grid_span = 1;
@@ -148,6 +149,7 @@ pub fn parse_table<R: BufRead>(reader: &mut Reader<R>) -> Result<TableBlock> {
         bounds: Rect::default(),
         rows,
         column_count: 0, // TODO: Calculate from max cells
+        column_widths: Vec::new(),
         style: prism_core::document::ShapeStyle::default(),
         rotation: 0.0,
     })
@@ -186,6 +188,7 @@ pub fn parse_drawingml_table<R: BufRead>(reader: &mut Reader<R>) -> Result<Table
                             col_span: 1,            // TODO: Parse gridSpan
                             row_span: 1,            // TODO: Parse rowSpan
                             background_color: None, // TODO: Parse cell formatting
+                            borders: None,
                         });
                         cell_content.clear();
                     }
@@ -238,6 +241,7 @@ pub fn parse_drawingml_table<R: BufRead>(reader: &mut Reader<R>) -> Result<Table
         bounds: Rect::default(),
         rows,
         column_count: 0,
+        column_widths: Vec::new(),
         style: prism_core::document::ShapeStyle::default(),
         rotation: 0.0,
     })

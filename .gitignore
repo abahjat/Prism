@@ -40,3 +40,4 @@ scripts/parse_magics.py
 # LibreOffice/Office lock files
 .~lock.*
 ~$*
+clippy_output.txt

@@ -278,8 +278,8 @@ fn build_cors_layer(origins: &str) -> CorsLayer {
     }
 
     if origins.is_empty() {
-        // Default: allow documain.ai and all subdomains
-        info!("CORS: Restricting to documain.ai and subdomains");
+        // Default: allow documain.ai and all subdomains, plus localhost for development
+        info!("CORS: Restricting to documain.ai, subdomains, and localhost");
         CorsLayer::new()
             .allow_origin(AllowOrigin::predicate(|origin: &HeaderValue, _| {
                 if let Ok(origin_str) = origin.to_str() {
@@ -287,6 +287,11 @@ fn build_cors_layer(origins: &str) -> CorsLayer {
                     origin_str == "https://documain.ai"
                         || origin_str == "http://documain.ai"
                         || origin_str.ends_with(".documain.ai")
+                        // Allow localhost for development
+                        || origin_str.starts_with("http://localhost:")
+                        || origin_str.starts_with("http://127.0.0.1:")
+                        || origin_str == "http://localhost"
+                        || origin_str == "http://127.0.0.1"
                 } else {
                     false
                 }

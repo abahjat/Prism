@@ -77,6 +77,7 @@ pub fn parse(_context: ParseContext, data: Bytes) -> Result<Document> {
         bounds: Rect::new(50.0, 50.0, 500.0, table_height),
         rows,
         column_count: 3,
+        column_widths: Vec::new(),
         style: prism_core::document::ShapeStyle::default(),
         rotation: 0.0,
     };
@@ -104,6 +105,7 @@ fn create_header_cell(text: &str) -> TableCell {
         col_span: 1,
         row_span: 1,
         background_color: Some("#CCCCCC".to_string()),
+        borders: None,
     }
 }
 
@@ -123,6 +125,7 @@ fn create_text_cell(text: &str) -> TableCell {
         col_span: 1,
         row_span: 1,
         background_color: None,
+        borders: None,
     }
 }
 

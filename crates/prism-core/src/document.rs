@@ -455,6 +455,15 @@ pub struct TextStyle {
 
     /// Background/highlight color
     pub background_color: Option<String>,
+
+    /// Text alignment for paragraphs
+    pub alignment: Option<TextAlignment>,
+
+    /// Bullet character (e.g., "•", "1.", "-")
+    pub bullet: Option<String>,
+
+    /// Left indent in points (for bullet points)
+    pub left_indent: Option<f64>,
 }
 
 /// An image block
@@ -496,6 +505,10 @@ pub struct TableBlock {
     /// Number of columns
     pub column_count: usize,
 
+    /// Column widths in points (from grid specification)
+    #[serde(default)]
+    pub column_widths: Vec<f64>,
+
     /// Visual style of the table container
     #[serde(default)]
     pub style: ShapeStyle,
@@ -513,6 +526,7 @@ impl TableBlock {
             bounds,
             rows: Vec::new(),
             column_count,
+            column_widths: Vec::new(),
             style: ShapeStyle::default(),
             rotation: 0.0,
         }
@@ -564,6 +578,30 @@ pub struct TableCell {
 
     /// Background color (hex or named)
     pub background_color: Option<String>,
+
+    /// Cell borders
+    pub borders: Option<CellBorders>,
+}
+
+/// Cell border styling
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct CellBorders {
+    /// Top border color
+    pub top_color: Option<String>,
+    /// Top border width in points
+    pub top_width: Option<f64>,
+    /// Bottom border color
+    pub bottom_color: Option<String>,
+    /// Bottom border width in points
+    pub bottom_width: Option<f64>,
+    /// Left border color
+    pub left_color: Option<String>,
+    /// Left border width in points
+    pub left_width: Option<f64>,
+    /// Right border color
+    pub right_color: Option<String>,
+    /// Right border width in points
+    pub right_width: Option<f64>,
 }
 
 impl TableCell {

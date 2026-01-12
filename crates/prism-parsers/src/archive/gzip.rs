@@ -62,6 +62,7 @@ pub fn parse(context: ParseContext, data: &Bytes) -> Result<Document> {
         bounds: Rect::default(),
         rows,
         column_count: 2,
+        column_widths: Vec::new(),
         style: ShapeStyle::default(),
         rotation: 0.0,
     };
@@ -114,6 +115,7 @@ fn create_header_cell(text: &str) -> TableCell {
         col_span: 1,
         row_span: 1,
         background_color: None,
+        borders: None,
     }
 }
 
@@ -131,6 +133,7 @@ fn create_text_cell(text: &str) -> TableCell {
         col_span: 1,
         row_span: 1,
         background_color: None,
+        borders: None,
     }
 }
 
