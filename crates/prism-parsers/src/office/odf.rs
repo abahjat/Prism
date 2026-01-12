@@ -347,12 +347,14 @@ fn parse_odf_spreadsheet(data: Bytes, context: ParseContext) -> Result<Document>
                                 col_span: 1,
                                 row_span: 1,
                                 background_color: None,
+                                borders: None,
                             })
                             .collect(),
                         height: None,
                     })
                     .collect(),
                 column_count: col_count,
+                column_widths: Vec::new(),
                 style: ShapeStyle::default(),
                 rotation: 0.0,
             };

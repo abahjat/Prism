@@ -101,6 +101,7 @@ impl Parser for CsvParser {
                     col_span: 1,
                     row_span: 1,
                     background_color: None,
+                    borders: None,
                 });
             }
 
@@ -123,6 +124,7 @@ impl Parser for CsvParser {
                         bounds: prism_core::document::Rect::default(),
                         rows: current_rows,
                         column_count: max_cols,
+                        column_widths: Vec::new(),
                         style: ShapeStyle::default(),
                         rotation: 0.0,
                     })],
@@ -145,6 +147,7 @@ impl Parser for CsvParser {
                     bounds: prism_core::document::Rect::default(),
                     rows: current_rows,
                     column_count: max_cols,
+                    column_widths: Vec::new(),
                     style: ShapeStyle::default(),
                     rotation: 0.0,
                 })],

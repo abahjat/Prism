@@ -60,7 +60,14 @@ impl HtmlRenderer {
 
     /// Render a text run with its formatting
     fn render_text_run(run: &prism_core::document::TextRun) -> String {
-        let mut html = html_escape(&run.text);
+        // Prepend bullet character if present
+        let text_content = if let Some(ref bullet) = run.style.bullet {
+            format!("{}{}", bullet, &run.text)
+        } else {
+            run.text.clone()
+        };
+
+        let mut html = html_escape(&text_content);
         let style = &run.style;
 
         // Build inline styles
@@ -80,6 +87,22 @@ impl HtmlRenderer {
 
         if let Some(ref bg_color) = style.background_color {
             styles.push(format!("background-color: {}", html_escape(bg_color)));
+        }
+
+        // Handle text alignment
+        if let Some(ref alignment) = style.alignment {
+            let align_str = match alignment {
+                prism_core::document::TextAlignment::Left => "left",
+                prism_core::document::TextAlignment::Center => "center",
+                prism_core::document::TextAlignment::Right => "right",
+                prism_core::document::TextAlignment::Justify => "justify",
+            };
+            styles.push(format!("text-align: {align_str}"));
+        }
+
+        // Handle left indentation
+        if let Some(indent) = style.left_indent {
+            styles.push(format!("padding-left: {indent}pt"));
         }
 
         // Apply font weight/style/decoration
@@ -256,7 +279,7 @@ impl HtmlRenderer {
             .join("\n");
 
         format!(
-            r#"<div class="page" style="width: {width}pt; height: {height}pt; position: relative; overflow: hidden; {background_style}">
+            r#"<div class="page" style="width: {width}pt; height: {height}pt; position: relative; overflow: hidden; {background_style} border: 1px solid #ccc; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin: 20px auto; border-radius: 4px;">
         <div class="page-number" style="display: none;">Page {page_num}</div>
         {content}
     </div>"#
@@ -523,7 +546,13 @@ impl HtmlRenderer {
                 }
             } else {
                 // Fallback if resource not found
-                String::from("<p><em>[Image not found]</em></p>")
+                format!(
+                    r#"<div style="border: 1px dashed red; padding: 5px; color: red;">
+                        <strong>Image not found</strong><br/>
+                        ID: {}
+                    </div>"#,
+                    html_escape(&image_block.resource_id)
+                )
             }
         };
 

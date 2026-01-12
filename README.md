@@ -113,6 +113,50 @@ curl http://localhost:8080/api/health
 curl http://localhost:8080/api/version
 ```
 
+### CORS Configuration
+
+By default, the server allows requests from:
+- `documain.ai` and all subdomains
+- `localhost` and `127.0.0.1` (any port) for local development
+
+#### Development Mode (Allow All Origins)
+
+```bash
+# Using CLI flag
+cargo run --bin prism-server -- --cors-origins "*"
+
+# Using environment variable
+PRISM_CORS_ORIGINS="*" cargo run --bin prism-server
+```
+
+#### Production Deployment
+
+When deploying to a different domain, specify your allowed origins:
+
+```bash
+# Single origin
+cargo run --bin prism-server -- --cors-origins "https://yourdomain.com"
+
+# Multiple origins (comma-separated)
+cargo run --bin prism-server -- --cors-origins "https://app.example.com,https://admin.example.com"
+
+# Using environment variable
+PRISM_CORS_ORIGINS="https://yourdomain.com" cargo run --bin prism-server
+```
+
+#### Docker/Kubernetes
+
+```yaml
+# Docker Compose
+environment:
+  - PRISM_CORS_ORIGINS=https://yourdomain.com
+
+# Kubernetes
+env:
+  - name: PRISM_CORS_ORIGINS
+    value: "https://yourdomain.com"
+```
+
 ### Using the Rust Library
 
 Add Prism to your `Cargo.toml`:
