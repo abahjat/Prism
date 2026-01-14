@@ -143,12 +143,23 @@ impl HtmlRenderer {
             }
         }
 
+        if let Some(ref img_id) = style.fill_image {
+            styles.push(format!(
+                "background-image: url('resource/{}'); background-size: cover; background-position: center;",
+                html_escape(img_id)
+            ));
+        }
+
         if let Some(ref stroke) = style.stroke_color {
             styles.push(format!(
                 "border: {}pt solid {};",
                 style.stroke_width.unwrap_or(1.0),
                 html_escape(stroke)
             ));
+        }
+
+        if let Some(ref radius) = style.border_radius {
+            styles.push(format!("border-radius: {};", html_escape(radius)));
         }
 
         if let Some(ref shadow) = style.shadow {
@@ -242,7 +253,26 @@ impl HtmlRenderer {
         let mut background_style = String::from("background-color: white;");
         let mut skip_first_block = false;
 
+        // Check format to determine layout strictness
+        let is_flow_document = document.metadata.custom.get("format").is_some_and(|v| {
+            if let prism_core::metadata::MetadataValue::String(s) = v {
+                matches!(s.as_str(), "DOCX" | "ODT")
+            } else {
+                false
+            }
+        });
+
+        // For flow documents like DOCX, allow page to expand and content to flow
+        // For fixed layout (PPTX, PDF), enforce strict dimensions and clipping
+        let (height_prop, overflow_prop) = if is_flow_document {
+            ("min-height", "visible")
+        } else {
+            ("height", "hidden")
+        };
+
         // Check if first block is a background image candidate (covers full slide)
+        // ... (rest of function logic)
+
         if let Some(ContentBlock::Image(img_block)) = page.content.first() {
             // Check if bounds match page dimensions (allow small epsilon)
             if (img_block.bounds.width - width).abs() < 0.1
@@ -279,7 +309,7 @@ impl HtmlRenderer {
             .join("\n");
 
         format!(
-            r#"<div class="page" style="width: {width}pt; height: {height}pt; position: relative; overflow: hidden; {background_style} border: 1px solid #ccc; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin: 20px auto; border-radius: 4px;">
+            r#"<div class="page" style="width: {width}pt; {height_prop}: {height}pt; position: relative; overflow: {overflow_prop}; {background_style} border: 1px solid #ccc; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin: 20px auto; border-radius: 4px;">
         <div class="page-number" style="display: none;">Page {page_num}</div>
         {content}
     </div>"#
@@ -499,11 +529,40 @@ impl HtmlRenderer {
             )
         };
 
+        // Apply vertical alignment if specified
+        let (alignment_style, final_text) = if let Some(valign) = &text_block.vertical_alignment {
+            use prism_core::document::VerticalAlignment;
+            let style = match valign {
+                VerticalAlignment::Top => {
+                    "display: flex; flex-direction: column; justify-content: flex-start;"
+                }
+                VerticalAlignment::Bottom => {
+                    "display: flex; flex-direction: column; justify-content: flex-end;"
+                }
+                VerticalAlignment::Center => {
+                    "display: flex; flex-direction: column; justify-content: center;"
+                }
+                VerticalAlignment::Justify => {
+                    "display: flex; flex-direction: column; justify-content: space-between;"
+                }
+                VerticalAlignment::Distributed => {
+                    "display: flex; flex-direction: column; justify-content: space-around;"
+                }
+            };
+            // Wrap content in a div to preserve inline flow of runs within the block
+            (
+                style.to_string(),
+                format!("<div style='width: 100%;'>{formatted_text}</div>"),
+            )
+        } else {
+            (String::new(), formatted_text)
+        };
+
         // Apply visual styles
         let shape_styles = Self::render_shape_style(&text_block.style);
 
         format!(
-            r#"<div class="text-content" style="{pos_style} {transform_style} {}">{formatted_text}</div>"#,
+            r#"<div class="text-content" style="{pos_style} {transform_style} {alignment_style} {}">{final_text}</div>"#,
             shape_styles.join(" ")
         )
     }
@@ -547,9 +606,8 @@ impl HtmlRenderer {
             } else {
                 // Fallback if resource not found
                 format!(
-                    r#"<div style="border: 1px dashed red; padding: 5px; color: red;">
-                        <strong>Image not found</strong><br/>
-                        ID: {}
+                    r#"<div style="width: 100%; height: 100%; background: #f0f0f0; border: 1px solid #ccc; color: #666; display: flex; align-items: center; justify-content: center; font-family: sans-serif; font-size: 0.8em; padding: 4px; text-align: center; overflow: hidden;">
+                        Running Image: {}
                     </div>"#,
                     html_escape(&image_block.resource_id)
                 )
@@ -896,20 +954,26 @@ mod tests {
 
     #[tokio::test]
     async fn test_render_with_styles() {
+        use prism_core::document::{PageMetadata, Rect, ShapeStyle, TextBlock, TextRun};
         let renderer = HtmlRenderer::new();
 
-        let style = prism_core::document::ShapeStyle {
+        let style = ShapeStyle {
             fill_color: Some("#FF0000".to_string()),
             stroke_color: Some("#000000".to_string()),
             stroke_width: Some(2.0),
             shadow: Some("2px 2px 5px black".to_string()),
             opacity: Some(0.5),
             z_index: Some(10),
+            fill_image: None,
+            border_radius: None,
+            font_color: None,
+            font_size: None,
         };
 
-        let block = ContentBlock::Text(prism_core::document::TextBlock {
-            bounds: prism_core::document::Rect::new(0.0, 0.0, 100.0, 100.0),
-            runs: vec![prism_core::document::TextRun::new("Styled")],
+        let block = ContentBlock::Text(TextBlock {
+            vertical_alignment: None,
+            bounds: Rect::new(0.0, 0.0, 100.0, 100.0),
+            runs: vec![TextRun::new("Styled")],
             paragraph_style: None,
             style,
             rotation: 0.0,
@@ -944,5 +1008,35 @@ mod tests {
         assert!(html.contains("box-shadow: 2px 2px 5px black"));
         assert!(html.contains("opacity: 0.5"));
         assert!(html.contains("z-index: 10"));
+    }
+
+    #[tokio::test]
+    async fn test_render_docx_flexible_height() {
+        let renderer = HtmlRenderer::new();
+        let mut metadata = Metadata::builder().title("Docx Test").build();
+        metadata.add_custom("format", "DOCX");
+
+        let page = Page {
+            number: 1,
+            dimensions: Dimensions::LETTER,
+            content: vec![],
+            metadata: PageMetadata::default(),
+            annotations: vec![],
+        };
+
+        let document = Document::builder().metadata(metadata).page(page).build();
+
+        let context = RenderContext {
+            options: prism_core::render::RenderOptions::default(),
+            filename: None,
+        };
+
+        let result = renderer.render(&document, context).await;
+        assert!(result.is_ok());
+
+        let html = String::from_utf8(result.unwrap().to_vec()).unwrap();
+        // Should have flexible height properties
+        assert!(html.contains("min-height:"));
+        assert!(html.contains("overflow: visible"));
     }
 }

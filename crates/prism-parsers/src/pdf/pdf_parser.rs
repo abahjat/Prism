@@ -115,6 +115,7 @@ impl Parser for PdfParser {
                 height: 792.0,
             },
             content: vec![ContentBlock::Text(TextBlock {
+                vertical_alignment: None,
                 runs: vec![text_run],
                 paragraph_style: None,
                 bounds: prism_core::document::Rect::default(),

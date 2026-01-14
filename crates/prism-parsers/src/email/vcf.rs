@@ -189,6 +189,7 @@ impl Parser for VcfParser {
                 bounds: Rect::default(), // No layout info in VCF
                 runs: text_runs,
                 paragraph_style: None,
+                vertical_alignment: None,
                 style: ShapeStyle::default(),
                 rotation: 0.0,
             };

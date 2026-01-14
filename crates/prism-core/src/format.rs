@@ -528,6 +528,56 @@ impl Format {
         }
     }
 
+    /// Create a new POTX format instance (`PowerPoint` Template)
+    #[must_use]
+    pub fn potx() -> Self {
+        Self {
+            mime_type: "application/vnd.openxmlformats-officedocument.presentationml.template"
+                .to_string(),
+            extension: "potx".to_string(),
+            family: FormatFamily::Office,
+            name: "Microsoft PowerPoint Template".to_string(),
+            is_container: true,
+        }
+    }
+
+    /// Create a new PPSX format instance (`PowerPoint` Show)
+    #[must_use]
+    pub fn ppsx() -> Self {
+        Self {
+            mime_type: "application/vnd.openxmlformats-officedocument.presentationml.slideshow"
+                .to_string(),
+            extension: "ppsx".to_string(),
+            family: FormatFamily::Office,
+            name: "Microsoft PowerPoint Show".to_string(),
+            is_container: true,
+        }
+    }
+
+    /// Create a new PPTM format instance (`PowerPoint` Macro-Enabled)
+    #[must_use]
+    pub fn pptm() -> Self {
+        Self {
+            mime_type: "application/vnd.ms-powerpoint.presentation.macroEnabled.12".to_string(),
+            extension: "pptm".to_string(),
+            family: FormatFamily::Office,
+            name: "Microsoft PowerPoint Macro-Enabled".to_string(),
+            is_container: true,
+        }
+    }
+
+    /// Create a new OTP format instance (`OpenDocument` Presentation Template)
+    #[must_use]
+    pub fn otp() -> Self {
+        Self {
+            mime_type: "application/vnd.oasis.opendocument.presentation-template".to_string(),
+            extension: "otp".to_string(),
+            family: FormatFamily::Office,
+            name: "OpenDocument Presentation Template".to_string(),
+            is_container: true,
+        }
+    }
+
     /// Create a new EML format instance (Email Message)
     #[must_use]
     pub fn eml() -> Self {
@@ -634,6 +684,233 @@ impl Format {
             is_container: false,
         }
     }
+
+    /// Create a new 7z format instance
+    #[must_use]
+    pub fn seven_zip() -> Self {
+        Self {
+            mime_type: "application/x-7z-compressed".to_string(),
+            extension: "7z".to_string(),
+            family: FormatFamily::Archive,
+            name: "7-Zip Archive".to_string(),
+            is_container: true,
+        }
+    }
+
+    /// Create a new RAR format instance
+    #[must_use]
+    pub fn rar() -> Self {
+        Self {
+            mime_type: "application/vnd.rar".to_string(),
+            extension: "rar".to_string(),
+            family: FormatFamily::Archive,
+            name: "RAR Archive".to_string(),
+            is_container: true,
+        }
+    }
+
+    /// Create a new CAB format instance
+    #[must_use]
+    pub fn cab() -> Self {
+        Self {
+            mime_type: "application/vnd.ms-cab-compressed".to_string(),
+            extension: "cab".to_string(),
+            family: FormatFamily::Archive,
+            name: "Microsoft Cabinet Archive".to_string(),
+            is_container: true,
+        }
+    }
+
+    /// Create a new ISO format instance
+    #[must_use]
+    pub fn iso() -> Self {
+        Self {
+            mime_type: "application/x-iso9660-image".to_string(),
+            extension: "iso".to_string(),
+            family: FormatFamily::Archive,
+            name: "ISO Disk Image".to_string(),
+            is_container: true,
+        }
+    }
+
+    /// Create a new Bzip2 format instance
+    #[must_use]
+    pub fn bzip2() -> Self {
+        Self {
+            mime_type: "application/x-bzip2".to_string(),
+            extension: "bz2".to_string(),
+            family: FormatFamily::Archive,
+            name: "Bzip2 Archive".to_string(),
+            is_container: true,
+        }
+    }
+
+    /// Create a new DMG format instance
+    #[must_use]
+    pub fn dmg() -> Self {
+        Self {
+            mime_type: "application/x-apple-diskimage".to_string(),
+            extension: "dmg".to_string(),
+            family: FormatFamily::Archive,
+            name: "Apple Disk Image".to_string(),
+            is_container: true,
+        }
+    }
+
+    /// Create a new `SQLite` format instance
+    #[must_use]
+    pub fn sqlite() -> Self {
+        Self {
+            mime_type: "application/vnd.sqlite3".to_string(),
+            extension: "sqlite".to_string(),
+            family: FormatFamily::Database,
+            name: "SQLite Database".to_string(),
+            is_container: false,
+        }
+    }
+
+    /// Create a new MDB (Access) format instance
+    #[must_use]
+    pub fn mdb() -> Self {
+        Self {
+            mime_type: "application/x-msaccess".to_string(),
+            extension: "mdb".to_string(),
+            family: FormatFamily::Database,
+            name: "Microsoft Access Database".to_string(),
+            is_container: true,
+        }
+    }
+
+    /// Create a new DBF (dBase) format instance
+    #[must_use]
+    pub fn dbf() -> Self {
+        Self {
+            mime_type: "application/x-dbase".to_string(),
+            extension: "dbf".to_string(),
+            family: FormatFamily::Database,
+            name: "dBase Database".to_string(),
+            is_container: false,
+        }
+    }
+
+    /// Create a new EXE format instance
+    #[must_use]
+    pub fn exe() -> Self {
+        Self {
+            mime_type: "application/vnd.microsoft.portable-executable".to_string(),
+            extension: "exe".to_string(),
+            family: FormatFamily::Executable,
+            name: "Windows Executable".to_string(),
+            is_container: false,
+        }
+    }
+
+    /// Create a new DLL format instance
+    #[must_use]
+    pub fn dll() -> Self {
+        Self {
+            mime_type: "application/vnd.microsoft.portable-executable".to_string(),
+            extension: "dll".to_string(),
+            family: FormatFamily::Executable,
+            name: "Windows Library (DLL)".to_string(),
+            is_container: false,
+        }
+    }
+
+    /// Create a new PSD (Photoshop) format instance
+    #[must_use]
+    pub fn psd() -> Self {
+        Self {
+            mime_type: "image/vnd.adobe.photoshop".to_string(),
+            extension: "psd".to_string(),
+            family: FormatFamily::Image,
+            name: "Adobe Photoshop Image".to_string(),
+            is_container: false,
+        }
+    }
+    /// Create a new Rust source file format
+    #[must_use]
+    pub fn rust() -> Self {
+        Self {
+            mime_type: "text/rust".to_string(),
+            extension: "rs".to_string(),
+            family: FormatFamily::Text,
+            name: "Rust Source Code".to_string(),
+            is_container: false,
+        }
+    }
+
+    /// Create a new Python source file format
+    #[must_use]
+    pub fn python() -> Self {
+        Self {
+            mime_type: "text/x-python".to_string(),
+            extension: "py".to_string(),
+            family: FormatFamily::Text,
+            name: "Python Source Code".to_string(),
+            is_container: false,
+        }
+    }
+
+    /// Create a new JavaScript source file format
+    #[must_use]
+    pub fn javascript() -> Self {
+        Self {
+            mime_type: "text/javascript".to_string(),
+            extension: "js".to_string(),
+            family: FormatFamily::Text,
+            name: "JavaScript Source Code".to_string(),
+            is_container: false,
+        }
+    }
+
+    /// Create a new TypeScript source file format
+    #[must_use]
+    pub fn typescript() -> Self {
+        Self {
+            mime_type: "application/typescript".to_string(),
+            extension: "ts".to_string(),
+            family: FormatFamily::Text,
+            name: "TypeScript Source Code".to_string(),
+            is_container: false,
+        }
+    }
+
+    /// Create a new C source file format
+    #[must_use]
+    pub fn c() -> Self {
+        Self {
+            mime_type: "text/x-c".to_string(),
+            extension: "c".to_string(),
+            family: FormatFamily::Text,
+            name: "C Source Code".to_string(),
+            is_container: false,
+        }
+    }
+
+    /// Create a new C++ source file format
+    #[must_use]
+    pub fn cpp() -> Self {
+        Self {
+            mime_type: "text/x-c++".to_string(),
+            extension: "cpp".to_string(),
+            family: FormatFamily::Text,
+            name: "C++ Source Code".to_string(),
+            is_container: false,
+        }
+    }
+
+    /// Create a new CSS format
+    #[must_use]
+    pub fn css() -> Self {
+        Self {
+            mime_type: "text/css".to_string(),
+            extension: "css".to_string(),
+            family: FormatFamily::Text,
+            name: "Cascading Style Sheets".to_string(),
+            is_container: false,
+        }
+    }
 }
 
 /// Format families for categorization
@@ -663,6 +940,14 @@ pub enum FormatFamily {
     Legacy,
     /// Unknown/other
     Unknown,
+    /// Database files (SQL, MDB, DBF)
+    Database,
+    /// Executable files (EXE, DLL, ELF)
+    Executable,
+    /// System files (LNK, DMP, TMP)
+    System,
+    /// Font files (TTF, OTF, WOFF)
+    Font,
 }
 
 impl FormatFamily {
@@ -682,6 +967,10 @@ impl FormatFamily {
             FormatFamily::Video => "Video",
             FormatFamily::Legacy => "Legacy",
             FormatFamily::Unknown => "Unknown",
+            FormatFamily::Database => "Database",
+            FormatFamily::Executable => "Executable",
+            FormatFamily::System => "System",
+            FormatFamily::Font => "Font",
         }
     }
 }
@@ -767,6 +1056,12 @@ static SIGNATURES: &[FormatSignature] = &[
         offset: 0,
         format: Format::gzip,
     },
+    // BZIP2
+    FormatSignature {
+        bytes: b"BZh",
+        offset: 0,
+        format: Format::bzip2,
+    },
     // GIF
     FormatSignature {
         bytes: b"GIF87a",
@@ -812,25 +1107,13 @@ static SIGNATURES: &[FormatSignature] = &[
     FormatSignature {
         bytes: &[0x52, 0x61, 0x72, 0x21, 0x1A, 0x07],
         offset: 0,
-        format: || Format {
-            mime_type: "application/vnd.rar".to_string(),
-            extension: "rar".to_string(),
-            family: FormatFamily::Archive,
-            name: "RAR Archive".to_string(),
-            is_container: true,
-        },
+        format: Format::rar,
     },
     // 7z
     FormatSignature {
         bytes: &[0x37, 0x7A, 0xBC, 0xAF, 0x27, 0x1C],
         offset: 0,
-        format: || Format {
-            mime_type: "application/x-7z-compressed".to_string(),
-            extension: "7z".to_string(),
-            family: FormatFamily::Archive,
-            name: "7-Zip Archive".to_string(),
-            is_container: true,
-        },
+        format: Format::seven_zip,
     },
     // RTF (Rich Text Format)
     FormatSignature {
@@ -946,6 +1229,39 @@ static SIGNATURES: &[FormatSignature] = &[
         offset: 0,
         format: Format::dxf,
     },
+    // CAB
+    FormatSignature {
+        bytes: b"MSCF",
+        offset: 0,
+        format: Format::cab,
+    },
+    // SQLite
+    FormatSignature {
+        bytes: b"SQLite format 3\0",
+        offset: 0,
+        format: Format::sqlite,
+    },
+    // MDB (Standard Jet DB)
+    FormatSignature {
+        bytes: &[
+            0x00, 0x01, 0x00, 0x00, 0x53, 0x74, 0x61, 0x6E, 0x64, 0x61, 0x72, 0x64, 0x20, 0x4A,
+            0x65, 0x74, 0x20, 0x44, 0x42,
+        ],
+        offset: 0,
+        format: Format::mdb,
+    },
+    // EXE/DLL
+    FormatSignature {
+        bytes: b"MZ",
+        offset: 0,
+        format: Format::exe, // Can be DLL too, but EXE family covers it
+    },
+    // PSD
+    FormatSignature {
+        bytes: b"8BPS",
+        offset: 0,
+        format: Format::psd,
+    },
 ];
 
 /// Extension to format mapping
@@ -955,12 +1271,16 @@ static EXTENSION_MAP: &[(&str, fn() -> Format)] = &[
     ("docx", Format::docx),
     ("xlsx", Format::xlsx),
     ("pptx", Format::pptx),
+    ("potx", Format::potx),
+    ("ppsx", Format::ppsx),
+    ("pptm", Format::pptm),
     ("doc", Format::doc),
     ("xls", Format::xls),
     ("ppt", Format::ppt),
     ("odt", Format::odt),
     ("ods", Format::ods),
     ("odp", Format::odp),
+    ("otp", Format::otp),
     ("png", Format::png),
     ("jpg", Format::jpeg),
     ("jpeg", Format::jpeg),
@@ -1005,6 +1325,8 @@ static EXTENSION_MAP: &[(&str, fn() -> Format)] = &[
     ("gz", Format::gzip),
     ("gzip", Format::gzip),
     ("tgz", Format::gzip), // Often treated as gzip then tar
+    ("bz2", Format::bzip2),
+    ("tbz2", Format::bzip2), // Often treated as bzip2 then tar
     ("rtf", Format::rtf),
     ("wri", || Format {
         mime_type: "application/x-mswrite".to_string(),
@@ -1022,6 +1344,35 @@ static EXTENSION_MAP: &[(&str, fn() -> Format)] = &[
     }),
     // CAD formats
     ("dxf", Format::dxf),
+    // Archives
+    ("rar", Format::rar),
+    ("7z", Format::seven_zip),
+    ("cab", Format::cab),
+    ("iso", Format::iso),
+    ("dmg", Format::dmg),
+    // Databases
+    ("sqlite", Format::sqlite),
+    ("sqlite3", Format::sqlite),
+    ("db", Format::sqlite),
+    ("mdb", Format::mdb),
+    ("accdb", Format::mdb),
+    ("dbf", Format::dbf),
+    // Executables
+    ("exe", Format::exe),
+    ("dll", Format::dll),
+    // Images
+    ("psd", Format::psd),
+    // Source Code
+    ("rs", Format::rust),
+    ("py", Format::python),
+    ("js", Format::javascript),
+    ("ts", Format::typescript),
+    ("c", Format::c),
+    ("h", Format::c),
+    ("cpp", Format::cpp),
+    ("hpp", Format::cpp),
+    ("cc", Format::cpp),
+    ("css", Format::css),
 ];
 
 /// Detect the format of a document from its content

@@ -4,6 +4,7 @@
 //! Functionality for parsing `PowerPoint` slides.
 
 use crate::office::shapes;
+use crate::office::theme::Theme;
 use prism_core::document::{ContentBlock, Dimensions, Page, PageMetadata};
 use quick_xml::events::Event;
 use quick_xml::Reader;
@@ -19,6 +20,8 @@ impl SlideParser {
         slide_num: u32,
         rels: &std::collections::HashMap<String, String, S>,
         dimensions: Dimensions,
+        theme: Option<&Theme>,
+        placeholders: Option<&std::collections::HashMap<u32, ContentBlock, S>>,
     ) -> Page {
         let mut reader = Reader::from_str(xml);
         reader.trim_text(true);
@@ -29,9 +32,13 @@ impl SlideParser {
             match reader.read_event_into(&mut buf) {
                 Ok(Event::Start(e)) => match e.name().as_ref() {
                     b"p:bg" => {
-                        if let Some(mut block) =
-                            shapes::parse_background(&mut reader, &mut Vec::new(), rels, dimensions)
-                        {
+                        if let Some(mut block) = shapes::parse_background(
+                            &mut reader,
+                            &mut Vec::new(),
+                            rels,
+                            dimensions,
+                            theme,
+                        ) {
                             if let ContentBlock::Image(ref mut img) = block {
                                 if let Some(target) = rels.get(&img.resource_id) {
                                     img.resource_id = target.clone();
@@ -41,7 +48,13 @@ impl SlideParser {
                         }
                     }
                     b"p:sp" => {
-                        if let Some(block) = shapes::parse_shape(&mut reader, &mut Vec::new()) {
+                        if let Some((block, _)) = shapes::parse_shape(
+                            &mut reader,
+                            &mut Vec::new(),
+                            rels,
+                            theme,
+                            placeholders,
+                        ) {
                             content.push(block);
                         }
                     }
@@ -59,9 +72,16 @@ impl SlideParser {
                     }
                     b"p:graphicFrame" => {
                         if let Some(block) =
-                            shapes::parse_graphic_frame(&mut reader, &mut Vec::new())
+                            shapes::parse_graphic_frame(&mut reader, &mut Vec::new(), theme)
                         {
                             content.push(block);
+                        }
+                    }
+                    b"p:grpSp" => {
+                        if let Some(blocks) =
+                            shapes::parse_group_shape(&mut reader, &mut Vec::new(), rels, theme)
+                        {
+                            content.extend(blocks);
                         }
                     }
                     _ => {}

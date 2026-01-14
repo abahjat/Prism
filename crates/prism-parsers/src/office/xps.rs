@@ -524,6 +524,7 @@ impl Parser for XpsParser {
                     runs: vec![text_run],
                     bounds: Rect::new(0.0, 0.0, width, height),
                     paragraph_style: None,
+                    vertical_alignment: None,
                     style: prism_core::document::ShapeStyle::default(),
                     rotation: 0.0,
                 };

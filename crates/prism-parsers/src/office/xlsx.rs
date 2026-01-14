@@ -310,9 +310,10 @@ impl XlsxParser {
                                 vec![]
                             } else {
                                 vec![ContentBlock::Text(TextBlock {
-                                    bounds: prism_core::document::Rect::default(),
+                                    bounds: prism_core::document::Rect::new(0.0, 0.0, 0.0, 0.0), // Bounds calculated during layout
                                     runs: vec![run],
                                     paragraph_style: None,
+                                    vertical_alignment: None,
                                     style: prism_core::document::ShapeStyle::default(),
                                     rotation: 0.0,
                                 })]

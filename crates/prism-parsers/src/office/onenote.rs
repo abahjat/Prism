@@ -129,6 +129,7 @@ impl Parser for OneNoteParser {
                     let text_block = TextBlock {
                         runs: vec![text_run],
                         paragraph_style: None,
+                        vertical_alignment: None,
                         bounds: Rect::new(50.0, 50.0, 700.0, 900.0),
                         style: ShapeStyle::default(),
                         rotation: 0.0,
@@ -174,6 +175,7 @@ impl Parser for OneNoteParser {
             let text_block = TextBlock {
                 runs: vec![text_run],
                 paragraph_style: None,
+                vertical_alignment: None,
                 bounds: Rect::new(50.0, 50.0, 600.0, 300.0),
                 style: ShapeStyle::default(),
                 rotation: 0.0,

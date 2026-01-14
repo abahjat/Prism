@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+/// Bzip2 archive parser
+pub mod bzip2;
 /// GZIP archive parser
 pub mod gzip;
+/// 7-Zip archive parser
+pub mod seven_zip;
 /// TAR archive parser
 pub mod tar;
 /// ZIP archive parser
@@ -15,7 +19,7 @@ use prism_core::{
     parser::{ParseContext, Parser, ParserFeature, ParserMetadata},
 };
 
-/// Archive parser supporting ZIP, TAR, GZIP
+/// Archive parser supporting ZIP, TAR, GZIP, 7z
 pub struct ArchiveParser {
     format: Format,
 }
@@ -46,6 +50,10 @@ impl Parser for ArchiveParser {
             return tar::parse(context, data);
         } else if self.format.mime_type == "application/gzip" {
             return gzip::parse(context, &data);
+        } else if self.format.mime_type == "application/x-7z-compressed" {
+            return seven_zip::parse(context, data);
+        } else if self.format.mime_type == "application/x-bzip2" {
+            return bzip2::parse(context, &data);
         }
 
         Err(Error::UnsupportedFormat(format!(

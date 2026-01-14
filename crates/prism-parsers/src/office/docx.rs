@@ -327,6 +327,7 @@ impl Parser for DocxParser {
                                     runs: current_paragraph_runs.clone(),
                                     paragraph_style: current_paragraph_style.clone(),
                                     bounds: Rect::default(),
+                                    vertical_alignment: None,
                                     style: prism_core::document::ShapeStyle::default(),
                                     rotation: 0.0,
                                 };

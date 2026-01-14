@@ -38,6 +38,7 @@ impl Theme {
 /// # Errors
 ///
 /// Returns an error if the XML content is malformed or cannot be parsed.
+#[allow(clippy::too_many_lines)]
 pub fn parse_theme(content: &[u8]) -> Result<Theme> {
     let mut reader = Reader::from_reader(content);
     reader.trim_text(true);
@@ -112,9 +113,29 @@ pub fn parse_theme(content: &[u8]) -> Result<Theme> {
                 }
             }
             Ok(Event::Empty(ref e)) => {
-                if in_clr_scheme {
-                    if let Some(ref slot) = current_clr_tag {
-                        process_color_element(e, slot, &mut theme);
+                let name = e.name();
+                match name.as_ref() {
+                    b"a:latin" => {
+                        if in_major_font || in_minor_font {
+                            for attr in e.attributes().flatten() {
+                                if attr.key.as_ref() == b"typeface" {
+                                    let typeface = attr_value(&attr.value);
+                                    if in_major_font {
+                                        theme.major_font = Some(typeface);
+                                    } else if in_minor_font {
+                                        theme.minor_font = Some(typeface);
+                                    }
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    _ => {
+                        if in_clr_scheme {
+                            if let Some(ref slot) = current_clr_tag {
+                                process_color_element(e, slot, &mut theme);
+                            }
+                        }
                     }
                 }
             }
@@ -174,5 +195,66 @@ fn process_color_element(e: &quick_xml::events::BytesStart<'_>, slot: &str, them
             let slot_key = slot.replace("a:", "");
             theme.color_scheme.insert(slot_key, v);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_theme_colors() {
+        let xml = r#"
+            <a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" name="Test Theme">
+                <a:themeElements>
+                    <a:clrScheme name="Office">
+                        <a:dk1>
+                            <a:sysClr val="windowText" lastClr="000000"/>
+                        </a:dk1>
+                        <a:lt1>
+                            <a:sysClr val="window" lastClr="FFFFFF"/>
+                        </a:lt1>
+                        <a:accent1>
+                            <a:srgbClr val="4F81BD"/>
+                        </a:accent1>
+                        <a:accent2>
+                            <a:srgbClr val="C0504D"/>
+                        </a:accent2>
+                    </a:clrScheme>
+                </a:themeElements>
+            </a:theme>
+        "#;
+
+        let theme = parse_theme(xml.as_bytes()).expect("Failed to parse theme");
+
+        assert_eq!(theme.name, "Test Theme");
+        assert_eq!(theme.resolve_color("dk1"), Some("000000".to_string()));
+        assert_eq!(theme.resolve_color("lt1"), Some("FFFFFF".to_string()));
+        assert_eq!(theme.resolve_color("accent1"), Some("4F81BD".to_string()));
+        assert_eq!(theme.resolve_color("accent2"), Some("C0504D".to_string()));
+        assert_eq!(theme.resolve_color("accent3"), None);
+    }
+
+    #[test]
+    fn test_parse_theme_fonts() {
+        let xml = r#"
+            <a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" name="Test Theme">
+                <a:themeElements>
+                    <a:fontScheme name="Office">
+                        <a:majorFont>
+                            <a:latin typeface="Cambria"/>
+                        </a:majorFont>
+                        <a:minorFont>
+                            <a:latin typeface="Calibri"/>
+                        </a:minorFont>
+                    </a:fontScheme>
+                </a:themeElements>
+            </a:theme>
+        "#;
+
+        let theme = parse_theme(xml.as_bytes()).expect("Failed to parse theme");
+
+        assert_eq!(theme.major_font, Some("Cambria".to_string()));
+        assert_eq!(theme.minor_font, Some("Calibri".to_string()));
     }
 }

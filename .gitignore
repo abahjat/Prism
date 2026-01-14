@@ -41,3 +41,18 @@ scripts/parse_magics.py
 .~lock.*
 ~$*
 clippy_output.txt
+clippy_output_2.txt
+clippy_final.txt
+clippy_all.txt
+test_output.txt
+check_output.txt
+bounds_output.txt
+clippy_log.txt
+rtf_test_result.txt
+rtf_test_result_2.txt
+parsers_phase2_check.txt
+parsers_phase2_check_2.txt
+parsers_phase2_final_check.txt
+
+# Test files (large dataset)
+/test-files/

@@ -189,6 +189,7 @@ impl Parser for IcsParser {
             }
 
             let text_block = TextBlock {
+                vertical_alignment: None,
                 bounds: Rect::default(), // No layout info in ICS
                 runs: text_runs,
                 paragraph_style: None,

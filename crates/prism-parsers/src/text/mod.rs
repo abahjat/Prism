@@ -3,6 +3,8 @@
 //!
 //! Parsers for plain text files (.txt, .log, .json, .xml, .csv, .md, .html, .rtf, etc.)
 
+/// Code syntax highlighting parser
+pub mod code;
 pub mod csv;
 pub mod epub;
 pub mod html;
@@ -10,6 +12,7 @@ pub mod plain;
 pub mod rtf;
 
 // Re-export parsers
+pub use code::CodeParser;
 pub use csv::CsvParser;
 pub use epub::EpubParser;
 pub use html::HtmlParser;

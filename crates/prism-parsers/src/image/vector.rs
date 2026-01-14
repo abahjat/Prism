@@ -320,6 +320,7 @@ fn create_vector_info_document(
     };
 
     let text_block = TextBlock {
+        vertical_alignment: None,
         runs: vec![text_run],
         paragraph_style: None,
         bounds: Rect::new(50.0, 50.0, 500.0, 200.0),

@@ -195,6 +195,7 @@ impl Parser for DocParser {
             let text_block = TextBlock {
                 runs: vec![text_run],
                 paragraph_style: None,
+                vertical_alignment: None,
                 bounds: prism_core::document::Rect::default(),
                 style: ShapeStyle::default(),
                 rotation: 0.0,
@@ -329,6 +330,7 @@ impl Parser for XlsParser {
                                 let text_block = TextBlock {
                                     runs: vec![text_run],
                                     paragraph_style: None,
+                                    vertical_alignment: None,
                                     bounds: prism_core::document::Rect::default(),
                                     style: ShapeStyle::default(),
                                     rotation: 0.0,
@@ -503,6 +505,7 @@ impl Parser for PptParser {
             let text_block = TextBlock {
                 runs: vec![text_run],
                 paragraph_style: None,
+                vertical_alignment: None,
                 bounds: prism_core::document::Rect::default(),
                 style: ShapeStyle::default(),
                 rotation: 0.0,
@@ -668,6 +671,7 @@ impl Parser for MppParser {
         let text_block = TextBlock {
             runs: vec![text_run],
             paragraph_style: None,
+            vertical_alignment: None,
             bounds: Rect::new(50.0, 50.0, 700.0, 900.0),
             style: ShapeStyle::default(),
             rotation: 0.0,

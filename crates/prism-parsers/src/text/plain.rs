@@ -123,6 +123,7 @@ impl Parser for TextParser {
 
         // Create text block with wrapping enabled (no specific bounds means it will wrap)
         let text_block = TextBlock {
+            vertical_alignment: None,
             bounds: Rect {
                 x: 0.0,
                 y: 0.0,
@@ -291,6 +292,7 @@ impl Parser for MarkdownParser {
 
         // Create text block with wrapping enabled
         let text_block = TextBlock {
+            vertical_alignment: None,
             bounds: Rect {
                 x: 0.0,
                 y: 0.0,

@@ -92,8 +92,11 @@ pub mod archive;
 
 /// CAD format parsers
 pub mod cad;
+/// Database format parsers
+pub mod database;
 
 pub use cad::DxfParser;
+pub use database::{DbfParser, SqliteParser};
 
 /// Prism parsers version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
