@@ -7,6 +7,8 @@ pub mod gzip;
 pub mod seven_zip;
 /// TAR archive parser
 pub mod tar;
+/// UNIX Compress archive parser
+pub mod unix_compress;
 /// ZIP archive parser
 pub mod zip;
 
@@ -19,7 +21,7 @@ use prism_core::{
     parser::{ParseContext, Parser, ParserFeature, ParserMetadata},
 };
 
-/// Archive parser supporting ZIP, TAR, GZIP, 7z
+/// Archive parser supporting ZIP, TAR, GZIP, 7z, Bzip2, UNIX Compress
 pub struct ArchiveParser {
     format: Format,
 }
@@ -54,6 +56,8 @@ impl Parser for ArchiveParser {
             return seven_zip::parse(context, data);
         } else if self.format.mime_type == "application/x-bzip2" {
             return bzip2::parse(context, &data);
+        } else if self.format.mime_type == "application/x-compress" {
+            return unix_compress::parse(context, &data);
         }
 
         Err(Error::UnsupportedFormat(format!(

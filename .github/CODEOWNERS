@@ -1,0 +1,11 @@
+# CODEOWNERS file for Prism Document Processing SDK
+# 
+# This file defines the default reviewers for all code changes.
+# For more information, see:
+# https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Default owner for everything in the repository
+*       @abahjat
+
+# Dr. Ahmed Bahjat <abahjat@gmail.com>
+# Primary maintainer and code owner

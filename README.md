@@ -18,14 +18,14 @@ Prism is a next-generation document processing SDK built in Rust, designed to vi
 
 ## 🚀 Features
 
-- **Comprehensive Format Support**: 60+ document formats currently implemented
+- **Comprehensive Format Support**: 68+ document formats currently implemented
   - **Documents:** PDF, RTF, XPS, EPUB
   - **Microsoft Office:** DOCX, XLSX, PPTX, DOC, XLS, PPT, ONE, VSDX, MPP
   - **OpenDocument:** ODT, ODS, ODP, ODG
-  - **Images:** PNG, JPEG, TIFF, GIF, WebP, BMP, ICO, TGA, PSD
-  - **Vector:** SVG, SVGZ, EPS, EMF, EMZ, WMF
+  - **Images:** PNG, JPEG, JPEG 2000, TIFF, GIF, WebP, BMP, ICO, CUR, TGA, PSD, PCX, WBMP
+  - **Vector:** SVG, SVGZ, EPS, EMF, EMZ, WMF, AI
   - **Email & Calendar:** EML, MSG, MBOX, VCF, ICS, MHT
-  - **Archives:** ZIP, TAR, GZIP, 7z, Bzip2
+  - **Archives:** ZIP, TAR, GZIP, 7z, Bzip2, UNIX Compress (.z)
   - **Database:** SQLite, DBF
   - **Code:** Rust, Python, JavaScript, TypeScript, C, C++, CSS (syntax highlighting)
   - **CAD:** DXF
