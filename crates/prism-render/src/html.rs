@@ -369,6 +369,8 @@ impl HtmlRenderer {
 
         let style_css = Self::render_shape_style(&table.style).join(" ");
 
+        let table_html = format!(r#"<div class="table-container">{html}</div>"#);
+
         // Wrap table in absolute div if it has bounds
         if table.bounds.width > 0.0 && table.bounds.height > 0.0 {
             format!(
@@ -378,12 +380,12 @@ impl HtmlRenderer {
                 table.bounds.width,
                 table.bounds.height,
                 style_css,
-                html
+                table_html
             )
         } else if style_css.is_empty() {
-            html
+            table_html
         } else {
-            format!(r#"<div style="{style_css}">{html}</div>"#)
+            format!(r#"<div style="{style_css}">{table_html}</div>"#)
         }
     }
 
@@ -805,20 +807,31 @@ impl Renderer for HtmlRenderer {
             max-width: 100%;
         }}
         .data-table {{
-            width: 100%;
+            width: auto;
+            min-width: 100%;
             border-collapse: collapse;
-            margin: 1rem 0;
+            margin: 0;
             font-size: 0.9rem;
             box-shadow: 0 2px 5px rgba(0,0,0,0.1);
             table-layout: auto;
+        }}
+        .table-container {{
+            width: 100%;
+            overflow-x: auto;
+            margin: 1rem 0;
+            border-radius: 4px;
+            border: 1px solid #ddd;
         }}
         .data-table th, .data-table td {{
             border: 1px solid #ddd;
             padding: 8px 12px;
             text-align: left;
             vertical-align: top;
-            word-wrap: break-word;
-            overflow-wrap: break-word;
+            white-space: nowrap;
+        }}
+        .data-table td {{
+            white-space: normal;
+            min-width: 100px;
         }}
         .data-table th {{
             background-color: #f0f0f0;
@@ -883,8 +896,10 @@ impl Renderer for HtmlRenderer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use prism_core::document::PageMetadata;
-    use prism_core::document::{Dimensions, Page};
+    use prism_core::document::{
+        Dimensions, Page, PageMetadata, Rect, ShapeStyle, TableBlock, TableCell, TableRow,
+        TextBlock, TextRun,
+    };
     use prism_core::metadata::Metadata;
 
     #[tokio::test]
@@ -954,7 +969,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_render_with_styles() {
-        use prism_core::document::{PageMetadata, Rect, ShapeStyle, TextBlock, TextRun};
         let renderer = HtmlRenderer::new();
 
         let style = ShapeStyle {
@@ -1038,5 +1052,66 @@ mod tests {
         // Should have flexible height properties
         assert!(html.contains("min-height:"));
         assert!(html.contains("overflow: visible"));
+    }
+
+    #[tokio::test]
+    async fn test_render_table_container() {
+        let renderer = HtmlRenderer::new();
+
+        let table = ContentBlock::Table(TableBlock {
+            bounds: Rect::default(),
+            rows: vec![TableRow {
+                cells: vec![TableCell {
+                    content: vec![ContentBlock::Text(TextBlock {
+                        runs: vec![TextRun::new("Data")],
+                        bounds: Rect::default(),
+                        paragraph_style: None,
+                        vertical_alignment: None,
+                        style: ShapeStyle::default(),
+                        rotation: 0.0,
+                    })],
+                    col_span: 1,
+                    row_span: 1,
+                    background_color: None,
+                    borders: None,
+                }],
+                height: None,
+            }],
+            column_count: 1,
+            column_widths: vec![],
+            style: ShapeStyle::default(),
+            rotation: 0.0,
+        });
+
+        let page = Page {
+            number: 1,
+            dimensions: Dimensions::LETTER,
+            content: vec![table],
+            metadata: PageMetadata::default(),
+            annotations: vec![],
+        };
+
+        let document = Document::builder()
+            .metadata(Metadata::builder().title("Table Test").build())
+            .page(page)
+            .build();
+
+        let result = renderer
+            .render(
+                &document,
+                RenderContext {
+                    options: prism_core::render::RenderOptions::default(),
+                    filename: None,
+                },
+            )
+            .await
+            .unwrap();
+        let html = String::from_utf8(result.to_vec()).unwrap();
+
+        // Check for the wrapper and CSS
+        assert!(html.contains(r#"<div class="table-container">"#));
+        assert!(html.contains(r#"<table class="data-table">"#));
+        assert!(html.contains("overflow-x: auto;"));
+        assert!(html.contains("white-space: nowrap;"));
     }
 }
