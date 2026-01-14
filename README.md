@@ -569,6 +569,9 @@ Prism is inspired by and aims to be a modern alternative to:
 - 🚧 Additional renderers in development
 - 🚧 REST API under construction
 
+
+<a href="https://cla-assistant.io/abahjat/Prism"><img src="https://cla-assistant.io/readme/badge/abahjat/Prism" alt="CLA assistant" /></a>
+
 ---
 
 **Built with ❤️ in Rust**
