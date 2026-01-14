@@ -115,6 +115,10 @@ impl ParserRegistry {
         registry.register(Arc::new(crate::image::WmfParser::new()));
         registry.register(Arc::new(crate::image::EpsParser::new()));
         registry.register(Arc::new(crate::image::PsdParser::new()));
+        registry.register(Arc::new(crate::image::Jpeg2000Parser::new()));
+        registry.register(Arc::new(crate::image::PcxParser::new()));
+        registry.register(Arc::new(crate::image::WbmpParser::new()));
+        registry.register(Arc::new(crate::image::AiParser::new()));
 
         // Register CAD parsers
         registry.register(Arc::new(crate::cad::DxfParser::new()));
@@ -122,6 +126,11 @@ impl ParserRegistry {
         // Register database parsers
         registry.register(Arc::new(crate::database::DbfParser::new()));
         registry.register(Arc::new(crate::database::SqliteParser::new()));
+
+        // Register archive parsers for UNIX Compress
+        registry.register(Arc::new(crate::archive::ArchiveParser::new(
+            Format::unix_compress(),
+        )));
 
         registry
     }

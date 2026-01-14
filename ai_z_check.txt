@@ -1,0 +1,67 @@
+﻿cargo :    Compiling prism-core v0.1.0 
+(C:\Dev\RustSandbox\Prism\crates\prism-core)
+At line:1 char:1
++ cargo check -p prism-parsers 2>&1 | Out-File -Encoding UTF8 
+ai_z_chec ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (   Compiling pr...tes\pr 
+   ism-core):String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+    Checking prism-parsers v0.1.0 
+(C:\Dev\RustSandbox\Prism\crates\prism-parsers)
+warning: unused import: `bytes::Bytes`
+ --> crates\prism-parsers\src\archive\unix_compress.rs:7:5
+  |
+7 | use bytes::Bytes;
+  |     ^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by 
+default
+
+warning: unused import: `TableCell`
+  --> crates\prism-parsers\src\archive\unix_compress.rs:11:9
+   |
+11 |         TableCell, TextBlock, TextRun,
+   |         ^^^^^^^^^
+
+error[E0560]: struct `TableBlock` has no field named `headers`
+  --> crates\prism-parsers\src\archive\unix_compress.rs:80:9
+   |
+80 |         headers: Some(headers),
+   |         ^^^^^^^ `TableBlock` does not have this field
+   |
+   = note: available fields are: `column_count`
+
+error[E0308]: mismatched types
+  --> crates\prism-parsers\src\archive\unix_compress.rs:81:9
+   |
+81 |         rows,
+   |         ^^^^ expected `Vec<TableRow>`, found `Vec<Vec<String>>`
+   |
+   = note: expected struct `Vec<prism_core::document::TableRow>`
+              found struct `Vec<Vec<std::string::String>>`
+
+error[E0308]: mismatched types
+  --> crates\prism-parsers\src\archive\unix_compress.rs:84:24
+   |
+84 |         column_widths: None,
+   |                        ^^^^ expected `Vec<f64>`, found 
+`Option<_>`
+   |
+   = note: expected struct `Vec<f64>`
+                found enum `Option<_>`
+
+error[E0560]: struct `TableBlock` has no field named `row_heights`
+  --> crates\prism-parsers\src\archive\unix_compress.rs:85:9
+   |
+85 |         row_heights: None,
+   |         ^^^^^^^^^^^ `TableBlock` does not have this field
+   |
+   = note: available fields are: `column_count`
+
+Some errors have detailed explanations: E0308, E0560.
+For more information about an error, try `rustc --explain E0308`.
+warning: `prism-parsers` (lib) generated 2 warnings
+error: could not compile `prism-parsers` (lib) due to 4 previous 
+errors; 2 warnings emitted

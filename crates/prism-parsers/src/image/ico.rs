@@ -28,11 +28,16 @@ impl IcoParser {
         Self
     }
 
-    /// Check if data has ICO signature
+    /// Check if data has ICO or CUR signature
     /// ICO files start with: 00 00 01 00 (reserved=0, type=1 for icon)
+    /// CUR files start with: 00 00 02 00 (reserved=0, type=2 for cursor)
     #[must_use]
-    fn is_ico(data: &[u8]) -> bool {
-        data.len() >= 4 && data[0] == 0 && data[1] == 0 && data[2] == 1 && data[3] == 0
+    fn is_ico_or_cur(data: &[u8]) -> bool {
+        data.len() >= 4
+            && data[0] == 0
+            && data[1] == 0
+            && (data[2] == 1 || data[2] == 2)
+            && data[3] == 0
     }
 }
 
@@ -49,7 +54,7 @@ impl Parser for IcoParser {
     }
 
     fn can_parse(&self, data: &[u8]) -> bool {
-        Self::is_ico(data)
+        Self::is_ico_or_cur(data)
     }
 
     async fn parse(&self, data: Bytes, context: ParseContext) -> Result<Document> {
@@ -136,12 +141,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_is_ico() {
-        // Valid ICO header
-        assert!(IcoParser::is_ico(&[0, 0, 1, 0, 1, 0]));
+    fn test_is_ico_or_cur() {
+        // Valid ICO header (type=1)
+        assert!(IcoParser::is_ico_or_cur(&[0, 0, 1, 0, 1, 0]));
+        // Valid CUR header (type=2)
+        assert!(IcoParser::is_ico_or_cur(&[0, 0, 2, 0, 1, 0]));
         // Invalid
-        assert!(!IcoParser::is_ico(b"PNG data"));
-        assert!(!IcoParser::is_ico(&[0, 0, 2, 0])); // type 2 is CUR, not ICO
+        assert!(!IcoParser::is_ico_or_cur(b"PNG data"));
+        assert!(!IcoParser::is_ico_or_cur(&[0, 0, 3, 0])); // type 3 is invalid
     }
 
     #[test]

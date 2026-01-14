@@ -228,6 +228,30 @@ impl Format {
         }
     }
 
+    /// Create a new ICO (Windows Icon) format instance
+    #[must_use]
+    pub fn ico() -> Self {
+        Self {
+            mime_type: "image/x-icon".to_string(),
+            extension: "ico".to_string(),
+            family: FormatFamily::Image,
+            name: "Windows Icon".to_string(),
+            is_container: false,
+        }
+    }
+
+    /// Create a new CUR (Windows Cursor) format instance
+    #[must_use]
+    pub fn cur() -> Self {
+        Self {
+            mime_type: "image/x-icon".to_string(),
+            extension: "cur".to_string(),
+            family: FormatFamily::Image,
+            name: "Windows Cursor".to_string(),
+            is_container: false,
+        }
+    }
+
     /// Create a new EPS (Encapsulated PostScript) format instance
     #[must_use]
     pub fn eps() -> Self {
@@ -272,18 +296,6 @@ impl Format {
             extension: "wmf".to_string(),
             family: FormatFamily::Image,
             name: "WMF Image".to_string(),
-            is_container: false,
-        }
-    }
-
-    /// Create a new ICO (Windows Icon) format instance
-    #[must_use]
-    pub fn ico() -> Self {
-        Self {
-            mime_type: "image/x-icon".to_string(),
-            extension: "ico".to_string(),
-            family: FormatFamily::Image,
-            name: "ICO Image".to_string(),
             is_container: false,
         }
     }
@@ -911,6 +923,66 @@ impl Format {
             is_container: false,
         }
     }
+
+    /// Create a new JPEG 2000 format instance
+    #[must_use]
+    pub fn jpeg2000() -> Self {
+        Self {
+            mime_type: "image/jp2".to_string(),
+            extension: "jp2".to_string(),
+            family: FormatFamily::Image,
+            name: "JPEG 2000 Image".to_string(),
+            is_container: false,
+        }
+    }
+
+    /// Create a new PCX (Paintbrush) format instance
+    #[must_use]
+    pub fn pcx() -> Self {
+        Self {
+            mime_type: "image/x-pcx".to_string(),
+            extension: "pcx".to_string(),
+            family: FormatFamily::Image,
+            name: "PCX Paintbrush Image".to_string(),
+            is_container: false,
+        }
+    }
+
+    /// Create a new WBMP (Wireless Bitmap) format instance
+    #[must_use]
+    pub fn wbmp() -> Self {
+        Self {
+            mime_type: "image/vnd.wap.wbmp".to_string(),
+            extension: "wbmp".to_string(),
+            family: FormatFamily::Image,
+            name: "Wireless Bitmap".to_string(),
+            is_container: false,
+        }
+    }
+
+    /// Create a new Adobe Illustrator format instance
+    #[must_use]
+    pub fn illustrator() -> Self {
+        Self {
+            mime_type: "application/postscript".to_string(),
+            extension: "ai".to_string(),
+            family: FormatFamily::Image,
+            name: "Adobe Illustrator".to_string(),
+            is_container: false,
+        }
+    }
+
+    /// Create a new UNIX Compress format instance
+    #[must_use]
+    pub fn unix_compress() -> Self {
+        Self {
+            mime_type: "application/x-compress".to_string(),
+            extension: "z".to_string(),
+            family: FormatFamily::Archive,
+            name: "UNIX Compress".to_string(),
+            is_container: true,
+        }
+    }
 }
 
 /// Format families for categorization
@@ -1061,6 +1133,26 @@ static SIGNATURES: &[FormatSignature] = &[
         bytes: b"BZh",
         offset: 0,
         format: Format::bzip2,
+    },
+    // JPEG 2000 (jp2)
+    FormatSignature {
+        bytes: &[
+            0x00, 0x00, 0x00, 0x0C, 0x6A, 0x50, 0x20, 0x20, 0x0D, 0x0A, 0x87, 0x0A,
+        ],
+        offset: 0,
+        format: Format::jpeg2000,
+    },
+    // PCX (Paintbrush)
+    FormatSignature {
+        bytes: &[0x0A],
+        offset: 0,
+        format: Format::pcx, // Note: PCX has 0x0A at offset 0, version at 1, encoding at 2
+    },
+    // UNIX Compress
+    FormatSignature {
+        bytes: &[0x1F, 0x9D],
+        offset: 0,
+        format: Format::unix_compress,
     },
     // GIF
     FormatSignature {
@@ -1373,6 +1465,17 @@ static EXTENSION_MAP: &[(&str, fn() -> Format)] = &[
     ("hpp", Format::cpp),
     ("cc", Format::cpp),
     ("css", Format::css),
+    // Phase 4A formats
+    ("jp2", Format::jpeg2000),
+    ("jpx", Format::jpeg2000),
+    ("j2k", Format::jpeg2000),
+    ("pcx", Format::pcx),
+    ("dcx", Format::pcx),
+    ("wbmp", Format::wbmp),
+    ("ai", Format::illustrator),
+    ("z", Format::unix_compress),
+    ("ico", Format::ico),
+    ("cur", Format::cur),
 ];
 
 /// Detect the format of a document from its content

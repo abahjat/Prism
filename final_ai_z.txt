@@ -1,0 +1,14 @@
+﻿cargo :    Compiling prism-core v0.1.0 
+(C:\Dev\RustSandbox\Prism\crates\prism-core)
+At line:1 char:1
++ cargo check -p prism-parsers 2>&1 | Out-File -Encoding UTF8 
+final_ai_ ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (   Compiling pr...tes\pr 
+   ism-core):String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+    Checking prism-parsers v0.1.0 
+(C:\Dev\RustSandbox\Prism\crates\prism-parsers)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 
+1.84s
