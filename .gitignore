@@ -56,3 +56,6 @@ parsers_phase2_final_check.txt
 
 # Test files (large dataset)
 /test-files/
+
+*.txt
+*.log
