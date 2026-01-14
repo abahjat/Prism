@@ -83,8 +83,8 @@ pub use office::{
 pub use pdf::PdfParser;
 pub use registry::ParserRegistry;
 pub use text::{
-    CsvParser, EpubParser, HtmlParser, JsonParser, LogParser, MarkdownParser, RtfParser,
-    TextParser, XmlParser,
+    CodeParser, CsvParser, EpubParser, HtmlParser, JsonParser, LogParser, MarkdownParser,
+    RtfParser, TextParser, XmlParser,
 };
 
 /// Archive format parsers

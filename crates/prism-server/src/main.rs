@@ -101,6 +101,29 @@ impl AppState {
         registry.register(Arc::new(prism_parsers::LogParser::new()));
         registry.register(Arc::new(prism_parsers::RtfParser::new()));
 
+        // Register code parsers
+        registry.register(Arc::new(prism_parsers::CodeParser::new(
+            prism_core::format::Format::rust(),
+        )));
+        registry.register(Arc::new(prism_parsers::CodeParser::new(
+            prism_core::format::Format::python(),
+        )));
+        registry.register(Arc::new(prism_parsers::CodeParser::new(
+            prism_core::format::Format::javascript(),
+        )));
+        registry.register(Arc::new(prism_parsers::CodeParser::new(
+            prism_core::format::Format::typescript(),
+        )));
+        registry.register(Arc::new(prism_parsers::CodeParser::new(
+            prism_core::format::Format::c(),
+        )));
+        registry.register(Arc::new(prism_parsers::CodeParser::new(
+            prism_core::format::Format::cpp(),
+        )));
+        registry.register(Arc::new(prism_parsers::CodeParser::new(
+            prism_core::format::Format::css(),
+        )));
+
         // Register email parsers
         registry.register(Arc::new(prism_parsers::EmlParser::new()));
         registry.register(Arc::new(prism_parsers::MsgParser::new()));

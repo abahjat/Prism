@@ -218,4 +218,19 @@ mod tests {
         let format = Format::pdf();
         assert!(!registry.has_parser(&format));
     }
+
+    #[test]
+    fn test_python_parser_registration() {
+        let registry = ParserRegistry::with_default_parsers();
+        let format = Format::python();
+        assert_eq!(format.mime_type, "text/x-python");
+        assert!(
+            registry.has_parser(&format),
+            "Should have parser for Python"
+        );
+
+        // Also check by explicit string MIME type to be sure
+        let parser = registry.parsers.get("text/x-python");
+        assert!(parser.is_some(), "Should find parser by explicit mime type");
+    }
 }
