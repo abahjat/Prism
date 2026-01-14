@@ -88,6 +88,7 @@ impl Parser for CsvParser {
                     vec![]
                 } else {
                     vec![ContentBlock::Text(TextBlock {
+                        vertical_alignment: None,
                         bounds: prism_core::document::Rect::default(),
                         runs: vec![run],
                         paragraph_style: None,

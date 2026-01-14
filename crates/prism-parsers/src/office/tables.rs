@@ -3,6 +3,7 @@
 //!
 //! Parsing logic for `Word` and `PowerPoint` tables.
 
+use crate::office::theme::Theme;
 use crate::office::utils;
 use prism_core::document::{ContentBlock, Rect, TableBlock, TableCell, TableRow, TextBlock};
 use prism_core::error::{Error, Result};
@@ -160,7 +161,10 @@ pub fn parse_table<R: BufRead>(reader: &mut Reader<R>) -> Result<TableBlock> {
 /// # Errors
 ///
 /// Returns an error if the XML is malformed or if an unexpected EOF is encountered.
-pub fn parse_drawingml_table<R: BufRead>(reader: &mut Reader<R>) -> Result<TableBlock> {
+pub fn parse_drawingml_table<R: BufRead>(
+    reader: &mut Reader<R>,
+    theme: Option<&Theme>,
+) -> Result<TableBlock> {
     let mut rows = Vec::new();
     let mut buf = Vec::new();
     let mut depth = 1; // Started at <a:tbl>
@@ -193,10 +197,17 @@ pub fn parse_drawingml_table<R: BufRead>(reader: &mut Reader<R>) -> Result<Table
                         cell_content.clear();
                     }
                     b"a:txBody" => {
-                        let text_runs =
-                            crate::office::shapes::parse_text_body(reader, &mut buf, b"a:txBody");
+                        let (text_runs, valign, _) = crate::office::shapes::parse_text_body(
+                            reader,
+                            &mut buf,
+                            b"a:txBody",
+                            theme,
+                            None,
+                            None,
+                        );
                         if !text_runs.is_empty() {
                             let mut block = TextBlock::new(Rect::default());
+                            block.vertical_alignment = valign;
                             for run in text_runs {
                                 block.add_run(run);
                             }

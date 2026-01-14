@@ -35,21 +35,34 @@ impl RtfParser {
     }
 
     /// Convert RTF style to Prism `TextStyle`
-    fn convert_style(style: &StyleBlock) -> TextStyle {
-        TextStyle {
+    fn convert_style(style: &StyleBlock, header: &rtf_parser::RtfHeader) -> TextStyle {
+        let mut text_style = TextStyle {
             bold: style.painter.bold,
             italic: style.painter.italic,
             underline: style.painter.underline,
             font_size: if style.painter.font_size > 0 {
                 #[allow(clippy::cast_precision_loss)]
-                Some(f64::from(style.painter.font_size) / 2.0) // RTF uses half-points
+                Some(f64::from(style.painter.font_size) / 2.0)
             } else {
                 None
             },
-            font_family: None, // Font name would require looking up in font table
-            color: None,       // Color would require looking up in color table
             ..TextStyle::default()
+        };
+
+        // Font lookup
+        if let Some(font) = header.font_table.get(&style.painter.font_ref) {
+            text_style.font_family = Some(font.name.clone());
         }
+
+        // Color lookup
+        if let Some(color) = header.color_table.get(&style.painter.color_ref) {
+            text_style.color = Some(format!(
+                "#{:02x}{:02x}{:02x}",
+                color.red, color.green, color.blue
+            ));
+        }
+
+        text_style
     }
 }
 
@@ -94,48 +107,72 @@ impl Parser for RtfParser {
             rtf_doc.body.len()
         );
 
-        // Convert RTF body to TextRuns
-        let mut text_runs = Vec::new();
+        // Convert RTF body to TextRuns/Blocks
+        // Group runs into blocks based on newlines
+        let mut text_blocks = Vec::new();
+        let mut current_runs = Vec::new();
 
         for block in &rtf_doc.body {
-            let style = Self::convert_style(block);
-            let run = TextRun {
-                text: block.text.clone(),
-                style,
-                bounds: None,
-                char_positions: None,
-            };
-            text_runs.push(run);
+            let style = Self::convert_style(block, &rtf_doc.header);
+
+            // Check for newlines in text
+            // RTF parser might return text with \r or \n
+            let parts: Vec<&str> = block.text.split(['\r', '\n']).collect();
+
+            for (i, part) in parts.iter().enumerate() {
+                if !part.is_empty() {
+                    let run = TextRun {
+                        text: (*part).to_string(),
+                        style: style.clone(),
+                        bounds: None,
+                        char_positions: None,
+                    };
+                    current_runs.push(run);
+                }
+
+                // If this isn't the last part, it means we hit a split (newline)
+                if i < parts.len() - 1 && !current_runs.is_empty() {
+                    let mut text_block = TextBlock::new(Rect::default());
+                    text_block.runs = current_runs;
+                    // Approximate spacing
+                    text_block.style.fill_color = None;
+                    text_blocks.push(text_block);
+                    current_runs = Vec::new();
+                }
+            }
+        }
+
+        // Push remaining runs
+        if !current_runs.is_empty() {
+            let mut text_block = TextBlock::new(Rect::default());
+            text_block.runs = current_runs;
+            text_blocks.push(text_block);
         }
 
         // If no styled blocks, try to extract plain text
-        if text_runs.is_empty() {
+        if text_blocks.is_empty() {
             let plain_text = rtf_doc
                 .body
                 .iter()
                 .map(|b| b.text.as_str())
                 .collect::<String>();
             if !plain_text.is_empty() {
-                text_runs.push(TextRun {
+                let mut text_block = TextBlock::new(Rect::default());
+                text_block.add_run(TextRun {
                     text: plain_text,
                     style: TextStyle::default(),
                     bounds: None,
                     char_positions: None,
                 });
+                text_blocks.push(text_block);
             }
-        }
-
-        // Create text block
-        let mut text_block = TextBlock::new(Rect::default());
-        for run in text_runs {
-            text_block.add_run(run);
         }
 
         // Create page
         let page = Page {
             number: 1,
             dimensions: Dimensions::LETTER,
-            content: vec![ContentBlock::Text(text_block)],
+            content: text_blocks.into_iter().map(ContentBlock::Text).collect(),
             metadata: PageMetadata::default(),
             annotations: Vec::new(),
         };
@@ -206,5 +243,45 @@ mod tests {
 
         let doc = result.unwrap();
         assert_eq!(doc.pages.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_parse_rtf_with_color() {
+        let parser = RtfParser::new();
+        // RTF with color table: Red (index 1)
+        // \cf1 selects color 1 from table
+        let rtf_content =
+            b"{\\rtf1\\ansi\\deff0{\\colortbl;\\red255\\green0\\blue0;}\\cf1 Red Text}";
+
+        let context = ParseContext {
+            format: Format::rtf(),
+            filename: Some("color.rtf".to_string()),
+            size: rtf_content.len(),
+            options: prism_core::parser::ParseOptions::default(),
+        };
+
+        let result = parser.parse(Bytes::from(&rtf_content[..]), context).await;
+        assert!(result.is_ok());
+
+        let doc = result.unwrap();
+        let page = &doc.pages[0];
+        // Should have one text block
+        if let ContentBlock::Text(block) = &page.content[0] {
+            assert!(!block.runs.is_empty());
+            // The parser might split runs or not.
+            // We look for a run with proper color.
+            let colored_runs: Vec<_> = block
+                .runs
+                .iter()
+                .filter(|r| r.style.color.is_some())
+                .collect();
+            assert!(!colored_runs.is_empty(), "No colored runs found");
+
+            let run = colored_runs[0];
+            assert_eq!(run.style.color, Some("#ff0000".to_string()));
+            assert!(run.text.contains("Red Text"));
+        } else {
+            panic!("Expected TextBlock");
+        }
     }
 }

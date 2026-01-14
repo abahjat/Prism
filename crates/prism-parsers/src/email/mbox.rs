@@ -203,6 +203,7 @@ impl Parser for MboxParser {
                             bounds: Rect::default(), // No layout info in MBOX
                             runs: text_runs,
                             paragraph_style: None,
+                            vertical_alignment: None,
                             style: ShapeStyle::default(),
                             rotation: 0.0,
                         };

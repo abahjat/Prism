@@ -211,6 +211,7 @@ impl Parser for EmlParser {
                 height: Dimensions::LETTER.height,
             },
             paragraph_style: None,
+            vertical_alignment: None,
             style: ShapeStyle::default(),
             rotation: 0.0,
         };

@@ -13,6 +13,8 @@ pub mod ico;
 pub mod jpeg;
 /// PNG image parser
 pub mod png;
+/// PSD image parser
+pub mod psd;
 /// SVG and SVGZ image parsers
 pub mod svg;
 /// TGA (Truevision) image parser
@@ -29,6 +31,7 @@ pub use gif::GifParser;
 pub use ico::IcoParser;
 pub use jpeg::JpegParser;
 pub use png::PngParser;
+pub use psd::PsdParser;
 pub use svg::{SvgParser, SvgzParser};
 pub use tga::TgaParser;
 pub use tiff::TiffParser;

@@ -31,6 +31,12 @@ impl ParserRegistry {
         registry.register(Arc::new(crate::archive::ArchiveParser::new(Format::zip())));
         registry.register(Arc::new(crate::archive::ArchiveParser::new(Format::tar())));
         registry.register(Arc::new(crate::archive::ArchiveParser::new(Format::gzip())));
+        registry.register(Arc::new(crate::archive::ArchiveParser::new(
+            Format::seven_zip(),
+        )));
+        registry.register(Arc::new(
+            crate::archive::ArchiveParser::new(Format::bzip2()),
+        ));
 
         // Register text parsers
         registry.register(Arc::new(crate::text::CsvParser::new()));
@@ -43,10 +49,29 @@ impl ParserRegistry {
         registry.register(Arc::new(crate::text::HtmlParser::new()));
         registry.register(Arc::new(crate::text::EpubParser::new()));
 
+        // Register code parsers
+        registry.register(Arc::new(crate::text::CodeParser::new(Format::rust())));
+        registry.register(Arc::new(crate::text::CodeParser::new(Format::python())));
+        registry.register(Arc::new(crate::text::CodeParser::new(Format::javascript())));
+        registry.register(Arc::new(crate::text::CodeParser::new(Format::typescript())));
+        registry.register(Arc::new(crate::text::CodeParser::new(Format::c())));
+        registry.register(Arc::new(crate::text::CodeParser::new(Format::cpp())));
+        registry.register(Arc::new(crate::text::CodeParser::new(Format::css())));
+
         // Register office parsers
         registry.register(Arc::new(crate::office::DocxParser::new()));
         registry.register(Arc::new(crate::office::XlsxParser::new()));
         registry.register(Arc::new(crate::office::PptxParser::new()));
+        registry.register(Arc::new(crate::office::PptxParser::new_with_format(
+            Format::potx(),
+        )));
+        registry.register(Arc::new(crate::office::PptxParser::new_with_format(
+            Format::ppsx(),
+        )));
+        registry.register(Arc::new(crate::office::PptxParser::new_with_format(
+            Format::pptm(),
+        )));
+
         registry.register(Arc::new(crate::office::DocParser::new()));
         registry.register(Arc::new(crate::office::XlsParser::new()));
         registry.register(Arc::new(crate::office::PptParser::new()));
@@ -54,6 +79,9 @@ impl ParserRegistry {
         registry.register(Arc::new(crate::office::OdtParser::new()));
         registry.register(Arc::new(crate::office::OdsParser::new()));
         registry.register(Arc::new(crate::office::OdpParser::new()));
+        registry.register(Arc::new(crate::office::OdpParser::new_with_format(
+            Format::otp(),
+        )));
         registry.register(Arc::new(crate::office::OdgParser::new()));
         registry.register(Arc::new(crate::office::OneNoteParser::new()));
         registry.register(Arc::new(crate::office::VsdxParser::new()));
@@ -86,9 +114,14 @@ impl ParserRegistry {
         registry.register(Arc::new(crate::image::EmzParser::new()));
         registry.register(Arc::new(crate::image::WmfParser::new()));
         registry.register(Arc::new(crate::image::EpsParser::new()));
+        registry.register(Arc::new(crate::image::PsdParser::new()));
 
         // Register CAD parsers
         registry.register(Arc::new(crate::cad::DxfParser::new()));
+
+        // Register database parsers
+        registry.register(Arc::new(crate::database::DbfParser::new()));
+        registry.register(Arc::new(crate::database::SqliteParser::new()));
 
         registry
     }

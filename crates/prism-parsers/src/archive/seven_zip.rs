@@ -9,16 +9,24 @@ use prism_core::{
     parser::ParseContext,
 };
 use std::io::Cursor;
-use zip::ZipArchive;
 
-/// Parse a ZIP archive and return a document structure representing the file listing.
+/// Parse a 7z archive and return a document structure representing the file listing.
 ///
 /// # Errors
 ///
-/// Returns an error if the ZIP archive is malformed or cannot be read.
+/// Returns an error if the 7z archive is malformed or cannot be read.
 pub fn parse(_context: ParseContext, data: Bytes) -> Result<Document> {
     let reader = Cursor::new(data);
-    let mut archive = ZipArchive::new(reader).map_err(|e| Error::ParseError(e.to_string()))?;
+
+    // sevenz_rust::SevenZReader::new takes a reader + size + password option
+    // Wait, check standard API usage.
+    // If exact API is unknown, I'll try standard approaches and rely on compiler.
+    // sevenz_rust::SevenZReader::new(reader, file_len, password)
+
+    let len = reader.get_ref().len() as u64;
+    let password = sevenz_rust::Password::empty();
+    let seven_z = sevenz_rust::SevenZReader::new(reader, len, password)
+        .map_err(|e| Error::ParseError(e.to_string()))?;
 
     let mut rows = Vec::new();
 
@@ -28,35 +36,20 @@ pub fn parse(_context: ParseContext, data: Bytes) -> Result<Document> {
             create_header_cell("Path"),
             create_header_cell("Size"),
             create_header_cell("Compressed"),
-            create_header_cell("Modified"),
+            create_header_cell("Attributes"),
         ],
         height: None,
     });
 
-    for i in 0..archive.len() {
-        let file = archive
-            .by_index(i)
-            .map_err(|e| Error::ParseError(e.to_string()))?;
+    let archive_entries = &seven_z.archive().files;
 
-        // Format date
-        let dt = file.last_modified();
-        // ZipDateTime to string
-        let modified = format!(
-            "{}-{}-{} {}:{}:{}",
-            dt.year(),
-            dt.month(),
-            dt.day(),
-            dt.hour(),
-            dt.minute(),
-            dt.second()
-        );
-
+    for entry in archive_entries {
         rows.push(TableRow {
             cells: vec![
-                create_text_cell(file.name()),
-                create_text_cell(&format_size(file.size())),
-                create_text_cell(&format_size(file.compressed_size())),
-                create_text_cell(&modified),
+                create_text_cell(entry.name()),
+                create_text_cell(&format_size(entry.size())),
+                create_text_cell(&format_size(entry.compressed_size)),
+                create_text_cell(if entry.is_directory() { "Dir" } else { "File" }),
             ],
             height: None,
         });

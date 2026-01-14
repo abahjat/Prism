@@ -163,6 +163,7 @@ impl Parser for HtmlParser {
         };
 
         let text_block = TextBlock {
+            vertical_alignment: None,
             runs: vec![text_run],
             paragraph_style: None,
             bounds: Rect::default(),

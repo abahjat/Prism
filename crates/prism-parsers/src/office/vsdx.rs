@@ -144,6 +144,7 @@ impl Parser for VsdxParser {
                     runs: vec![text_run],
                     paragraph_style: None,
                     bounds: Rect::new(50.0, 50.0, 700.0, 900.0),
+                    vertical_alignment: None,
                     style: ShapeStyle::default(),
                     rotation: 0.0,
                 };
@@ -183,6 +184,7 @@ impl Parser for VsdxParser {
                 runs: vec![text_run],
                 paragraph_style: None,
                 bounds: Rect::new(50.0, 50.0, 600.0, 300.0),
+                vertical_alignment: None,
                 style: ShapeStyle::default(),
                 rotation: 0.0,
             };

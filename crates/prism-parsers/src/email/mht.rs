@@ -111,6 +111,7 @@ impl Parser for MhtParser {
             runs: vec![text_run],
             bounds: Rect::default(),
             paragraph_style: None,
+            vertical_alignment: None,
             style: prism_core::document::ShapeStyle::default(),
             rotation: 0.0,
         };

@@ -448,6 +448,7 @@ body {{ font-family: system-ui, sans-serif; padding: 20px; background: #1a1a2e; 
         };
 
         let text_block = TextBlock {
+            vertical_alignment: None,
             runs: vec![text_run],
             paragraph_style: None,
             bounds: Rect::default(),

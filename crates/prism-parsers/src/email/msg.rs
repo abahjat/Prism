@@ -372,6 +372,7 @@ impl Parser for MsgParser {
             bounds: Rect::default(),
             runs: vec![text_run],
             paragraph_style: None,
+            vertical_alignment: None,
             style: ShapeStyle::default(),
             rotation: 0.0,
         };

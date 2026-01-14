@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-//! GZIP archive parser
+//! Bzip2 archive parser
 
 use bytes::Bytes;
-use flate2::read::GzDecoder;
+use bzip2::read::BzDecoder;
 use prism_core::{
     document::{
         ContentBlock, Dimensions, Document, Page, PageMetadata, Rect, ShapeStyle, TableBlock,
@@ -15,21 +15,21 @@ use prism_core::{
 use std::io::Read;
 use tracing::debug;
 
-/// Parse a `GZIP` archive
+/// Parse a `Bzip2` archive
 ///
 /// # Errors
 ///
 /// Returns an error if decompression fails or the inner content is invalid.
 pub fn parse(context: ParseContext, data: &Bytes) -> Result<Document> {
-    let mut decoder = GzDecoder::new(&data[..]);
+    let mut decoder = BzDecoder::new(&data[..]);
     let mut decompressed = Vec::new();
     decoder
         .read_to_end(&mut decompressed)
-        .map_err(|e| Error::ParseError(format!("Gzip decompression failed: {e}")))?;
+        .map_err(|e| Error::ParseError(format!("Bzip2 decompression failed: {e}")))?;
 
     // Check if inner content is a TAR archive
     if decompressed.len() > 512 && is_tar(&decompressed) {
-        debug!("GZIP contains a TAR archive, delegating to tar::parse");
+        debug!("Bzip2 contains a TAR archive, delegating to tar::parse");
         return crate::archive::tar::parse(context, Bytes::from(decompressed));
     }
 
@@ -79,7 +79,7 @@ pub fn parse(context: ParseContext, data: &Bytes) -> Result<Document> {
     if let Some(filename) = context.filename {
         metadata.title = Some(filename);
     }
-    metadata.add_custom("format", "GZIP");
+    metadata.add_custom("format", "Bzip2");
     metadata.add_custom(
         "decompressed_size",
         i64::try_from(decompressed.len()).unwrap_or(0),
@@ -94,6 +94,9 @@ pub fn parse(context: ParseContext, data: &Bytes) -> Result<Document> {
 fn is_tar(data: &[u8]) -> bool {
     // Check USTAR magic at offset 257 (5 bytes of "ustar" followed by NUL or space)
     // "ustar\0" or "ustar "
+    if data.len() < 263 {
+        return false;
+    }
     let magic = &data[257..263]; // 6 bytes
     magic == b"ustar\0" || magic == b"ustar "
 }

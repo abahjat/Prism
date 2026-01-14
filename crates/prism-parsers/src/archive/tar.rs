@@ -96,6 +96,7 @@ fn create_header_cell(text: &str) -> TableCell {
         bounds: Rect::default(),
         runs: vec![run],
         paragraph_style: None,
+        vertical_alignment: None,
         style: prism_core::document::ShapeStyle::default(),
         rotation: 0.0,
     };
@@ -116,6 +117,7 @@ fn create_text_cell(text: &str) -> TableCell {
         bounds: Rect::default(),
         runs: vec![run],
         paragraph_style: None,
+        vertical_alignment: None,
         style: prism_core::document::ShapeStyle::default(),
         rotation: 0.0,
     };

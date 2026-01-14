@@ -319,6 +319,7 @@ impl Parser for EpubParser {
                 };
 
                 let text_block = TextBlock {
+                    vertical_alignment: None,
                     runs: vec![text_run],
                     bounds: Rect::default(),
                     paragraph_style: None,

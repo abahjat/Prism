@@ -322,6 +322,9 @@ pub struct ShapeStyle {
     /// Fill color (hex or named, or CSS gradient)
     pub fill_color: Option<String>,
 
+    /// Fill image resource ID
+    pub fill_image: Option<String>,
+
     /// Stroke/Border color
     pub stroke_color: Option<String>,
 
@@ -336,6 +339,15 @@ pub struct ShapeStyle {
 
     /// Z-Index stack order
     pub z_index: Option<i32>,
+
+    /// Border radius (e.g. "50%", "10px")
+    pub border_radius: Option<String>,
+
+    /// Default font color for text within this shape
+    pub font_color: Option<String>,
+
+    /// Default font size in points for text within this shape
+    pub font_size: Option<f64>,
 }
 
 /// A block of text content
@@ -349,6 +361,9 @@ pub struct TextBlock {
 
     /// Paragraph style reference
     pub paragraph_style: Option<String>,
+
+    /// Vertical alignment of text within the block
+    pub vertical_alignment: Option<VerticalAlignment>,
 
     /// Visual style of the text box container
     #[serde(default)]
@@ -367,6 +382,7 @@ impl TextBlock {
             bounds,
             runs: Vec::new(),
             paragraph_style: None,
+            vertical_alignment: None,
             style: ShapeStyle::default(),
             rotation: 0.0,
         }
@@ -851,8 +867,24 @@ pub enum TextAlignment {
     Center,
     /// Align text to the right
     Right,
-    /// Justify text to both edges
+    /// Justified alignment
     Justify,
+}
+
+/// Vertical text alignment within a container
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum VerticalAlignment {
+    /// Top alignment
+    Top,
+    /// Center/Middle alignment
+    Center,
+    /// Bottom alignment
+    Bottom,
+    /// Justified alignment (spread)
+    Justify,
+    /// Distributed alignment
+    Distributed,
 }
 
 /// Store for document resources (fonts, images, etc.)

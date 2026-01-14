@@ -87,6 +87,7 @@ impl Parser for SvgParser {
         };
 
         let text_block = TextBlock {
+            vertical_alignment: None,
             runs: vec![text_run],
             paragraph_style: None,
             bounds: Rect::default(),
@@ -233,6 +234,7 @@ impl Parser for SvgzParser {
         };
 
         let text_block = TextBlock {
+            vertical_alignment: None,
             runs: vec![text_run],
             paragraph_style: None,
             bounds: Rect::default(),
