@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>netstandard2.0;net8.0</TargetFrameworks>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <LangVersion>10.0</LangVersion>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <PackageId>Prism.Native</PackageId>
+    <Version>0.1.0</Version>
+    <Authors>Prism Contributors</Authors>
+    <Description>Native bindings for Prism, a high-performance content analysis library.</Description>
+    <PackageTags>prism;content-analysis;native</PackageTags>
+    <RepositoryUrl>https://github.com/abahjat/Prism</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    
+    <!-- SourceLink and Symbols -->
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <Deterministic>true</Deterministic>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Include native binaries in the package runtimes folder structure -->
+    <!-- The pack script will populate the 'runtimes' folder in the project directory before packing -->
+    <None Include="runtimes\**" Pack="true" PackagePath="runtimes" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Explicitly include the license file if it exists in the root -->
+    <None Include="..\..\..\LICENSE" Pack="true" PackagePath="" Condition="Exists('..\..\..\LICENSE')" />
+  </ItemGroup>
+
+</Project>
