@@ -8,13 +8,13 @@
 mod config;
 mod convert;
 
-use axum::http::{header, HeaderValue, Method};
+use axum::http::{HeaderValue, Method, header};
 use axum::{
+    Router,
     extract::{DefaultBodyLimit, Json},
     http::StatusCode,
     response::{IntoResponse, Response},
     routing::{get, post},
-    Router,
 };
 use prism_parsers::ParserRegistry;
 use prism_render::html::HtmlRenderer;
@@ -23,7 +23,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use tower_http::cors::{AllowOrigin, CorsLayer};
 use tower_http::services::ServeDir;
-use tracing::{info, Level};
+use tracing::{Level, info};
 
 use config::ServerConfig;
 

@@ -5,8 +5,8 @@
 
 use async_trait::async_trait;
 use bytes::Bytes;
-use ical::parser::ical::component::IcalCalendar;
 use ical::IcalParser;
+use ical::parser::ical::component::IcalCalendar;
 use prism_core::{
     document::{
         ContentBlock, Dimensions, Document, Page, PageMetadata, Rect, ShapeStyle, TextBlock,

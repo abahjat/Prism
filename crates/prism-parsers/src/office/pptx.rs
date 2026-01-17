@@ -1,4 +1,4 @@
-﻿// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-only
 //! `PPTX` (`Microsoft PowerPoint`) parser
 //!
 //! Parses `PPTX` files into the Unified Document Model.
@@ -12,8 +12,8 @@ use prism_core::{
     metadata::Metadata,
     parser::{ParseContext, Parser, ParserFeature, ParserMetadata},
 };
-use quick_xml::events::Event;
 use quick_xml::Reader;
+use quick_xml::events::Event;
 use std::collections::HashMap;
 use std::io::{Cursor, Read};
 use tracing::{debug, info};
@@ -128,7 +128,7 @@ impl PptxParser {
                 Err(e) => {
                     return Err(Error::ParseError(format!(
                         "XML error in presentation.xml: {e}"
-                    )))
+                    )));
                 }
                 _ => {}
             }
@@ -450,7 +450,9 @@ impl Parser for PptxParser {
                 // Relationships map ID -> Target (e.g., "rId2" -> "slides/slide1.xml")
                 // We need to iterate over all parsing slideIds later
                 for rid in rels.map.values() {
-                    if rid.rel_type == "http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" {
+                    if rid.rel_type
+                        == "http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide"
+                    {
                         rels_map.insert(rid.id.clone(), rid.target.clone());
                     }
                 }
@@ -756,7 +758,7 @@ impl Parser for PptxParser {
                             if let Some(master_ph) = placeholder_map.get(&idx) {
                                 // Merge properties: Layout inherits from Master if Layout lacks props
                                 if let ContentBlock::Text(ref mut l_text) = layout_ph {
-                                    if let ContentBlock::Text(ref m_text) = master_ph {
+                                    if let ContentBlock::Text(m_text) = master_ph {
                                         // Inherit styling if missing in layout
                                         if l_text.style.fill_color.is_none() {
                                             l_text
@@ -794,32 +796,28 @@ impl Parser for PptxParser {
                     // This ensures layout placeholders also get the font_color
                     if let Some(ref mts) = master_text_styles_for_slide {
                         if let Some(ref title_color) = mts.title_color {
-                            if let Some(ContentBlock::Text(ref mut t)) = placeholder_map.get_mut(&0)
-                            {
+                            if let Some(ContentBlock::Text(t)) = placeholder_map.get_mut(&0) {
                                 if t.style.font_color.is_none() {
                                     t.style.font_color = Some(title_color.clone());
                                 }
                             }
                         }
                         if let Some(title_size) = mts.title_font_size {
-                            if let Some(ContentBlock::Text(ref mut t)) = placeholder_map.get_mut(&0)
-                            {
+                            if let Some(ContentBlock::Text(t)) = placeholder_map.get_mut(&0) {
                                 if t.style.font_size.is_none() {
                                     t.style.font_size = Some(title_size);
                                 }
                             }
                         }
                         if let Some(ref body_color) = mts.body_color {
-                            if let Some(ContentBlock::Text(ref mut t)) = placeholder_map.get_mut(&1)
-                            {
+                            if let Some(ContentBlock::Text(t)) = placeholder_map.get_mut(&1) {
                                 if t.style.font_color.is_none() {
                                     t.style.font_color = Some(body_color.clone());
                                 }
                             }
                         }
                         if let Some(body_size) = mts.body_font_size {
-                            if let Some(ContentBlock::Text(ref mut t)) = placeholder_map.get_mut(&1)
-                            {
+                            if let Some(ContentBlock::Text(t)) = placeholder_map.get_mut(&1) {
                                 if t.style.font_size.is_none() {
                                     t.style.font_size = Some(body_size);
                                 }

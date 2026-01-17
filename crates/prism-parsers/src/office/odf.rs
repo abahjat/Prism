@@ -16,8 +16,8 @@ use prism_core::{
     metadata::Metadata,
     parser::{ParseContext, Parser, ParserFeature, ParserMetadata},
 };
-use quick_xml::events::Event;
 use quick_xml::Reader;
+use quick_xml::events::Event;
 use std::collections::HashMap;
 use std::io::{Cursor, Read};
 use tracing::{debug, warn};

@@ -2,7 +2,7 @@
 //! HTML5 renderer for Prism documents.
 
 use async_trait::async_trait;
-use base64::{engine::general_purpose, Engine as _};
+use base64::{Engine as _, engine::general_purpose};
 use bytes::Bytes;
 use prism_core::document::{ContentBlock, Document};
 use prism_core::error::Result;

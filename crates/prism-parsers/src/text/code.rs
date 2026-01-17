@@ -3,7 +3,6 @@
 
 use async_trait::async_trait;
 use bytes::Bytes;
-use once_cell::sync::Lazy;
 use prism_core::{
     document::{ContentBlock, Dimensions, Document, Page, Rect, TextBlock, TextRun, TextStyle},
     error::{Error, Result},
@@ -16,8 +15,9 @@ use syntect::highlighting::ThemeSet;
 use syntect::parsing::SyntaxSet;
 
 /// Shared `SyntaxSet` and `ThemeSet` to avoid reloading
-static SYNTAX_SET: Lazy<SyntaxSet> = Lazy::new(SyntaxSet::load_defaults_newlines);
-static THEME_SET: Lazy<ThemeSet> = Lazy::new(ThemeSet::load_defaults);
+static SYNTAX_SET: std::sync::LazyLock<SyntaxSet> =
+    std::sync::LazyLock::new(SyntaxSet::load_defaults_newlines);
+static THEME_SET: std::sync::LazyLock<ThemeSet> = std::sync::LazyLock::new(ThemeSet::load_defaults);
 
 /// Parser for source code files with syntax highlighting
 pub struct CodeParser {

@@ -116,7 +116,7 @@ impl Parser for EpubParser {
                 Err(e) => {
                     return Err(Error::ParseError(format!(
                         "XML error in container.xml: {e}"
-                    )))
+                    )));
                 }
                 _ => (),
             }
@@ -272,7 +272,7 @@ impl Parser for EpubParser {
                             }
 
                             if found {
-                                use base64::{engine::general_purpose, Engine as _};
+                                use base64::{Engine as _, engine::general_purpose};
                                 let b64 = general_purpose::STANDARD.encode(&img_data);
                                 let path = std::path::Path::new(img_path);
                                 let ext = path

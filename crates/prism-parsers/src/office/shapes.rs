@@ -8,8 +8,8 @@ use prism_core::document::{
     ContentBlock, Dimensions, ImageBlock, Rect, ShapeStyle, TextBlock, TextRun, TextStyle,
     VerticalAlignment,
 };
-use quick_xml::events::Event;
 use quick_xml::Reader;
+use quick_xml::events::Event;
 use std::collections::HashMap;
 use std::io::BufRead;
 
@@ -1202,7 +1202,7 @@ pub fn parse_text_body<R: BufRead>(
                                 Ok(Event::End(inner))
                                     if inner.name().as_ref() == b"a:highlight" =>
                                 {
-                                    break
+                                    break;
                                 }
                                 Ok(Event::Eof) => break,
                                 _ => {}
@@ -1669,8 +1669,8 @@ pub fn parse_group_shape<S: std::hash::BuildHasher>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use quick_xml::events::Event;
     use quick_xml::Reader;
+    use quick_xml::events::Event;
 
     #[test]
     fn parse_shape_geometry() {

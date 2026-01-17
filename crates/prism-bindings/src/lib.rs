@@ -10,7 +10,7 @@ use std::slice;
 use tokio::runtime::Builder;
 
 // Initialize logging (optional)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn prism_init() {
     let _ = tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
@@ -22,7 +22,7 @@ pub extern "C" fn prism_init() {
 /// # Safety
 ///
 /// The `data` pointer must point to a valid memory region of size `len`.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn prism_detect_format(data: *const u8, len: size_t) -> *mut c_char {
     let result = std::panic::catch_unwind(|| {
         let slice = unsafe { slice::from_raw_parts(data, len) };
@@ -48,7 +48,7 @@ pub unsafe extern "C" fn prism_detect_format(data: *const u8, len: size_t) -> *m
 /// # Safety
 ///
 /// The pointer `s` must have been returned by a function in this library.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn prism_free_string(s: *mut c_char) {
     let _ = std::panic::catch_unwind(|| {
         if s.is_null() {
@@ -65,7 +65,7 @@ pub unsafe extern "C" fn prism_free_string(s: *mut c_char) {
 /// # Safety
 ///
 /// The `data` pointer must point to a valid memory region of size `len`.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn prism_preview_file(data: *const u8, len: size_t) -> *mut c_char {
     let result = std::panic::catch_unwind(|| {
         let slice = unsafe { slice::from_raw_parts(data, len) };
@@ -141,7 +141,7 @@ fn make_hex_dump(slice: &[u8]) -> *mut c_char {
 /// # Safety
 ///
 /// The `data` pointer must point to a valid memory region of size `len`.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn prism_convert_to_html(data: *const u8, len: size_t) -> *mut c_char {
     let result = std::panic::catch_unwind(|| {
         let slice = unsafe { slice::from_raw_parts(data, len) };

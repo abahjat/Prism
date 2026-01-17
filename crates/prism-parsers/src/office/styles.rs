@@ -7,8 +7,8 @@ use crate::office::theme::Theme;
 use crate::office::utils;
 use prism_core::document::{ParagraphStyle, TextAlignment, TextStyle};
 use prism_core::error::{Error, Result};
-use quick_xml::events::Event;
 use quick_xml::Reader;
+use quick_xml::events::Event;
 use std::collections::HashMap;
 
 /// A Word style definition

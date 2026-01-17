@@ -314,7 +314,10 @@ impl Parser for XpsParser {
                                     }
 
                                     if img_data.is_empty() {
-                                        warn!("Could not find image in ZIP for any path variant of: {}", img_src);
+                                        warn!(
+                                            "Could not find image in ZIP for any path variant of: {}",
+                                            img_src
+                                        );
                                     } else {
                                         let path = std::path::Path::new(&found_path);
                                         let ext = path
@@ -324,55 +327,57 @@ impl Parser for XpsParser {
                                             .to_lowercase();
 
                                         // Convert non-web-compatible formats to PNG
-                                        let (final_data, mime) =
-                                            if ext == "tif" || ext == "tiff" || ext == "bmp" {
-                                                // Convert to PNG using image crate
-                                                match image::load_from_memory(&img_data) {
-                                                    Ok(img) => {
-                                                        let mut png_data = Vec::new();
-                                                        let mut cursor =
-                                                            std::io::Cursor::new(&mut png_data);
-                                                        if img
-                                                            .write_to(
-                                                                &mut cursor,
-                                                                image::ImageFormat::Png,
-                                                            )
-                                                            .is_ok()
-                                                        {
-                                                            debug!(
+                                        let (final_data, mime) = if ext == "tif"
+                                            || ext == "tiff"
+                                            || ext == "bmp"
+                                        {
+                                            // Convert to PNG using image crate
+                                            match image::load_from_memory(&img_data) {
+                                                Ok(img) => {
+                                                    let mut png_data = Vec::new();
+                                                    let mut cursor =
+                                                        std::io::Cursor::new(&mut png_data);
+                                                    if img
+                                                        .write_to(
+                                                            &mut cursor,
+                                                            image::ImageFormat::Png,
+                                                        )
+                                                        .is_ok()
+                                                    {
+                                                        debug!(
                                                             "Converted {} to PNG ({} -> {} bytes)",
                                                             ext,
                                                             img_data.len(),
                                                             png_data.len()
                                                         );
-                                                            (png_data, "image/png")
-                                                        } else {
-                                                            warn!(
+                                                        (png_data, "image/png")
+                                                    } else {
+                                                        warn!(
                                                             "Failed to encode {} as PNG, skipping",
                                                             ext
-                                                        );
-                                                            continue;
-                                                        }
-                                                    }
-                                                    Err(e) => {
-                                                        warn!(
-                                                            "Failed to load {} image: {}, skipping",
-                                                            ext, e
                                                         );
                                                         continue;
                                                     }
                                                 }
-                                            } else {
-                                                // Use original data for web-compatible formats
-                                                let m = match ext.as_str() {
-                                                    "jpg" | "jpeg" => "image/jpeg",
-                                                    "gif" => "image/gif",
-                                                    "webp" => "image/webp",
-                                                    "svg" => "image/svg+xml",
-                                                    _ => "image/png",
-                                                };
-                                                (img_data.clone(), m)
+                                                Err(e) => {
+                                                    warn!(
+                                                        "Failed to load {} image: {}, skipping",
+                                                        ext, e
+                                                    );
+                                                    continue;
+                                                }
+                                            }
+                                        } else {
+                                            // Use original data for web-compatible formats
+                                            let m = match ext.as_str() {
+                                                "jpg" | "jpeg" => "image/jpeg",
+                                                "gif" => "image/gif",
+                                                "webp" => "image/webp",
+                                                "svg" => "image/svg+xml",
+                                                _ => "image/png",
                                             };
+                                            (img_data.clone(), m)
+                                        };
 
                                         let b64 = <base64::engine::general_purpose::GeneralPurpose as base64::Engine>::encode(&base64::engine::general_purpose::STANDARD, &final_data);
 
