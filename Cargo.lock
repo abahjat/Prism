@@ -2221,7 +2221,7 @@ dependencies = [
 
 [[package]]
 name = "prism-cli"
-version = "0.1.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "assert_fs",
@@ -2240,7 +2240,7 @@ dependencies = [
 
 [[package]]
 name = "prism-core"
-version = "0.1.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2261,7 +2261,7 @@ dependencies = [
 
 [[package]]
 name = "prism-parsers"
-version = "0.1.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2303,7 +2303,7 @@ dependencies = [
 
 [[package]]
 name = "prism-render"
-version = "0.1.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2321,7 +2321,7 @@ dependencies = [
 
 [[package]]
 name = "prism-sandbox"
-version = "0.1.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "prism-core",
@@ -2332,7 +2332,7 @@ dependencies = [
 
 [[package]]
 name = "prism-server"
-version = "0.1.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "async-trait",
