@@ -153,7 +153,9 @@ fn render_to_svg(drawing: &dxf::Drawing) -> String {
     }
 
     if !has_ents {
-        return String::from("<svg viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'><text x='10' y='50' fill='#94a3b8' font-family='system-ui'>Empty Drawing</text></svg>");
+        return String::from(
+            "<svg viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'><text x='10' y='50' fill='#94a3b8' font-family='system-ui'>Empty Drawing</text></svg>",
+        );
     }
 
     // Add padding (5%)

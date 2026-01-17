@@ -6,9 +6,9 @@
 
 use async_trait::async_trait;
 use bytes::Bytes;
+use onenote_parser::Parser as OneNoteFileParser;
 use onenote_parser::contents::{Content, OutlineItem};
 use onenote_parser::page::PageContent;
-use onenote_parser::Parser as OneNoteFileParser;
 use prism_core::{
     document::{
         ContentBlock, Dimensions, Document, Page, PageMetadata, Rect, ShapeStyle, TextBlock,

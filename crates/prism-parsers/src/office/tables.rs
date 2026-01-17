@@ -7,8 +7,8 @@ use crate::office::theme::Theme;
 use crate::office::utils;
 use prism_core::document::{ContentBlock, Rect, TableBlock, TableCell, TableRow, TextBlock};
 use prism_core::error::{Error, Result};
-use quick_xml::events::Event;
 use quick_xml::Reader;
+use quick_xml::events::Event;
 use std::io::BufRead;
 
 /// Parse a table from the current position in the XML reader

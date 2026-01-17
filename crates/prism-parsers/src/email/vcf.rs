@@ -5,8 +5,8 @@
 
 use async_trait::async_trait;
 use bytes::Bytes;
-use ical::parser::vcard::component::VcardContact;
 use ical::VcardParser;
+use ical::parser::vcard::component::VcardContact;
 use prism_core::{
     document::{
         ContentBlock, Dimensions, Document, Page, PageMetadata, Rect, ShapeStyle, TextBlock,

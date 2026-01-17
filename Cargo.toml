@@ -13,11 +13,11 @@ members = [
 
 [workspace.package]
 version = "0.5.0"
-edition = "2021"
-authors = ["Prism Team"]
+edition = "2024"
+authors = ["InfoSeek LLC"]
 license = "AGPL-3.0-only"
-repository = "https://github.com/your-org/prism"
-rust-version = "1.75"
+repository = "https://github.com/abahjat/prism"
+rust-version = "1.85"
 
 [workspace.dependencies]
 # Async runtime
@@ -74,6 +74,5 @@ strip = true
 [profile.bench]
 opt-level = 3
 debug = false
-
 
 

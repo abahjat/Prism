@@ -42,7 +42,7 @@ pub mod render;
 // Re-exports for convenience
 pub use document::{ContentBlock, Document, ImageBlock, Page, TableBlock, TextBlock};
 pub use error::{Error, Result};
-pub use format::{detect_format, Format, FormatFamily, FormatSignature};
+pub use format::{Format, FormatFamily, FormatSignature, detect_format};
 pub use metadata::Metadata;
 pub use parser::{ParseContext, ParseOptions, Parser};
 

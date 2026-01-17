@@ -21,7 +21,7 @@ use tracing::{debug, warn};
 use zip::ZipArchive;
 
 use crate::office::excel_styles::ExcelStyles;
-use crate::office::theme::{parse_theme, Theme};
+use crate::office::theme::{Theme, parse_theme};
 
 /// XLSX (Excel) parser
 #[derive(Debug, Clone)]
@@ -184,11 +184,7 @@ impl XlsxParser {
                 break;
             }
         }
-        if col_idx > 0 {
-            col_idx - 1
-        } else {
-            0
-        }
+        if col_idx > 0 { col_idx - 1 } else { 0 }
     }
 
     /// Parse a single sheet XML content
@@ -277,7 +273,7 @@ impl XlsxParser {
                                     Ok(quick_xml::events::Event::End(ce))
                                         if ce.name().as_ref() == b"c" =>
                                     {
-                                        break
+                                        break;
                                     }
                                     _ => {}
                                 }
@@ -344,13 +340,10 @@ impl XlsxParser {
                                     let parse_row = |s: &str| -> Option<usize> {
                                         let digits: String =
                                             s.chars().filter(char::is_ascii_digit).collect();
-                                        digits.parse::<usize>().ok().map(|r| {
-                                            if r > 0 {
-                                                r - 1
-                                            } else {
-                                                0
-                                            }
-                                        })
+                                        digits
+                                            .parse::<usize>()
+                                            .ok()
+                                            .map(|r| if r > 0 { r - 1 } else { 0 })
                                     };
 
                                     if let (Some(r1), Some(r2)) = (parse_row(p1), parse_row(p2)) {

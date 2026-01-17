@@ -14,8 +14,8 @@ use prism_core::{
     metadata::Metadata,
     parser::{ParseContext, Parser, ParserFeature, ParserMetadata},
 };
-use quick_xml::events::Event;
 use quick_xml::Reader;
+use quick_xml::events::Event;
 use std::io::Cursor;
 use tracing::{debug, warn};
 use zip::ZipArchive;
@@ -23,7 +23,7 @@ use zip::ZipArchive;
 use crate::office::relationships::Relationships;
 use crate::office::styles::Styles;
 use crate::office::tables;
-use crate::office::theme::{parse_theme, Theme};
+use crate::office::theme::{Theme, parse_theme};
 use crate::office::utils;
 
 /// DOCX parser

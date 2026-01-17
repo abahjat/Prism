@@ -6,8 +6,8 @@
 use crate::office::shapes;
 use crate::office::theme::Theme;
 use prism_core::document::{ContentBlock, Dimensions, Page, PageMetadata};
-use quick_xml::events::Event;
 use quick_xml::Reader;
+use quick_xml::events::Event;
 
 /// Parser for individual slides in a presentation.
 pub struct SlideParser;

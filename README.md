@@ -54,7 +54,7 @@ Prism is a next-generation document processing SDK built in Rust, designed to vi
 
 ### Prerequisites
 
-- Rust 1.75 or later
+- Rust 1.85 or later (Edition 2024)
 - Cargo (comes with Rust)
 
 ### Building from Source
@@ -167,9 +167,9 @@ Add Prism to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-prism-core = "0.1.0"
-prism-parsers = "0.1.0"
-prism-render = "0.1.0"
+prism-core = "0.5.0"
+prism-parsers = "0.5.0"
+prism-render = "0.5.0"
 ```
 
 Example usage:
@@ -560,7 +560,7 @@ Prism is inspired by and aims to be a modern alternative to:
 
 ## 🌟 Status
 
-**Current Status**: Early Development (v0.1.0)
+**Current Status**: Early Development (v0.5.0)
 
 - ✅ Core architecture complete
 - ✅ Format detection working

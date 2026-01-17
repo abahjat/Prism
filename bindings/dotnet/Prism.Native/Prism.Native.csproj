@@ -8,7 +8,7 @@
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
     <PackageId>Prism.Native</PackageId>
     <Version>0.5.0</Version>
-    <Authors>Prism Contributors</Authors>
+    <Authors>InfoSeek LLC</Authors>
     <Description>Native bindings for Prism, a high-performance content analysis library.</Description>
     <PackageTags>prism;content-analysis;native</PackageTags>
     <RepositoryUrl>https://github.com/abahjat/Prism</RepositoryUrl>
@@ -35,6 +35,8 @@
   </ItemGroup>
 
 </Project>
+
+
 
 
 

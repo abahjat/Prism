@@ -5,8 +5,8 @@
 
 use crate::office::utils;
 use prism_core::error::{Error, Result};
-use quick_xml::events::Event;
 use quick_xml::Reader;
+use quick_xml::events::Event;
 use std::collections::HashMap;
 
 /// A relationship to an external or internal resource
@@ -78,7 +78,7 @@ impl Relationships {
                 Err(e) => {
                     return Err(Error::ParseError(format!(
                         "XML error in relationships: {e}"
-                    )))
+                    )));
                 }
                 _ => {}
             }
