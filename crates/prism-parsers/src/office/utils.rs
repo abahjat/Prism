@@ -82,21 +82,40 @@ pub fn index_to_excel_column(mut index: usize) -> String {
     col
 }
 
-/// Helper to get attribute value as string
+/// Helper to get attribute value as string (unescaping XML entities)
 #[must_use]
-pub fn attr_value(value: &[u8]) -> String {
-    String::from_utf8_lossy(value).into_owned()
+pub fn attr_value(value: &str) -> String {
+    quick_xml::escape::unescape(value)
+        .map_or_else(|_| value.to_owned(), std::borrow::Cow::into_owned)
 }
 
 /// Helper to get optional attribute value from event
 #[must_use]
 pub fn attr_value_opt(event: &quick_xml::events::BytesStart<'_>, key: &[u8]) -> Option<String> {
     for attr in event.attributes().flatten() {
-        if attr.key.as_ref() == key {
+        if attr.key.as_ref().as_bytes() == key {
             return Some(attr_value(&attr.value));
         }
     }
     None
+}
+
+/// Resolve a `GeneralRef` event (`&amp;`, `&lt;`, `&#123;`, etc.) into a string
+#[must_use]
+pub fn resolve_general_ref(event: &quick_xml::events::BytesRef<'_>) -> Option<String> {
+    if let Ok(Some(ch)) = event.resolve_char_ref() {
+        return Some(ch.to_string());
+    }
+    quick_xml::escape::resolve_predefined_entity(event.as_ref()).map(str::to_string)
+}
+
+/// Read an OOXML on/off property such as `<w:b/>` or `<w:b w:val="0"/>`.
+///
+/// An element without `w:val` means "on". For `w:u`, the value `none` means off.
+#[must_use]
+pub fn on_off_value(event: &quick_xml::events::BytesStart<'_>) -> bool {
+    attr_value_opt(event, b"w:val")
+        .is_none_or(|v| !matches!(v.as_str(), "0" | "false" | "off" | "none"))
 }
 
 /// Resolve color from Word/Excel attributes, handling Theme references.

@@ -41,10 +41,9 @@ impl Theme {
 #[allow(clippy::too_many_lines)]
 pub fn parse_theme(content: &[u8]) -> Result<Theme> {
     let mut reader = Reader::from_reader(content);
-    reader.trim_text(true);
+    reader.config_mut().trim_text(true);
 
     let mut theme = Theme::default();
-    let mut buf = Vec::new();
     let mut in_clr_scheme = false;
     let mut in_font_scheme = false;
     let mut in_major_font = false;
@@ -55,37 +54,37 @@ pub fn parse_theme(content: &[u8]) -> Result<Theme> {
     let mut current_clr_tag: Option<String> = None;
 
     loop {
-        match reader.read_event_into(&mut buf) {
+        match reader.read_event() {
             Ok(Event::Start(ref e)) => {
                 let name = e.name();
                 match name.as_ref() {
-                    b"a:theme" => {
+                    "a:theme" => {
                         for attr in e.attributes().flatten() {
-                            if attr.key.as_ref() == b"name" {
+                            if attr.key.as_ref() == "name" {
                                 theme.name = attr_value(&attr.value);
                             }
                         }
                     }
-                    b"a:clrScheme" => {
+                    "a:clrScheme" => {
                         in_clr_scheme = true;
                     }
-                    b"a:fontScheme" => {
+                    "a:fontScheme" => {
                         in_font_scheme = true;
                     }
-                    b"a:majorFont" => {
+                    "a:majorFont" => {
                         if in_font_scheme {
                             in_major_font = true;
                         }
                     }
-                    b"a:minorFont" => {
+                    "a:minorFont" => {
                         if in_font_scheme {
                             in_minor_font = true;
                         }
                     }
-                    b"a:latin" => {
+                    "a:latin" => {
                         if in_major_font || in_minor_font {
                             for attr in e.attributes().flatten() {
-                                if attr.key.as_ref() == b"typeface" {
+                                if attr.key.as_ref() == "typeface" {
                                     let typeface = attr_value(&attr.value);
                                     if in_major_font {
                                         theme.major_font = Some(typeface);
@@ -97,16 +96,14 @@ pub fn parse_theme(content: &[u8]) -> Result<Theme> {
                             }
                         }
                     }
-                    _ => {
+                    tag_name => {
                         if in_clr_scheme {
-                            let tag_name = String::from_utf8_lossy(name.as_ref()).to_string();
-
                             // Check for color definitions inside a color slot
                             if let Some(ref slot) = current_clr_tag {
                                 process_color_element(e, slot, &mut theme);
                             } else if tag_name.starts_with("a:") {
                                 // Assume this is a color slot like a:dk1, a:lt1, a:accent1
-                                current_clr_tag = Some(tag_name);
+                                current_clr_tag = Some(tag_name.to_string());
                             }
                         }
                     }
@@ -115,10 +112,10 @@ pub fn parse_theme(content: &[u8]) -> Result<Theme> {
             Ok(Event::Empty(ref e)) => {
                 let name = e.name();
                 match name.as_ref() {
-                    b"a:latin" => {
+                    "a:latin" => {
                         if in_major_font || in_minor_font {
                             for attr in e.attributes().flatten() {
-                                if attr.key.as_ref() == b"typeface" {
+                                if attr.key.as_ref() == "typeface" {
                                     let typeface = attr_value(&attr.value);
                                     if in_major_font {
                                         theme.major_font = Some(typeface);
@@ -142,15 +139,14 @@ pub fn parse_theme(content: &[u8]) -> Result<Theme> {
             Ok(Event::End(ref e)) => {
                 let name = e.name();
                 match name.as_ref() {
-                    b"a:clrScheme" => in_clr_scheme = false,
-                    b"a:fontScheme" => in_font_scheme = false,
-                    b"a:majorFont" => in_major_font = false,
-                    b"a:minorFont" => in_minor_font = false,
-                    _ => {
+                    "a:clrScheme" => in_clr_scheme = false,
+                    "a:fontScheme" => in_font_scheme = false,
+                    "a:majorFont" => in_major_font = false,
+                    "a:minorFont" => in_minor_font = false,
+                    tag_name => {
                         if in_clr_scheme {
-                            let tag_name = String::from_utf8_lossy(name.as_ref()).to_string();
                             if let Some(ref current) = current_clr_tag {
-                                if *current == tag_name {
+                                if current == tag_name {
                                     current_clr_tag = None;
                                 }
                             }
@@ -162,7 +158,6 @@ pub fn parse_theme(content: &[u8]) -> Result<Theme> {
             Err(e) => return Err(Error::ParseError(format!("XML error: {e:?}"))),
             _ => (),
         }
-        buf.clear();
     }
 
     Ok(theme)
@@ -171,16 +166,16 @@ pub fn parse_theme(content: &[u8]) -> Result<Theme> {
 /// Helper to process color elements (srgbClr, sysClr) within a color slot
 fn process_color_element(e: &quick_xml::events::BytesStart<'_>, slot: &str, theme: &mut Theme) {
     let name = e.name();
-    let tag_name = String::from_utf8_lossy(name.as_ref()).to_string();
+    let tag_name = name.as_ref();
 
     if tag_name == "a:srgbClr" || tag_name == "a:sysClr" {
         let mut val: Option<String> = None;
         let mut last_clr: Option<String> = None;
 
         for attr in e.attributes().flatten() {
-            if attr.key.as_ref() == b"val" {
+            if attr.key.as_ref() == "val" {
                 val = Some(attr_value(&attr.value));
-            } else if attr.key.as_ref() == b"lastClr" {
+            } else if attr.key.as_ref() == "lastClr" {
                 last_clr = Some(attr_value(&attr.value));
             }
         }

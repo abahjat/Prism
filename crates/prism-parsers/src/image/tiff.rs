@@ -436,6 +436,9 @@ mod tests {
 
         assert_eq!(metadata.name, "TIFF Parser");
         assert!(!metadata.requires_sandbox);
-        assert!(!metadata.features.is_empty());
+        assert_ne!(
+            metadata.features,
+            [] as [prism_core::parser::ParserFeature; 0]
+        );
     }
 }

@@ -38,7 +38,7 @@ pub fn parse_table<R: BufRead>(reader: &mut Reader<R>) -> Result<TableBlock> {
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(e)) => {
                 let name = e.name();
-                match name.as_ref() {
+                match name.as_ref().as_bytes() {
                     b"w:tbl" => depth += 1, // Nested table
                     b"w:tr" => {
                         current_row = Some(TableRow {
@@ -59,7 +59,7 @@ pub fn parse_table<R: BufRead>(reader: &mut Reader<R>) -> Result<TableBlock> {
                     }
                     b"w:gridSpan" => {
                         for attr in e.attributes().flatten() {
-                            if attr.key.as_ref() == b"w:val" {
+                            if attr.key.as_ref().as_bytes() == b"w:val" {
                                 if let Ok(val) = utils::attr_value(&attr.value).parse::<usize>() {
                                     grid_span = val;
                                 }
@@ -68,7 +68,7 @@ pub fn parse_table<R: BufRead>(reader: &mut Reader<R>) -> Result<TableBlock> {
                     }
                     b"w:shd" => {
                         for attr in e.attributes().flatten() {
-                            if attr.key.as_ref() == b"w:fill" {
+                            if attr.key.as_ref().as_bytes() == b"w:fill" {
                                 let val = utils::attr_value(&attr.value);
                                 if val != "auto" {
                                     if let Some(cell) = &mut current_cell {
@@ -81,14 +81,16 @@ pub fn parse_table<R: BufRead>(reader: &mut Reader<R>) -> Result<TableBlock> {
                     // TODO: Handle vMerge for row spans
                     b"w:t" => {
                         // Capture text content
-                        // Capture text content
                         let mut cell_text = String::new();
                         let mut depth = 1;
                         loop {
                             match reader.read_event_into(&mut buf) {
                                 Ok(Event::Text(e)) => {
-                                    if let Ok(text) = e.unescape() {
-                                        cell_text.push_str(&text);
+                                    cell_text.push_str(e.as_ref());
+                                }
+                                Ok(Event::GeneralRef(e)) => {
+                                    if let Some(resolved) = utils::resolve_general_ref(&e) {
+                                        cell_text.push_str(&resolved);
                                     }
                                 }
                                 Ok(Event::Start(_)) => depth += 1,
@@ -115,7 +117,7 @@ pub fn parse_table<R: BufRead>(reader: &mut Reader<R>) -> Result<TableBlock> {
             }
             Ok(Event::End(e)) => {
                 let name = e.name();
-                match name.as_ref() {
+                match name.as_ref().as_bytes() {
                     b"w:tbl" => {
                         depth -= 1;
                         if depth == 0 {
@@ -177,7 +179,7 @@ pub fn parse_drawingml_table<R: BufRead>(
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(e)) => {
                 let name = e.name();
-                match name.as_ref() {
+                match name.as_ref().as_bytes() {
                     b"a:tbl" => depth += 1,
                     b"a:tr" => {
                         // TODO: Parse h (height) attribute
@@ -219,7 +221,7 @@ pub fn parse_drawingml_table<R: BufRead>(
             }
             Ok(Event::End(e)) => {
                 let name = e.name();
-                match name.as_ref() {
+                match name.as_ref().as_bytes() {
                     b"a:tbl" => {
                         depth -= 1;
                         if depth == 0 {

@@ -1,0 +1,35 @@
+[package]
+name = "prism-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+license = "AGPL-3.0-only"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+bytes = "1.5"
+tokio = { version = "1.35", features = ["rt"] }
+prism-core = { path = "../crates/prism-core" }
+prism-parsers = { path = "../crates/prism-parsers" }
+prism-render = { path = "../crates/prism-render" }
+
+[[bin]]
+name = "parse_any"
+path = "fuzz_targets/parse_any.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "sanitize_html"
+path = "fuzz_targets/sanitize_html.rs"
+test = false
+doc = false
+bench = false
+
+# Not part of the main workspace: built with cargo-fuzz on nightly
+[workspace]
+members = ["."]

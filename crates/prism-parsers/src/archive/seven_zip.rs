@@ -15,17 +15,11 @@ use std::io::Cursor;
 /// # Errors
 ///
 /// Returns an error if the 7z archive is malformed or cannot be read.
+#[allow(clippy::needless_pass_by_value)]
 pub fn parse(_context: ParseContext, data: Bytes) -> Result<Document> {
-    let reader = Cursor::new(data);
-
-    // sevenz_rust::SevenZReader::new takes a reader + size + password option
-    // Wait, check standard API usage.
-    // If exact API is unknown, I'll try standard approaches and rely on compiler.
-    // sevenz_rust::SevenZReader::new(reader, file_len, password)
-
-    let len = reader.get_ref().len() as u64;
-    let password = sevenz_rust::Password::empty();
-    let seven_z = sevenz_rust::SevenZReader::new(reader, len, password)
+    let mut reader = Cursor::new(data);
+    let password = sevenz_rust2::Password::empty();
+    let archive = sevenz_rust2::Archive::read(&mut reader, &password)
         .map_err(|e| Error::ParseError(e.to_string()))?;
 
     let mut rows = Vec::new();
@@ -41,9 +35,7 @@ pub fn parse(_context: ParseContext, data: Bytes) -> Result<Document> {
         height: None,
     });
 
-    let archive_entries = &seven_z.archive().files;
-
-    for entry in archive_entries {
+    for entry in &archive.files {
         rows.push(TableRow {
             cells: vec![
                 create_text_cell(entry.name()),
@@ -61,7 +53,7 @@ pub fn parse(_context: ParseContext, data: Bytes) -> Result<Document> {
     #[allow(clippy::cast_precision_loss)]
     let table_height = rows.len() as f64 * 20.0;
     let table = TableBlock {
-        bounds: Rect::new(50.0, 50.0, 500.0, table_height), // Approximate
+        bounds: Rect::new(50.0, 50.0, 500.0, table_height),
         rows,
         column_count: 4,
         column_widths: Vec::new(),

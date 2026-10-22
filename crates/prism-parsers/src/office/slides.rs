@@ -24,13 +24,13 @@ impl SlideParser {
         placeholders: Option<&std::collections::HashMap<u32, ContentBlock, S>>,
     ) -> Page {
         let mut reader = Reader::from_str(xml);
-        reader.trim_text(true);
+        reader.config_mut().trim_text(true);
         let mut buf = Vec::new();
         let mut content = Vec::new();
 
         loop {
             match reader.read_event_into(&mut buf) {
-                Ok(Event::Start(e)) => match e.name().as_ref() {
+                Ok(Event::Start(e)) => match e.name().as_ref().as_bytes() {
                     b"p:bg" => {
                         if let Some(mut block) = shapes::parse_background(
                             &mut reader,

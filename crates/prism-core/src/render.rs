@@ -63,6 +63,8 @@ pub struct RenderContext {
 /// Trait for document renderers
 ///
 /// Implement this trait to add support for rendering to a new output format.
+// async_trait wraps the #[must_use] future in a Box, which this lint flags
+#[allow(clippy::double_must_use)]
 #[async_trait]
 pub trait Renderer: Send + Sync {
     /// Get the output format this renderer produces

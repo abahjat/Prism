@@ -19,7 +19,7 @@ use prism_core::{
 use quick_xml::Reader;
 use quick_xml::events::Event;
 use std::collections::HashMap;
-use std::io::{Cursor, Read};
+use std::io::Cursor;
 use tracing::{debug, warn};
 use zip::ZipArchive;
 
@@ -229,7 +229,9 @@ fn is_odf_zip(data: &[u8], expected_mimetype: &str) -> bool {
     if let Ok(mut archive) = ZipArchive::new(cursor) {
         if let Ok(mut mimetype_file) = archive.by_name("mimetype") {
             let mut mimetype = String::new();
-            if mimetype_file.read_to_string(&mut mimetype).is_ok() {
+            if crate::limits::read_to_string_with_limit(&mut mimetype_file, &mut mimetype, 1024)
+                .is_ok()
+            {
                 return mimetype.trim() == expected_mimetype;
             }
         }
@@ -269,8 +271,9 @@ fn parse_odf_document(data: Bytes, format_name: &str, context: ParseContext) -> 
     let mut archive =
         ZipArchive::new(cursor).map_err(|e| Error::ParseError(format!("Invalid ZIP: {e}")))?;
 
+    let limit = crate::limits::max_decompressed_bytes(&context);
     // Read content.xml
-    let content_xml = read_zip_file(&mut archive, "content.xml")?;
+    let content_xml = read_zip_file(&mut archive, "content.xml", limit)?;
 
     // Phase 1: Parse Styles
     // In a real implementation, we would extract office:automatic-styles from content.xml
@@ -288,7 +291,7 @@ fn parse_odf_document(data: Bytes, format_name: &str, context: ParseContext) -> 
     if is_presentation {
         // Extract fill images from styles.xml if available
         let mut fill_images = HashMap::new();
-        if let Ok(styles_xml) = read_zip_file(&mut archive, "styles.xml") {
+        if let Ok(styles_xml) = read_zip_file(&mut archive, "styles.xml", limit) {
             fill_images = parse_fill_images(&styles_xml);
         }
 
@@ -311,7 +314,7 @@ fn parse_odf_document(data: Bytes, format_name: &str, context: ParseContext) -> 
                 continue;
             }
 
-            if let Ok(data) = read_zip_file_bytes(&mut archive, &id) {
+            if let Ok(data) = read_zip_file_bytes(&mut archive, &id, limit) {
                 let mime_type = match std::path::Path::new(&id)
                     .extension()
                     .and_then(|e| e.to_str())
@@ -388,26 +391,26 @@ fn parse_odf_document(data: Bytes, format_name: &str, context: ParseContext) -> 
 fn parse_fill_images(xml: &str) -> HashMap<String, String> {
     let mut images = HashMap::new();
     let mut reader = Reader::from_str(xml);
-    reader.trim_text(true);
+    reader.config_mut().trim_text(true);
     let mut buf = Vec::new();
 
     loop {
         match reader.read_event_into(&mut buf) {
             Ok(Event::Empty(ref e)) => {
-                if e.name().as_ref() == b"draw:fill-image" {
+                if e.name().as_ref().as_bytes() == b"draw:fill-image" {
                     let mut name = String::new();
                     let mut href = String::new();
                     for attr in e.attributes().flatten() {
-                        match attr.key.as_ref() {
+                        match attr.key.as_ref().as_bytes() {
                             b"draw:name" => {
-                                if let Ok(v) = std::str::from_utf8(&attr.value) {
-                                    name = v.to_string();
-                                }
+                                let v_str = crate::office::utils::attr_value(&attr.value);
+                                let v = v_str.as_str();
+                                name = v.to_string();
                             }
                             k if k.ends_with(b"href") => {
-                                if let Ok(v) = std::str::from_utf8(&attr.value) {
-                                    href = v.to_string();
-                                }
+                                let v_str = crate::office::utils::attr_value(&attr.value);
+                                let v = v_str.as_str();
+                                href = v.to_string();
                             }
                             _ => {}
                         }
@@ -431,7 +434,7 @@ fn parse_fill_images(xml: &str) -> HashMap<String, String> {
 fn parse_automatic_styles(xml: &str) -> StyleMap {
     let mut styles = HashMap::new();
     let mut reader = Reader::from_str(xml);
-    reader.trim_text(true);
+    reader.config_mut().trim_text(true);
     let mut buf = Vec::new();
 
     let mut current_style_name = String::new();
@@ -439,13 +442,15 @@ fn parse_automatic_styles(xml: &str) -> StyleMap {
 
     loop {
         match reader.read_event_into(&mut buf) {
-            Ok(Event::Start(ref e)) => match e.name().as_ref() {
+            Ok(Event::Start(ref e)) => match e.name().as_ref().as_bytes() {
                 b"style:style" => {
                     current_style_name.clear();
                     current_style = OdfStyle::default(); // Reset
                     for attr in e.attributes().flatten() {
-                        if attr.key.as_ref() == b"style:name" {
-                            if let Ok(val) = std::str::from_utf8(&attr.value) {
+                        if attr.key.as_ref().as_bytes() == b"style:name" {
+                            {
+                                let val_str = crate::office::utils::attr_value(&attr.value);
+                                let val = val_str.as_str();
                                 current_style_name = val.to_string();
                             }
                         }
@@ -453,36 +458,36 @@ fn parse_automatic_styles(xml: &str) -> StyleMap {
                 }
                 b"style:graphic-properties" => {
                     for attr in e.attributes().flatten() {
-                        match attr.key.as_ref() {
+                        match attr.key.as_ref().as_bytes() {
                             b"draw:fill-color" => {
-                                if let Ok(val) = std::str::from_utf8(&attr.value) {
-                                    current_style.fill_color = Some(val.to_string());
-                                }
+                                let val_str = crate::office::utils::attr_value(&attr.value);
+                                let val = val_str.as_str();
+                                current_style.fill_color = Some(val.to_string());
                             }
                             b"svg:stroke-color" => {
-                                if let Ok(val) = std::str::from_utf8(&attr.value) {
-                                    current_style.stroke_color = Some(val.to_string());
-                                }
+                                let val_str = crate::office::utils::attr_value(&attr.value);
+                                let val = val_str.as_str();
+                                current_style.stroke_color = Some(val.to_string());
                             }
                             b"svg:stroke-width" => {
-                                if let Ok(val) = std::str::from_utf8(&attr.value) {
-                                    current_style.stroke_width = Some(parse_measure(val));
-                                }
+                                let val_str = crate::office::utils::attr_value(&attr.value);
+                                let val = val_str.as_str();
+                                current_style.stroke_width = Some(parse_measure(val));
                             }
                             b"draw:textarea-vertical-align" => {
-                                if let Ok(val) = std::str::from_utf8(&attr.value) {
-                                    current_style.vertical_alignment = Some(match val {
-                                        "bottom" => VerticalAlignment::Bottom,
-                                        "middle" | "center" => VerticalAlignment::Center,
-                                        "justify" => VerticalAlignment::Justify,
-                                        _ => VerticalAlignment::Top,
-                                    });
-                                }
+                                let val_str = crate::office::utils::attr_value(&attr.value);
+                                let val = val_str.as_str();
+                                current_style.vertical_alignment = Some(match val {
+                                    "bottom" => VerticalAlignment::Bottom,
+                                    "middle" | "center" => VerticalAlignment::Center,
+                                    "justify" => VerticalAlignment::Justify,
+                                    _ => VerticalAlignment::Top,
+                                });
                             }
                             b"draw:fill-image-name" => {
-                                if let Ok(val) = std::str::from_utf8(&attr.value) {
-                                    current_style.page_background_image = Some(val.to_string());
-                                }
+                                let val_str = crate::office::utils::attr_value(&attr.value);
+                                let val = val_str.as_str();
+                                current_style.page_background_image = Some(val.to_string());
                             }
                             _ => {}
                         }
@@ -490,36 +495,36 @@ fn parse_automatic_styles(xml: &str) -> StyleMap {
                 }
                 b"style:text-properties" => {
                     for attr in e.attributes().flatten() {
-                        match attr.key.as_ref() {
+                        match attr.key.as_ref().as_bytes() {
                             b"fo:font-size" => {
-                                if let Ok(val) = std::str::from_utf8(&attr.value) {
-                                    current_style.font_size = Some(parse_measure(val));
-                                }
+                                let val_str = crate::office::utils::attr_value(&attr.value);
+                                let val = val_str.as_str();
+                                current_style.font_size = Some(parse_measure(val));
                             }
                             b"fo:color" => {
-                                if let Ok(val) = std::str::from_utf8(&attr.value) {
-                                    current_style.font_color = Some(val.to_string());
-                                }
+                                let val_str = crate::office::utils::attr_value(&attr.value);
+                                let val = val_str.as_str();
+                                current_style.font_color = Some(val.to_string());
                             }
                             b"fo:font-weight" => {
-                                if let Ok(val) = std::str::from_utf8(&attr.value) {
-                                    if val == "bold" {
-                                        current_style.bold = true;
-                                    }
+                                let val_str = crate::office::utils::attr_value(&attr.value);
+                                let val = val_str.as_str();
+                                if val == "bold" {
+                                    current_style.bold = true;
                                 }
                             }
                             b"fo:font-style" => {
-                                if let Ok(val) = std::str::from_utf8(&attr.value) {
-                                    if val == "italic" {
-                                        current_style.italic = true;
-                                    }
+                                let val_str = crate::office::utils::attr_value(&attr.value);
+                                let val = val_str.as_str();
+                                if val == "italic" {
+                                    current_style.italic = true;
                                 }
                             }
                             b"style:text-underline-style" => {
-                                if let Ok(val) = std::str::from_utf8(&attr.value) {
-                                    if val == "solid" {
-                                        current_style.underline = true;
-                                    }
+                                let val_str = crate::office::utils::attr_value(&attr.value);
+                                let val = val_str.as_str();
+                                if val == "solid" {
+                                    current_style.underline = true;
                                 }
                             }
                             _ => {}
@@ -528,8 +533,10 @@ fn parse_automatic_styles(xml: &str) -> StyleMap {
                 }
                 b"style:paragraph-properties" => {
                     for attr in e.attributes().flatten() {
-                        if attr.key.as_ref() == b"draw:textarea-vertical-align" {
-                            if let Ok(val) = std::str::from_utf8(&attr.value) {
+                        if attr.key.as_ref().as_bytes() == b"draw:textarea-vertical-align" {
+                            {
+                                let val_str = crate::office::utils::attr_value(&attr.value);
+                                let val = val_str.as_str();
                                 current_style.vertical_alignment = Some(match val {
                                     "bottom" => VerticalAlignment::Bottom,
                                     "middle" | "center" => VerticalAlignment::Center,
@@ -542,8 +549,10 @@ fn parse_automatic_styles(xml: &str) -> StyleMap {
                 }
                 b"style:drawing-page-properties" => {
                     for attr in e.attributes().flatten() {
-                        if attr.key.as_ref() == b"draw:fill-color" {
-                            if let Ok(val) = std::str::from_utf8(&attr.value) {
+                        if attr.key.as_ref().as_bytes() == b"draw:fill-color" {
+                            {
+                                let val_str = crate::office::utils::attr_value(&attr.value);
+                                let val = val_str.as_str();
                                 current_style.page_background_color = Some(val.to_string());
                             }
                         }
@@ -552,7 +561,7 @@ fn parse_automatic_styles(xml: &str) -> StyleMap {
                 _ => {}
             },
             Ok(Event::Empty(ref e)) => {
-                match e.name().as_ref() {
+                match e.name().as_ref().as_bytes() {
                     b"style:graphic-properties" => {
                         if !current_style_name.is_empty() {
                             // We might have an existing style from Start tag of style:style?
@@ -566,31 +575,31 @@ fn parse_automatic_styles(xml: &str) -> StyleMap {
                             // It should update `current_style`.
 
                             for attr in e.attributes().flatten() {
-                                match attr.key.as_ref() {
+                                match attr.key.as_ref().as_bytes() {
                                     b"draw:fill-color" => {
-                                        if let Ok(val) = std::str::from_utf8(&attr.value) {
-                                            current_style.fill_color = Some(val.to_string());
-                                        }
+                                        let val_str = crate::office::utils::attr_value(&attr.value);
+                                        let val = val_str.as_str();
+                                        current_style.fill_color = Some(val.to_string());
                                     }
                                     b"svg:stroke-color" => {
-                                        if let Ok(val) = std::str::from_utf8(&attr.value) {
-                                            current_style.stroke_color = Some(val.to_string());
-                                        }
+                                        let val_str = crate::office::utils::attr_value(&attr.value);
+                                        let val = val_str.as_str();
+                                        current_style.stroke_color = Some(val.to_string());
                                     }
                                     b"svg:stroke-width" => {
-                                        if let Ok(val) = std::str::from_utf8(&attr.value) {
-                                            current_style.stroke_width = Some(parse_measure(val));
-                                        }
+                                        let val_str = crate::office::utils::attr_value(&attr.value);
+                                        let val = val_str.as_str();
+                                        current_style.stroke_width = Some(parse_measure(val));
                                     }
                                     b"draw:textarea-vertical-align" => {
-                                        if let Ok(val) = std::str::from_utf8(&attr.value) {
-                                            current_style.vertical_alignment = Some(match val {
-                                                "bottom" => VerticalAlignment::Bottom,
-                                                "middle" | "center" => VerticalAlignment::Center,
-                                                "justify" => VerticalAlignment::Justify,
-                                                _ => VerticalAlignment::Top,
-                                            });
-                                        }
+                                        let val_str = crate::office::utils::attr_value(&attr.value);
+                                        let val = val_str.as_str();
+                                        current_style.vertical_alignment = Some(match val {
+                                            "bottom" => VerticalAlignment::Bottom,
+                                            "middle" | "center" => VerticalAlignment::Center,
+                                            "justify" => VerticalAlignment::Justify,
+                                            _ => VerticalAlignment::Top,
+                                        });
                                     }
                                     _ => {}
                                 }
@@ -600,36 +609,36 @@ fn parse_automatic_styles(xml: &str) -> StyleMap {
                     b"style:text-properties" => {
                         if !current_style_name.is_empty() {
                             for attr in e.attributes().flatten() {
-                                match attr.key.as_ref() {
+                                match attr.key.as_ref().as_bytes() {
                                     b"fo:font-size" => {
-                                        if let Ok(val) = std::str::from_utf8(&attr.value) {
-                                            current_style.font_size = Some(parse_measure(val));
-                                        }
+                                        let val_str = crate::office::utils::attr_value(&attr.value);
+                                        let val = val_str.as_str();
+                                        current_style.font_size = Some(parse_measure(val));
                                     }
                                     b"fo:color" => {
-                                        if let Ok(val) = std::str::from_utf8(&attr.value) {
-                                            current_style.font_color = Some(val.to_string());
-                                        }
+                                        let val_str = crate::office::utils::attr_value(&attr.value);
+                                        let val = val_str.as_str();
+                                        current_style.font_color = Some(val.to_string());
                                     }
                                     b"fo:font-weight" => {
-                                        if let Ok(val) = std::str::from_utf8(&attr.value) {
-                                            if val == "bold" {
-                                                current_style.bold = true;
-                                            }
+                                        let val_str = crate::office::utils::attr_value(&attr.value);
+                                        let val = val_str.as_str();
+                                        if val == "bold" {
+                                            current_style.bold = true;
                                         }
                                     }
                                     b"fo:font-style" => {
-                                        if let Ok(val) = std::str::from_utf8(&attr.value) {
-                                            if val == "italic" {
-                                                current_style.italic = true;
-                                            }
+                                        let val_str = crate::office::utils::attr_value(&attr.value);
+                                        let val = val_str.as_str();
+                                        if val == "italic" {
+                                            current_style.italic = true;
                                         }
                                     }
                                     b"style:text-underline-style" => {
-                                        if let Ok(val) = std::str::from_utf8(&attr.value) {
-                                            if val == "solid" {
-                                                current_style.underline = true;
-                                            }
+                                        let val_str = crate::office::utils::attr_value(&attr.value);
+                                        let val = val_str.as_str();
+                                        if val == "solid" {
+                                            current_style.underline = true;
                                         }
                                     }
                                     _ => {}
@@ -640,8 +649,10 @@ fn parse_automatic_styles(xml: &str) -> StyleMap {
                     b"style:paragraph-properties" => {
                         if !current_style_name.is_empty() {
                             for attr in e.attributes().flatten() {
-                                if attr.key.as_ref() == b"draw:textarea-vertical-align" {
-                                    if let Ok(val) = std::str::from_utf8(&attr.value) {
+                                if attr.key.as_ref().as_bytes() == b"draw:textarea-vertical-align" {
+                                    {
+                                        let val_str = crate::office::utils::attr_value(&attr.value);
+                                        let val = val_str.as_str();
                                         current_style.vertical_alignment = Some(match val {
                                             "bottom" => VerticalAlignment::Bottom,
                                             "middle" | "center" => VerticalAlignment::Center,
@@ -656,49 +667,51 @@ fn parse_automatic_styles(xml: &str) -> StyleMap {
                     b"style:drawing-page-properties" => {
                         if !current_style_name.is_empty() {
                             for attr in e.attributes().flatten() {
-                                if attr.key.as_ref() == b"draw:fill-color" {
-                                    if let Ok(val) = std::str::from_utf8(&attr.value) {
+                                if attr.key.as_ref().as_bytes() == b"draw:fill-color" {
+                                    {
+                                        let val_str = crate::office::utils::attr_value(&attr.value);
+                                        let val = val_str.as_str();
                                         current_style.page_background_color = Some(val.to_string());
                                     }
-                                } else if attr.key.as_ref() == b"draw:fill-image-name" {
-                                    if let Ok(val) = std::str::from_utf8(&attr.value) {
+                                } else if attr.key.as_ref().as_bytes() == b"draw:fill-image-name" {
+                                    {
+                                        let val_str = crate::office::utils::attr_value(&attr.value);
+                                        let val = val_str.as_str();
                                         current_style.page_background_image = Some(val.to_string());
                                     }
                                 }
                             }
                         }
                     }
-                    b"style:graphic-properties" => {
-                        if !current_style_name.is_empty() {
-                            for attr in e.attributes().flatten() {
-                                match attr.key.as_ref() {
-                                    b"draw:fill-color" => {
-                                        if let Ok(val) = std::str::from_utf8(&attr.value) {
-                                            current_style.fill_color = Some(val.to_string());
-                                        }
-                                    }
-                                    b"svg:stroke-color" => {
-                                        if let Ok(val) = std::str::from_utf8(&attr.value) {
-                                            current_style.stroke_color = Some(val.to_string());
-                                        }
-                                    }
-                                    b"svg:stroke-width" => {
-                                        if let Ok(val) = std::str::from_utf8(&attr.value) {
-                                            current_style.stroke_width = Some(parse_measure(val));
-                                        }
-                                    }
-                                    b"draw:textarea-vertical-align" => {
-                                        if let Ok(val) = std::str::from_utf8(&attr.value) {
-                                            current_style.vertical_alignment = Some(match val {
-                                                "bottom" => VerticalAlignment::Bottom,
-                                                "middle" | "center" => VerticalAlignment::Center,
-                                                "justify" => VerticalAlignment::Justify,
-                                                _ => VerticalAlignment::Top,
-                                            });
-                                        }
-                                    }
-                                    _ => {}
+                    b"style:graphic-properties" if !current_style_name.is_empty() => {
+                        for attr in e.attributes().flatten() {
+                            match attr.key.as_ref().as_bytes() {
+                                b"draw:fill-color" => {
+                                    let val_str = crate::office::utils::attr_value(&attr.value);
+                                    let val = val_str.as_str();
+                                    current_style.fill_color = Some(val.to_string());
                                 }
+                                b"svg:stroke-color" => {
+                                    let val_str = crate::office::utils::attr_value(&attr.value);
+                                    let val = val_str.as_str();
+                                    current_style.stroke_color = Some(val.to_string());
+                                }
+                                b"svg:stroke-width" => {
+                                    let val_str = crate::office::utils::attr_value(&attr.value);
+                                    let val = val_str.as_str();
+                                    current_style.stroke_width = Some(parse_measure(val));
+                                }
+                                b"draw:textarea-vertical-align" => {
+                                    let val_str = crate::office::utils::attr_value(&attr.value);
+                                    let val = val_str.as_str();
+                                    current_style.vertical_alignment = Some(match val {
+                                        "bottom" => VerticalAlignment::Bottom,
+                                        "middle" | "center" => VerticalAlignment::Center,
+                                        "justify" => VerticalAlignment::Justify,
+                                        _ => VerticalAlignment::Top,
+                                    });
+                                }
+                                _ => {}
                             }
                         }
                     }
@@ -707,7 +720,8 @@ fn parse_automatic_styles(xml: &str) -> StyleMap {
             }
 
             Ok(Event::End(ref e)) => {
-                if e.name().as_ref() == b"style:style" && !current_style_name.is_empty() {
+                if e.name().as_ref().as_bytes() == b"style:style" && !current_style_name.is_empty()
+                {
                     styles.insert(current_style_name.clone(), current_style.clone());
                 }
             }
@@ -728,7 +742,7 @@ fn parse_presentation_content(
 ) -> Vec<Page> {
     let mut pages = Vec::new();
     let mut reader = Reader::from_str(xml);
-    reader.trim_text(false);
+    reader.config_mut().trim_text(false);
     let mut buf = Vec::new();
 
     // State machine
@@ -756,11 +770,13 @@ fn parse_presentation_content(
     loop {
         match reader.read_event_into(&mut buf) {
             Ok(Event::Empty(ref e)) => {
-                if e.name().as_ref() == b"draw:image" {
+                if e.name().as_ref().as_bytes() == b"draw:image" {
                     // if in_frame {
                     for attr in e.attributes().flatten() {
-                        if attr.key.as_ref().ends_with(b"href") {
-                            if let Ok(v) = std::str::from_utf8(&attr.value) {
+                        if attr.key.as_ref().as_bytes().ends_with(b"href") {
+                            {
+                                let v_str = crate::office::utils::attr_value(&attr.value);
+                                let v = v_str.as_str();
                                 current_image_href = Some(v.to_string());
                             }
                         }
@@ -768,15 +784,17 @@ fn parse_presentation_content(
                     // }
                 }
             }
-            Ok(Event::Start(ref e)) => match e.name().as_ref() {
+            Ok(Event::Start(ref e)) => match e.name().as_ref().as_bytes() {
                 b"draw:page" => {
                     in_page = true;
                     current_page_content.clear();
 
                     // Check for page background
                     for attr in e.attributes().flatten() {
-                        if attr.key.as_ref() == b"draw:style-name" {
-                            if let Ok(style_name) = std::str::from_utf8(&attr.value) {
+                        if attr.key.as_ref().as_bytes() == b"draw:style-name" {
+                            {
+                                let style_name_str = crate::office::utils::attr_value(&attr.value);
+                                let style_name = style_name_str.as_str();
                                 if let Some(style) = styles.get(style_name) {
                                     if let Some(color) = &style.page_background_color {
                                         // Create background shape
@@ -827,35 +845,31 @@ fn parse_presentation_content(
 
                     // Parse attributes for x, y, width, height, style-name
                     for attr in e.attributes().flatten() {
-                        match attr.key.as_ref() {
+                        match attr.key.as_ref().as_bytes() {
                             b"svg:x" => {
-                                let v = parse_measure(
-                                    std::str::from_utf8(&attr.value).unwrap_or("0cm"),
-                                );
+                                let v =
+                                    parse_measure(&crate::office::utils::attr_value(&attr.value));
                                 current_frame_rect.x = v;
                             }
                             b"svg:y" => {
-                                let v = parse_measure(
-                                    std::str::from_utf8(&attr.value).unwrap_or("0cm"),
-                                );
+                                let v =
+                                    parse_measure(&crate::office::utils::attr_value(&attr.value));
                                 current_frame_rect.y = v;
                             }
                             b"svg:width" => {
-                                let v = parse_measure(
-                                    std::str::from_utf8(&attr.value).unwrap_or("0cm"),
-                                );
+                                let v =
+                                    parse_measure(&crate::office::utils::attr_value(&attr.value));
                                 current_frame_rect.width = v;
                             }
                             b"svg:height" => {
-                                let v = parse_measure(
-                                    std::str::from_utf8(&attr.value).unwrap_or("0cm"),
-                                );
+                                let v =
+                                    parse_measure(&crate::office::utils::attr_value(&attr.value));
                                 current_frame_rect.height = v;
                             }
                             b"draw:style-name" => {
-                                if let Ok(v) = std::str::from_utf8(&attr.value) {
-                                    current_frame_style_name = v.to_string();
-                                }
+                                let v_str = crate::office::utils::attr_value(&attr.value);
+                                let v = v_str.as_str();
+                                current_frame_style_name = v.to_string();
                             }
                             _ => {}
                         }
@@ -872,8 +886,10 @@ fn parse_presentation_content(
                     // Check for paragraph style
                     current_paragraph_style_name.clear();
                     for attr in e.attributes().flatten() {
-                        if attr.key.as_ref() == b"text:style-name" {
-                            if let Ok(v) = std::str::from_utf8(&attr.value) {
+                        if attr.key.as_ref().as_bytes() == b"text:style-name" {
+                            {
+                                let v_str = crate::office::utils::attr_value(&attr.value);
+                                let v = v_str.as_str();
                                 current_paragraph_style_name = v.to_string();
                             }
                         }
@@ -887,20 +903,22 @@ fn parse_presentation_content(
                 b"text:span" => {
                     // Start styling span
                     for attr in e.attributes().flatten() {
-                        if attr.key.as_ref() == b"text:style-name" {
-                            if let Ok(v) = std::str::from_utf8(&attr.value) {
+                        if attr.key.as_ref().as_bytes() == b"text:style-name" {
+                            {
+                                let v_str = crate::office::utils::attr_value(&attr.value);
+                                let v = v_str.as_str();
                                 current_span_style_name = v.to_string();
                             }
                         }
                     }
                 }
-                b"draw:image" => {
-                    if in_frame {
-                        for attr in e.attributes().flatten() {
-                            if attr.key.as_ref().ends_with(b"href") {
-                                if let Ok(v) = std::str::from_utf8(&attr.value) {
-                                    current_image_href = Some(v.to_string());
-                                }
+                b"draw:image" if in_frame => {
+                    for attr in e.attributes().flatten() {
+                        if attr.key.as_ref().as_bytes().ends_with(b"href") {
+                            {
+                                let v_str = crate::office::utils::attr_value(&attr.value);
+                                let v = v_str.as_str();
+                                current_image_href = Some(v.to_string());
                             }
                         }
                     }
@@ -908,7 +926,7 @@ fn parse_presentation_content(
 
                 _ => {}
             },
-            Ok(Event::End(ref e)) => match e.name().as_ref() {
+            Ok(Event::End(ref e)) => match e.name().as_ref().as_bytes() {
                 b"text:p" | b"text:h" => {
                     in_paragraph = false;
                 }
@@ -998,7 +1016,8 @@ fn parse_presentation_content(
             },
             Ok(Event::Text(e)) => {
                 if in_text_box && in_paragraph {
-                    if let Ok(t) = e.unescape() {
+                    let t = e.as_ref();
+                    {
                         if !t.trim().is_empty() {
                             let mut run = TextRun::new(t.to_string());
 
@@ -1073,8 +1092,9 @@ fn parse_odf_spreadsheet(data: Bytes, context: ParseContext) -> Result<Document>
     let mut archive =
         ZipArchive::new(cursor).map_err(|e| Error::ParseError(format!("Invalid ZIP: {e}")))?;
 
+    let limit = crate::limits::max_decompressed_bytes(&context);
     // Read content.xml
-    let content_xml = read_zip_file(&mut archive, "content.xml")?;
+    let content_xml = read_zip_file(&mut archive, "content.xml", limit)?;
 
     // Parse spreadsheet structure
     let tables = extract_tables_from_ods_xml(&content_xml)?;
@@ -1164,27 +1184,33 @@ fn parse_odf_spreadsheet(data: Bytes, context: ParseContext) -> Result<Document>
 }
 
 /// Read a file from the ZIP archive
-fn read_zip_file(archive: &mut ZipArchive<Cursor<&Bytes>>, name: &str) -> Result<String> {
+fn read_zip_file(
+    archive: &mut ZipArchive<Cursor<&Bytes>>,
+    name: &str,
+    limit: usize,
+) -> Result<String> {
     let mut file = archive
         .by_name(name)
         .map_err(|e| Error::ParseError(format!("Cannot find {name}: {e}")))?;
 
     let mut content = String::new();
-    file.read_to_string(&mut content)
-        .map_err(|e| Error::ParseError(format!("Cannot read {name}: {e}")))?;
+    crate::limits::read_to_string_with_limit(&mut file, &mut content, limit)?;
 
     Ok(content)
 }
 
 /// Read a file from the ZIP archive as bytes
-fn read_zip_file_bytes(archive: &mut ZipArchive<Cursor<&Bytes>>, name: &str) -> Result<Vec<u8>> {
+fn read_zip_file_bytes(
+    archive: &mut ZipArchive<Cursor<&Bytes>>,
+    name: &str,
+    limit: usize,
+) -> Result<Vec<u8>> {
     let mut file = archive
         .by_name(name)
         .map_err(|e| Error::ParseError(format!("Cannot find {name}: {e}")))?;
 
     let mut content = Vec::new();
-    file.read_to_end(&mut content)
-        .map_err(|e| Error::ParseError(format!("Cannot read {name}: {e}")))?;
+    crate::limits::read_to_end_with_limit(&mut file, &mut content, limit)?;
 
     Ok(content)
 }
@@ -1193,7 +1219,7 @@ fn read_zip_file_bytes(archive: &mut ZipArchive<Cursor<&Bytes>>, name: &str) -> 
 #[allow(clippy::unnecessary_wraps)]
 fn extract_text_from_odf_xml(xml: &str) -> Result<String> {
     let mut reader = Reader::from_str(xml);
-    reader.trim_text(true);
+    reader.config_mut().trim_text(true);
 
     let mut buf = Vec::new();
     let mut text = String::new();
@@ -1203,14 +1229,14 @@ fn extract_text_from_odf_xml(xml: &str) -> Result<String> {
     loop {
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(ref e)) => {
-                let name = String::from_utf8_lossy(e.name().as_ref()).to_string();
+                let name = e.name().as_ref().to_string();
                 if name == "text:p" || name == "text:h" || name == "text:span" {
                     in_text_element = true;
                     depth += 1;
                 }
             }
             Ok(Event::End(ref e)) => {
-                let name = String::from_utf8_lossy(e.name().as_ref()).to_string();
+                let name = e.name().as_ref().to_string();
                 if name == "text:p" || name == "text:h" {
                     if in_text_element {
                         text.push('\n');
@@ -1230,8 +1256,13 @@ fn extract_text_from_odf_xml(xml: &str) -> Result<String> {
             }
             Ok(Event::Text(e)) => {
                 if in_text_element {
-                    if let Ok(t) = e.unescape() {
-                        text.push_str(&t);
+                    text.push_str(e.as_ref());
+                }
+            }
+            Ok(Event::GeneralRef(e)) => {
+                if in_text_element {
+                    if let Some(resolved) = crate::office::utils::resolve_general_ref(&e) {
+                        text.push_str(&resolved);
                     }
                 }
             }
@@ -1252,7 +1283,7 @@ fn extract_text_from_odf_xml(xml: &str) -> Result<String> {
 #[allow(clippy::unnecessary_wraps)]
 fn extract_tables_from_ods_xml(xml: &str) -> Result<Vec<(String, Vec<Vec<String>>)>> {
     let mut reader = Reader::from_str(xml);
-    reader.trim_text(true);
+    reader.config_mut().trim_text(true);
 
     let mut buf = Vec::new();
     let mut tables: Vec<(String, Vec<Vec<String>>)> = Vec::new();
@@ -1265,12 +1296,14 @@ fn extract_tables_from_ods_xml(xml: &str) -> Result<Vec<(String, Vec<Vec<String>
     loop {
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(ref e)) => {
-                let name = String::from_utf8_lossy(e.name().as_ref()).to_string();
+                let name = e.name().as_ref().to_string();
                 if name == "table:table" {
                     // Get sheet name from attributes
                     for attr in e.attributes().flatten() {
-                        if attr.key.as_ref() == b"table:name" {
-                            if let Ok(val) = std::str::from_utf8(&attr.value) {
+                        if attr.key.as_ref().as_bytes() == b"table:name" {
+                            {
+                                let val_str = crate::office::utils::attr_value(&attr.value);
+                                let val = val_str.as_str();
                                 current_sheet_name = val.to_string();
                             }
                         }
@@ -1281,7 +1314,7 @@ fn extract_tables_from_ods_xml(xml: &str) -> Result<Vec<(String, Vec<Vec<String>
                 }
             }
             Ok(Event::End(ref e)) => {
-                let name = String::from_utf8_lossy(e.name().as_ref()).to_string();
+                let name = e.name().as_ref().to_string();
                 if name == "table:table" {
                     if !current_rows.is_empty() || !current_row.is_empty() {
                         if !current_row.is_empty() {
@@ -1304,8 +1337,13 @@ fn extract_tables_from_ods_xml(xml: &str) -> Result<Vec<(String, Vec<Vec<String>
             }
             Ok(Event::Text(e)) => {
                 if in_cell {
-                    if let Ok(t) = e.unescape() {
-                        current_cell_text.push_str(&t);
+                    current_cell_text.push_str(e.as_ref());
+                }
+            }
+            Ok(Event::GeneralRef(e)) => {
+                if in_cell {
+                    if let Some(resolved) = crate::office::utils::resolve_general_ref(&e) {
+                        current_cell_text.push_str(&resolved);
                     }
                 }
             }
@@ -1474,11 +1512,11 @@ mod tests {
 
         if blocks.len() == 1 {
             if let ContentBlock::Text(bg) = &blocks[0] {
-                if bg.style.z_index == Some(-1) {
-                    panic!("Found Background, Missing Image");
-                } else {
-                    panic!("Found TextBlock (not background), Missing Background & Image? {bg:?}",);
-                }
+                assert!(
+                    bg.style.z_index != Some(-1),
+                    "Found Background, Missing Image"
+                );
+                panic!("Found TextBlock (not background), Missing Background & Image? {bg:?}");
             }
             if let ContentBlock::Image(_) = &blocks[0] {
                 panic!("Found Image, Missing Background");

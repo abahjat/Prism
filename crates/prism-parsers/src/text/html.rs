@@ -7,7 +7,7 @@
 use async_trait::async_trait;
 use bytes::Bytes;
 use prism_core::{
-    document::{ContentBlock, Dimensions, Document, Page, Rect, TextBlock, TextRun, TextStyle},
+    document::{ContentBlock, Dimensions, Document, EmbeddedBlock, EmbeddedKind, Page},
     error::{Error, Result},
     format::Format,
     metadata::Metadata,
@@ -155,21 +155,7 @@ impl Parser for HtmlParser {
 
         // For HTML, we store raw HTML with a special marker prefix
         // so the renderer knows to pass it through directly
-        let text_run = TextRun {
-            text: format!("__HTML_RAW__:{html_content}"),
-            style: TextStyle::default(),
-            bounds: Some(Rect::default()),
-            char_positions: Some(Vec::new()),
-        };
-
-        let text_block = TextBlock {
-            vertical_alignment: None,
-            runs: vec![text_run],
-            paragraph_style: None,
-            bounds: Rect::default(),
-            style: prism_core::document::ShapeStyle::default(),
-            rotation: 0.0,
-        };
+        let embedded = EmbeddedBlock::markup(EmbeddedKind::Html, html_content);
 
         // Create a single page with the HTML content
         // Use a wide page to accommodate HTML content
@@ -179,7 +165,7 @@ impl Parser for HtmlParser {
                 width: 850.0, // Wider than standard to fit HTML content
                 height: 1100.0,
             },
-            content: vec![ContentBlock::Text(text_block)],
+            content: vec![ContentBlock::Embedded(embedded)],
             metadata: prism_core::document::PageMetadata::default(),
             annotations: Vec::new(),
         };
@@ -282,6 +268,9 @@ mod tests {
 
         assert_eq!(metadata.name, "HTML Parser");
         assert!(!metadata.requires_sandbox);
-        assert!(!metadata.features.is_empty());
+        assert_ne!(
+            metadata.features,
+            [] as [prism_core::parser::ParserFeature; 0]
+        );
     }
 }

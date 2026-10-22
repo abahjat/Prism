@@ -11,9 +11,9 @@ rust-version.workspace = true
 crate-type = ["cdylib"]
 
 [dependencies]
-prism-core = { path = "../prism-core" }
-prism-parsers = { path = "../prism-parsers" }
-prism-render = { path = "../prism-render" }
+prism-core = { workspace = true }
+prism-parsers = { workspace = true }
+prism-render = { workspace = true }
 libc = "0.2"
 bytes = "1.0"
 tokio = { version = "1.35", features = ["rt", "macros"] }

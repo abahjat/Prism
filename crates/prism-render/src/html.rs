@@ -4,10 +4,40 @@
 use async_trait::async_trait;
 use base64::{Engine as _, engine::general_purpose};
 use bytes::Bytes;
-use prism_core::document::{ContentBlock, Document};
+use prism_core::document::{ContentBlock, Document, EmbeddedBlock, EmbeddedKind};
 use prism_core::error::Result;
 use prism_core::format::Format;
 use prism_core::render::{RenderContext, RenderFeature, Renderer, RendererMetadata};
+
+use crate::sanitize;
+use uuid::Uuid;
+
+/// pdf.js 6.4.299 (Apache-2.0), bundled so the viewer works without network access
+const PDFJS_LIB: &str = include_str!("../assets/pdfjs/pdf.min.mjs");
+const PDFJS_WORKER: &str = include_str!("../assets/pdfjs/pdf.worker.min.mjs");
+const PDF_VIEWER_BOOTSTRAP: &str = include_str!("../assets/pdf-viewer.js");
+
+/// Content Security Policy for rendered output.
+///
+/// Nothing may be fetched from the network: images, fonts and media must be
+/// inline (`data:`/`blob:`), and only Prism's own nonce-tagged scripts run.
+fn content_security_policy(nonce: &str) -> String {
+    [
+        "default-src 'none'",
+        "img-src data: blob:",
+        "media-src data: blob:",
+        "font-src data: blob:",
+        "style-src 'unsafe-inline'",
+        &format!("script-src 'nonce-{nonce}' blob:"),
+        "worker-src blob:",
+        "connect-src blob: data:",
+        "form-action 'none'",
+        "base-uri 'none'",
+        "frame-src 'none'",
+        "object-src 'none'",
+    ]
+    .join("; ")
+}
 
 /// HTML5 renderer
 ///
@@ -62,7 +92,7 @@ impl HtmlRenderer {
     fn render_text_run(run: &prism_core::document::TextRun) -> String {
         // Prepend bullet character if present
         let text_content = if let Some(ref bullet) = run.style.bullet {
-            format!("{}{}", bullet, &run.text)
+            format!("{}{}", bullet, run.text)
         } else {
             run.text.clone()
         };
@@ -182,15 +212,7 @@ impl HtmlRenderer {
         // Check if this is a single-block page with PDF/HTML data or single image
         if page.content.len() == 1 {
             match &page.content[0] {
-                ContentBlock::Text(text_block) => {
-                    // Check for PDF or HTML embed marker
-                    if text_block.runs.len() == 1 {
-                        let text = &text_block.runs[0].text;
-                        return text.starts_with("__PDF_DATA__:")
-                            || text.starts_with("__HTML_RAW__:")
-                            || text.starts_with("__SVG_RAW__:");
-                    }
-                }
+                ContentBlock::Embedded(_) => return true,
                 ContentBlock::Image(_) => {
                     // Single image doesn't need page wrapper
                     return true;
@@ -392,110 +414,66 @@ impl HtmlRenderer {
     /// Render a content block
     fn render_content_block(&self, document: &Document, block: &ContentBlock) -> String {
         match block {
-            ContentBlock::Text(text_block) => {
-                // Check if this is embedded PDF data
-                if text_block.runs.len() == 1
-                    && text_block.runs[0].text.starts_with("__PDF_DATA__:")
-                {
-                    return Self::render_pdf_viewer(&text_block.runs[0].text);
-                }
-                // Check if this is raw HTML content
-                if text_block.runs.len() == 1
-                    && text_block.runs[0].text.starts_with("__HTML_RAW__:")
-                {
-                    return Self::render_raw_html(&text_block.runs[0].text);
-                }
-                // Check if this is raw SVG content
-                if text_block.runs.len() == 1 && text_block.runs[0].text.starts_with("__SVG_RAW__:")
-                {
-                    return Self::render_raw_svg(&text_block.runs[0].text);
-                }
-                Self::render_text_block(text_block)
-            }
+            ContentBlock::Text(text_block) => Self::render_text_block(text_block),
             ContentBlock::Image(image_block) => self.render_image_block(document, image_block),
             ContentBlock::Table(table_block) => self.render_table(document, table_block),
             ContentBlock::Vector(vector_block) => Self::render_vector(document, vector_block),
             ContentBlock::Container(container_block) => {
                 self.render_container(document, container_block)
             }
+            ContentBlock::Embedded(embedded) => Self::render_embedded(embedded),
         }
     }
 
-    /// Render raw HTML content (passthrough)
-    fn render_raw_html(text: &str) -> String {
-        // Skip "__HTML_RAW__:" prefix (13 chars)
-        let html_content = &text[13..];
-        // Return the raw HTML content directly - it will be rendered as-is in the iframe
-        format!(r#"<div class="raw-html-content">{html_content}</div>"#)
+    /// Render content kept in its native form
+    fn render_embedded(embedded: &EmbeddedBlock) -> String {
+        match embedded.kind {
+            EmbeddedKind::Html => format!(
+                r#"<div class="raw-html-content">{}</div>"#,
+                sanitize::sanitize_html(&embedded.markup_str())
+            ),
+            // Generated by Prism with all source text escaped
+            EmbeddedKind::GeneratedHtml => format!(
+                r#"<div class="raw-html-content">{}</div>"#,
+                embedded.markup_str()
+            ),
+            EmbeddedKind::Svg => format!(
+                r#"<div class="svg-content" style="text-align: center;">{}</div>"#,
+                sanitize::svg_as_image(&embedded.markup_str(), "SVG image")
+            ),
+            EmbeddedKind::Pdf => Self::render_pdf_viewer(&embedded.data),
+        }
     }
 
-    /// Render raw SVG content (passthrough)
-    fn render_raw_svg(text: &str) -> String {
-        // Skip "__SVG_RAW__:" prefix (12 chars)
-        let svg_content = &text[12..];
-        // Return the SVG content directly - browser will render it natively
-        format!(r#"<div class="svg-content" style="text-align: center;">{svg_content}</div>"#)
-    }
-
-    /// Render embedded PDF viewer
-    fn render_pdf_viewer(text: &str) -> String {
-        let pdf_data = &text[13..]; // Skip "__PDF_DATA__:" prefix
+    /// Render the container for an embedded PDF.
+    ///
+    /// The PDF travels as an inert base64 data block; the viewer script added
+    /// by [`HtmlRenderer::pdf_viewer_runtime`] renders it offline.
+    fn render_pdf_viewer(pdf: &[u8]) -> String {
         format!(
-            r#"<div class="pdf-viewer-container">
-                <canvas id="pdf-canvas" style="width: 100%; border: 1px solid #ccc;"></canvas>
-                <div class="pdf-controls" style="margin-top: 10px; text-align: center;">
-                    <button onclick="prevPage()" style="margin: 0 5px;">Previous</button>
-                    <span id="page-info">Page <span id="current-page">1</span> of <span id="total-pages">1</span></span>
-                    <button onclick="nextPage()" style="margin: 0 5px;">Next</button>
-                </div>
-                <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-                <script>
-                    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-                    const pdfData = atob('{pdf_data}');
-                    const loadingTask = pdfjsLib.getDocument({{data: Uint8Array.from(pdfData, c => c.charCodeAt(0))}});
-                    let pdfDoc = null;
-                    let pageNum = 1;
-                    let rendering = false;
+            r#"<div class="pdf-viewer">
+                <div class="pdf-status">Loading PDF…</div>
+                <div class="pdf-pages"></div>
+                <script type="application/pdf+base64">{}</script>
+            </div>"#,
+            general_purpose::STANDARD.encode(pdf)
+        )
+    }
 
-                    loadingTask.promise.then(pdf => {{
-                        pdfDoc = pdf;
-                        document.getElementById('total-pages').textContent = pdf.numPages;
-                        renderPage(pageNum);
-                    }});
-
-                    function renderPage(num) {{
-                        rendering = true;
-                        pdfDoc.getPage(num).then(page => {{
-                            const canvas = document.getElementById('pdf-canvas');
-                            const ctx = canvas.getContext('2d');
-                            const viewport = page.getViewport({{scale: 1.5}});
-
-                            canvas.height = viewport.height;
-                            canvas.width = viewport.width;
-
-                            page.render({{
-                                canvasContext: ctx,
-                                viewport: viewport
-                            }}).promise.then(() => {{
-                                rendering = false;
-                                document.getElementById('current-page').textContent = num;
-                            }});
-                        }});
-                    }}
-
-                    function nextPage() {{
-                        if (pageNum >= pdfDoc.numPages || rendering) return;
-                        pageNum++;
-                        renderPage(pageNum);
-                    }}
-
-                    function prevPage() {{
-                        if (pageNum <= 1 || rendering) return;
-                        pageNum--;
-                        renderPage(pageNum);
-                    }}
-                </script>
-            </div>"#
+    /// Scripts and styles needed by embedded PDF viewers: pdf.js and its
+    /// worker as inert text blocks, plus the bootstrap module (nonce-gated).
+    fn pdf_viewer_runtime(nonce: &str) -> String {
+        format!(
+            r#"<style>
+        .pdf-viewer {{ text-align: center; }}
+        .pdf-status {{ font: 13px system-ui, sans-serif; color: #555; margin: 8px 0; }}
+        .pdf-pages {{ display: flex; flex-direction: column; align-items: center; gap: 12px; }}
+        .pdf-page {{ width: 100%; max-width: 1400px; background: white; box-shadow: 0 1px 4px rgba(0,0,0,0.2); }}
+        .pdf-page canvas {{ display: block; margin: 0 auto; }}
+    </style>
+    <script type="text/plain" id="prism-pdfjs-lib">{PDFJS_LIB}</script>
+    <script type="text/plain" id="prism-pdfjs-worker">{PDFJS_WORKER}</script>
+    <script type="module" nonce="{nonce}">{PDF_VIEWER_BOOTSTRAP}</script>"#
         )
     }
 
@@ -628,6 +606,12 @@ impl HtmlRenderer {
                 image_block.bounds.width,
                 image_block.bounds.height,
             )
+        } else if let Some(size) = image_block.original_size {
+            // Flow layout (e.g. inline DOCX images): keep the size from the document
+            format!(
+                r#"<div class="image-container" style="width: {}pt; height: {}pt; max-width: 100%; {style_css}">{img_tag}</div>"#,
+                size.width, size.height,
+            )
         } else {
             format!(r#"<div class="image-container" style="{style_css}">{img_tag}</div>"#)
         }
@@ -723,7 +707,7 @@ impl HtmlRenderer {
 }
 
 /// Escape HTML special characters to prevent XSS
-fn html_escape(text: &str) -> String {
+pub(crate) fn html_escape(text: &str) -> String {
     text.replace('&', "&amp;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")
@@ -750,10 +734,6 @@ impl Renderer for HtmlRenderer {
             .title
             .as_deref()
             .unwrap_or("Untitled Document");
-
-        // Check if this is a single-page document with embedded viewer
-        let _has_embedded =
-            document.pages.len() == 1 && Self::has_embedded_viewer(&document.pages[0]);
 
         let viewport_meta = if self.config.responsive {
             r#"<meta name="viewport" content="width=device-width, initial-scale=1.0">"#
@@ -855,26 +835,38 @@ impl Renderer for HtmlRenderer {
             String::new()
         };
 
+        let nonce = Uuid::new_v4().simple().to_string();
+        let pages = self.render_pages(document);
+        let has_pdf =
+            document.pages.iter().flat_map(|p| &p.content).any(
+                |block| matches!(block, ContentBlock::Embedded(e) if e.kind == EmbeddedKind::Pdf),
+            );
+        let pdf_runtime = if has_pdf {
+            Self::pdf_viewer_runtime(&nonce)
+        } else {
+            String::new()
+        };
+
         let html = format!(
             r#"<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta http-equiv="Content-Security-Policy" content="{csp}">
+    <meta name="referrer" content="no-referrer">
     {viewport_meta}
-    <title>{}</title>
+    <title>{title}</title>
     {styles}
 </head>
 <body>
     <div class="container">
-        {}
-        {}
+        {pages}
     </div>
+    {pdf_runtime}
 </body>
 </html>"#,
-            html_escape(title),
-            // No header - removed filename and page count
-            String::new(),
-            self.render_pages(document)
+            csp = content_security_policy(&nonce),
+            title = html_escape(title),
         );
 
         Ok(Bytes::from(html))

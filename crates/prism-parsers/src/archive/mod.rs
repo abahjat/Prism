@@ -90,35 +90,6 @@ mod tests {
     use ::flate2 as flate2_crate;
     use ::tar as tar_crate;
 
-    /*
-    #[tokio::test]
-    async fn test_zip_parser() {
-        let mut buf = Vec::new();
-        {
-            let mut zip = zip_crate::ZipWriter::new(std::io::Cursor::new(&mut buf));
-            let options = zip_crate::write::FileOptions::default()
-                .compression_method(zip_crate::CompressionMethod::Stored);
-            zip.start_file("test.txt", options).unwrap();
-            zip.write_all(b"Hello World").unwrap();
-            zip.finish().unwrap();
-        }
-
-        let parser = ArchiveParser::new(Format::zip());
-        let context = ParseContext {
-            format: Format::zip(),
-            filename: Some("test.zip".to_string()),
-            size: buf.len(),
-            options: ParseOptions::default(),
-        };
-
-        let result = parser.parse(Bytes::from(buf), context).await;
-        assert!(result.is_ok());
-        let doc = result.unwrap();
-        assert!(!doc.pages.is_empty());
-        assert!(!doc.pages[0].content.is_empty());
-    }
-    */
-
     #[tokio::test]
     async fn test_tar_parser() {
         let mut buf = Vec::new();
@@ -170,5 +141,61 @@ mod tests {
         let doc = result.unwrap();
         assert!(!doc.pages.is_empty());
         assert!(!doc.pages[0].content.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_gzip_decompression_bomb_rejected() {
+        let mut buf = Vec::new();
+        {
+            let mut encoder =
+                flate2_crate::write::GzEncoder::new(&mut buf, flate2_crate::Compression::best());
+            encoder.write_all(&vec![b'A'; 64 * 1024]).unwrap();
+            encoder.finish().unwrap();
+        }
+
+        let parser = ArchiveParser::new(Format::gzip());
+        let context = ParseContext {
+            format: Format::gzip(),
+            filename: Some("bomb.gz".to_string()),
+            size: buf.len(),
+            options: ParseOptions {
+                max_memory: Some(4096),
+                ..ParseOptions::default()
+            },
+        };
+
+        let err = parser.parse(Bytes::from(buf), context).await.unwrap_err();
+        assert!(
+            matches!(err, Error::MemoryLimitExceeded { limit: 4096, .. }),
+            "expected MemoryLimitExceeded, got {err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_bzip2_decompression_bomb_rejected() {
+        let mut buf = Vec::new();
+        {
+            let mut encoder =
+                ::bzip2::write::BzEncoder::new(&mut buf, ::bzip2::Compression::best());
+            encoder.write_all(&vec![b'B'; 64 * 1024]).unwrap();
+            encoder.finish().unwrap();
+        }
+
+        let parser = ArchiveParser::new(Format::bzip2());
+        let context = ParseContext {
+            format: Format::bzip2(),
+            filename: Some("bomb.bz2".to_string()),
+            size: buf.len(),
+            options: ParseOptions {
+                max_memory: Some(4096),
+                ..ParseOptions::default()
+            },
+        };
+
+        let err = parser.parse(Bytes::from(buf), context).await.unwrap_err();
+        assert!(
+            matches!(err, Error::MemoryLimitExceeded { limit: 4096, .. }),
+            "expected MemoryLimitExceeded, got {err:?}"
+        );
     }
 }

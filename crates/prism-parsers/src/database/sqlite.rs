@@ -69,7 +69,7 @@ impl Parser for SqliteParser {
             .collect();
 
         let mut pages = Vec::new();
-        let mut page_num = 1;
+        let page_num = 1;
 
         // If no tables, return empty doc
         if table_names.is_empty() {
@@ -81,7 +81,7 @@ impl Parser for SqliteParser {
         }
 
         // Limit to first 5 tables to avoid huge docs
-        for table_name in table_names.iter().take(5) {
+        for (page_num, table_name) in (page_num..).zip(table_names.iter().take(5)) {
             let mut page = Page::new(page_num, Dimensions::LETTER);
 
             // Title for the table
@@ -148,7 +148,6 @@ impl Parser for SqliteParser {
 
             page.add_content(ContentBlock::Table(table));
             pages.push(page);
-            page_num += 1;
         }
 
         let mut metadata = Metadata::default();

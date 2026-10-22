@@ -118,7 +118,7 @@ impl Styles {
     pub fn from_xml(xml: &str, theme: Option<&Theme>) -> Result<Self> {
         let mut styles = HashMap::new();
         let mut reader = Reader::from_str(xml);
-        reader.trim_text(true);
+        reader.config_mut().trim_text(true);
         let mut buf = Vec::new();
 
         let mut current_style: Option<Style> = None;
@@ -127,12 +127,12 @@ impl Styles {
             match reader.read_event_into(&mut buf) {
                 Ok(Event::Start(e)) => {
                     let name = e.name();
-                    if name.as_ref() == b"w:style" {
+                    if name.as_ref().as_bytes() == b"w:style" {
                         let mut id = String::new();
                         let mut style_type = String::new();
 
                         for attr in e.attributes().flatten() {
-                            match attr.key.as_ref() {
+                            match attr.key.as_ref().as_bytes() {
                                 b"w:styleId" => id = utils::attr_value(&attr.value),
                                 b"w:type" => style_type = utils::attr_value(&attr.value),
                                 _ => {}
@@ -149,24 +149,24 @@ impl Styles {
                             para_style: ParagraphStyle::default(),
                         });
                     } else if let Some(style) = &mut current_style {
-                        match name.as_ref() {
+                        match name.as_ref().as_bytes() {
                             b"w:name" => {
                                 for attr in e.attributes().flatten() {
-                                    if attr.key.as_ref() == b"w:val" {
+                                    if attr.key.as_ref().as_bytes() == b"w:val" {
                                         style.name = Some(utils::attr_value(&attr.value));
                                     }
                                 }
                             }
                             b"w:basedOn" => {
                                 for attr in e.attributes().flatten() {
-                                    if attr.key.as_ref() == b"w:val" {
+                                    if attr.key.as_ref().as_bytes() == b"w:val" {
                                         style.based_on = Some(utils::attr_value(&attr.value));
                                     }
                                 }
                             }
-                            b"w:b" => style.text_style.bold = true,
-                            b"w:i" => style.text_style.italic = true,
-                            b"w:u" => style.text_style.underline = true,
+                            b"w:b" => style.text_style.bold = utils::on_off_value(&e),
+                            b"w:i" => style.text_style.italic = utils::on_off_value(&e),
+                            b"w:u" => style.text_style.underline = utils::on_off_value(&e),
                             b"w:color" => {
                                 let mut val: Option<String> = None;
                                 let mut theme_color: Option<String> = None;
@@ -174,7 +174,7 @@ impl Styles {
                                 let mut shade: Option<f64> = None;
 
                                 for attr in e.attributes().flatten() {
-                                    match attr.key.as_ref() {
+                                    match attr.key.as_ref().as_bytes() {
                                         b"w:val" => val = Some(utils::attr_value(&attr.value)),
                                         b"w:themeColor" => {
                                             theme_color = Some(utils::attr_value(&attr.value));
@@ -225,7 +225,7 @@ impl Styles {
                             }
                             b"w:sz" => {
                                 for attr in e.attributes().flatten() {
-                                    if attr.key.as_ref() == b"w:val" {
+                                    if attr.key.as_ref().as_bytes() == b"w:val" {
                                         if let Ok(val) =
                                             utils::attr_value(&attr.value).parse::<f64>()
                                         {
@@ -236,7 +236,7 @@ impl Styles {
                             }
                             b"w:jc" => {
                                 for attr in e.attributes().flatten() {
-                                    if attr.key.as_ref() == b"w:val" {
+                                    if attr.key.as_ref().as_bytes() == b"w:val" {
                                         let val = utils::attr_value(&attr.value);
                                         style.para_style.alignment = match val.as_str() {
                                             "center" => TextAlignment::Center,
@@ -254,17 +254,17 @@ impl Styles {
                 Ok(Event::Empty(e)) => {
                     // Handle empty tags like <w:b/> inside a style
                     if let Some(style) = &mut current_style {
-                        match e.name().as_ref() {
-                            b"w:b" => style.text_style.bold = true,
-                            b"w:i" => style.text_style.italic = true,
-                            b"w:u" => style.text_style.underline = true,
+                        match e.name().as_ref().as_bytes() {
+                            b"w:b" => style.text_style.bold = utils::on_off_value(&e),
+                            b"w:i" => style.text_style.italic = utils::on_off_value(&e),
+                            b"w:u" => style.text_style.underline = utils::on_off_value(&e),
                             // TODO: Handle more empty tags
                             _ => {}
                         }
                     }
                 }
                 Ok(Event::End(e)) => {
-                    if e.name().as_ref() == b"w:style" {
+                    if e.name().as_ref().as_bytes() == b"w:style" {
                         if let Some(style) = current_style.take() {
                             styles.insert(style.id.clone(), style);
                         }

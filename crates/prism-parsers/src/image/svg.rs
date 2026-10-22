@@ -10,8 +10,7 @@ use bytes::Bytes;
 use flate2::read::GzDecoder;
 use prism_core::{
     document::{
-        ContentBlock, Dimensions, Document, Page, PageMetadata, Rect, ShapeStyle, TextBlock,
-        TextRun,
+        ContentBlock, Dimensions, Document, EmbeddedBlock, EmbeddedKind, Page, PageMetadata,
     },
     error::{Error, Result},
     format::Format,
@@ -79,26 +78,12 @@ impl Parser for SvgParser {
 
         // Pass through SVG content for direct rendering
         // Use special marker similar to HTML raw passthrough
-        let text_run = TextRun {
-            text: format!("__SVG_RAW__:{svg_content}"),
-            style: prism_core::document::TextStyle::default(),
-            bounds: Some(Rect::default()),
-            char_positions: Some(Vec::new()),
-        };
-
-        let text_block = TextBlock {
-            vertical_alignment: None,
-            runs: vec![text_run],
-            paragraph_style: None,
-            bounds: Rect::default(),
-            style: ShapeStyle::default(),
-            rotation: 0.0,
-        };
+        let embedded = EmbeddedBlock::markup(EmbeddedKind::Svg, svg_content);
 
         let page = Page {
             number: 1,
             dimensions: Dimensions { width, height },
-            content: vec![ContentBlock::Text(text_block)],
+            content: vec![ContentBlock::Embedded(embedded)],
             metadata: PageMetadata::default(),
             annotations: Vec::new(),
         };
@@ -195,8 +180,6 @@ impl Parser for SvgzParser {
     }
 
     async fn parse(&self, data: Bytes, context: ParseContext) -> Result<Document> {
-        use std::io::Read;
-
         debug!(
             "Parsing SVGZ image, size: {} bytes, filename: {:?}",
             context.size, context.filename
@@ -208,12 +191,10 @@ impl Parser for SvgzParser {
             ));
         }
 
-        // Decompress the gzipped data
-        let mut decoder = GzDecoder::new(&data[..]);
-        let mut svg_content = String::new();
-        decoder
-            .read_to_string(&mut svg_content)
-            .map_err(|e| Error::ParseError(format!("Failed to decompress SVGZ: {e}")))?;
+        // Decompress the gzipped data with a size limit
+        let limit = crate::limits::max_decompressed_bytes(&context);
+        let decoder = GzDecoder::new(&data[..]);
+        let svg_content = crate::limits::read_bounded_string(decoder, limit)?;
 
         // Validate it's actually SVG
         if !SvgParser::is_svg(svg_content.as_bytes()) {
@@ -226,26 +207,12 @@ impl Parser for SvgzParser {
         let (width, height) = extract_svg_dimensions(&svg_content);
 
         // Create SVG content block
-        let text_run = TextRun {
-            text: format!("__SVG_RAW__:{svg_content}"),
-            style: prism_core::document::TextStyle::default(),
-            bounds: Some(Rect::default()),
-            char_positions: Some(Vec::new()),
-        };
-
-        let text_block = TextBlock {
-            vertical_alignment: None,
-            runs: vec![text_run],
-            paragraph_style: None,
-            bounds: Rect::default(),
-            style: ShapeStyle::default(),
-            rotation: 0.0,
-        };
+        let embedded = EmbeddedBlock::markup(EmbeddedKind::Svg, svg_content);
 
         let page = Page {
             number: 1,
             dimensions: Dimensions { width, height },
-            content: vec![ContentBlock::Text(text_block)],
+            content: vec![ContentBlock::Embedded(embedded)],
             metadata: PageMetadata::default(),
             annotations: Vec::new(),
         };

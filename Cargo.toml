@@ -10,6 +10,8 @@ members = [
     "crates/prism-bindings",
     "crates/prism-tests",
 ]
+# Built separately with cargo-fuzz (nightly)
+exclude = ["fuzz"]
 
 [workspace.package]
 version = "0.5.0"
@@ -56,10 +58,10 @@ assert_fs = "1.1"
 predicates = "3.0"
 
 # Internal crates
-prism-core = { path = "crates/prism-core" }
-prism-parsers = { path = "crates/prism-parsers" }
-prism-render = { path = "crates/prism-render" }
-prism-sandbox = { path = "crates/prism-sandbox" }
+prism-core = { path = "crates/prism-core", version = "0.5.0" }
+prism-parsers = { path = "crates/prism-parsers", version = "0.5.0" }
+prism-render = { path = "crates/prism-render", version = "0.5.0" }
+prism-sandbox = { path = "crates/prism-sandbox", version = "0.5.0" }
 
 [profile.dev]
 opt-level = 0

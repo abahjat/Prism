@@ -8,7 +8,7 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use prism_core::{
     document::{
-        ContentBlock, Dimensions, Document, Page, PageMetadata, Rect, TextBlock, TextRun, TextStyle,
+        ContentBlock, Dimensions, Document, EmbeddedBlock, EmbeddedKind, Page, PageMetadata, Rect,
     },
     error::{Error, Result},
     format::Format,
@@ -34,20 +34,20 @@ impl XpsParser {
 
     // Helper to find attribute in XML event
     fn get_attr(e: &quick_xml::events::BytesStart, name: &[u8]) -> Option<String> {
-        e.attributes()
-            .flatten()
-            .find(|a| a.key.as_ref() == name)
-            .map(|a| String::from_utf8_lossy(&a.value).into_owned())
+        crate::office::utils::attr_value_opt(e, name)
     }
 
     // Helper to read file from zip
-    fn read_zip_file(zip: &mut ZipArchive<Cursor<Bytes>>, name: &str) -> Result<String> {
+    fn read_zip_file(
+        zip: &mut ZipArchive<Cursor<Bytes>>,
+        name: &str,
+        limit: usize,
+    ) -> Result<String> {
         let mut file = zip
             .by_name(name)
             .map_err(|_| Error::ParseError(format!("Missing file: {name}")))?;
         let mut buf = String::new();
-        std::io::Read::read_to_string(&mut file, &mut buf)
-            .map_err(|e| Error::ParseError(format!("Failed to read {name}: {e}")))?;
+        crate::limits::read_to_string_with_limit(&mut file, &mut buf, limit)?;
         Ok(buf)
     }
 }
@@ -84,6 +84,7 @@ impl Parser for XpsParser {
             context.size, context.filename
         );
 
+        let limit = crate::limits::max_decompressed_bytes(&context);
         let cursor = Cursor::new(data.clone());
         let mut zip = ZipArchive::new(cursor)
             .map_err(|e| Error::ParseError(format!("Failed to open XPS zip: {e}")))?;
@@ -107,17 +108,17 @@ impl Parser for XpsParser {
             found.ok_or_else(|| Error::ParseError("No .fdseq file found".to_string()))?
         };
 
-        let fdseq_content = Self::read_zip_file(&mut zip, &fdseq_path)?;
+        let fdseq_content = Self::read_zip_file(&mut zip, &fdseq_path, limit)?;
 
         // 2. Parse fdseq to find FixedDocument refs
         let mut doc_refs = Vec::new();
         let mut reader = Reader::from_str(&fdseq_content);
-        reader.trim_text(true);
+        reader.config_mut().trim_text(true);
 
         loop {
             match reader.read_event() {
                 Ok(Event::Start(e) | Event::Empty(e)) => {
-                    if e.name().as_ref() == b"DocumentReference" {
+                    if e.name().as_ref().as_bytes() == b"DocumentReference" {
                         if let Some(source) = Self::get_attr(&e, b"Source") {
                             doc_refs.push(source);
                         }
@@ -147,8 +148,9 @@ impl Parser for XpsParser {
                 format!("{base_dir}/{doc_ref}")
             };
 
-            let doc_content = match Self::read_zip_file(&mut zip, &path) {
+            let doc_content = match Self::read_zip_file(&mut zip, &path, limit) {
                 Ok(c) => c,
+                Err(e @ Error::MemoryLimitExceeded { .. }) => return Err(e),
                 Err(e) => {
                     warn!("Failed to read FixedDocument {path}: {e}");
                     continue;
@@ -156,7 +158,7 @@ impl Parser for XpsParser {
             };
 
             let mut reader = Reader::from_str(&doc_content);
-            reader.trim_text(true);
+            reader.config_mut().trim_text(true);
 
             // Keep track of doc base for pages
             let doc_base = std::path::Path::new(&path)
@@ -167,7 +169,7 @@ impl Parser for XpsParser {
             loop {
                 match reader.read_event() {
                     Ok(Event::Start(e) | Event::Empty(e)) => {
-                        if e.name().as_ref() == b"PageContent" {
+                        if e.name().as_ref().as_bytes() == b"PageContent" {
                             if let Some(source) = Self::get_attr(&e, b"Source") {
                                 // Resolve page path
                                 let page_path = if source.starts_with('/') {
@@ -192,8 +194,9 @@ impl Parser for XpsParser {
         let mut page_num = 1;
 
         for page_path in page_refs {
-            let page_content = match Self::read_zip_file(&mut zip, &page_path) {
+            let page_content = match Self::read_zip_file(&mut zip, &page_path, limit) {
                 Ok(c) => c,
+                Err(e @ Error::MemoryLimitExceeded { .. }) => return Err(e),
                 Err(e) => {
                     warn!("Failed to read FixedPage {page_path}: {e}");
                     continue;
@@ -206,7 +209,7 @@ impl Parser for XpsParser {
                 .unwrap_or_default();
 
             let mut reader = Reader::from_str(&page_content);
-            reader.trim_text(true);
+            reader.config_mut().trim_text(true);
 
             // Collect positioned elements for sorting
             #[allow(clippy::items_after_statements)]
@@ -233,7 +236,7 @@ impl Parser for XpsParser {
             loop {
                 match reader.read_event() {
                     Ok(Event::Start(e) | Event::Empty(e)) => {
-                        match e.name().as_ref() {
+                        match e.name().as_ref().as_bytes() {
                             b"FixedPage" => {
                                 if let Some(w) = Self::get_attr(&e, b"Width") {
                                     if let Ok(val) = w.parse::<f64>() {
@@ -299,10 +302,12 @@ impl Parser for XpsParser {
                                     for try_path in &paths_to_try {
                                         debug!("Trying image path: {}", try_path);
                                         if let Ok(mut file) = zip.by_name(try_path) {
-                                            if std::io::Read::read_to_end(&mut file, &mut img_data)
-                                                .is_ok()
-                                                && !img_data.is_empty()
-                                            {
+                                            crate::limits::read_to_end_with_limit(
+                                                &mut file,
+                                                &mut img_data,
+                                                limit,
+                                            )?;
+                                            if !img_data.is_empty() {
                                                 try_path.clone_into(&mut found_path);
                                                 debug!(
                                                     "Successfully read image from: {}",
@@ -436,7 +441,7 @@ impl Parser for XpsParser {
                         }
                     }
                     Ok(Event::End(e)) => {
-                        if e.name().as_ref() == b"Path" {
+                        if e.name().as_ref().as_bytes() == b"Path" {
                             current_path_bounds = None;
                         }
                     }
@@ -518,26 +523,13 @@ impl Parser for XpsParser {
             html.push_str("</body></html>");
 
             if !text_elements.is_empty() || !image_elements.is_empty() {
-                let text_run = TextRun {
-                    text: format!("__HTML_RAW__:{html}"),
-                    style: TextStyle::default(),
-                    bounds: Some(Rect::default()),
-                    char_positions: Some(Vec::new()),
-                };
-
-                let text_block = TextBlock {
-                    runs: vec![text_run],
-                    bounds: Rect::new(0.0, 0.0, width, height),
-                    paragraph_style: None,
-                    vertical_alignment: None,
-                    style: prism_core::document::ShapeStyle::default(),
-                    rotation: 0.0,
-                };
+                let mut embedded = EmbeddedBlock::markup(EmbeddedKind::GeneratedHtml, html);
+                embedded.bounds = Rect::new(0.0, 0.0, width, height);
 
                 pages.push(Page {
                     number: page_num,
                     dimensions: Dimensions { width, height },
-                    content: vec![ContentBlock::Text(text_block)],
+                    content: vec![ContentBlock::Embedded(embedded)],
                     metadata: PageMetadata::default(),
                     annotations: Vec::new(),
                 });

@@ -9,7 +9,7 @@ use bytes::Bytes;
 use mail_parser::MessageParser;
 use prism_core::{
     document::{
-        ContentBlock, Dimensions, Document, Page, PageMetadata, Rect, TextBlock, TextRun, TextStyle,
+        ContentBlock, Dimensions, Document, EmbeddedBlock, EmbeddedKind, Page, PageMetadata,
     },
     error::{Error, Result},
     format::Format,
@@ -100,21 +100,7 @@ impl Parser for MhtParser {
         // Note: Embedded images (cid:) likely won't resolve without resolving logic.
         // For MVP, we provide the HTML as-is.
 
-        let text_run = TextRun {
-            text: format!("__HTML_RAW__:{html_content}"),
-            style: TextStyle::default(),
-            bounds: Some(Rect::default()),
-            char_positions: Some(Vec::new()),
-        };
-
-        let text_block = TextBlock {
-            runs: vec![text_run],
-            bounds: Rect::default(),
-            paragraph_style: None,
-            vertical_alignment: None,
-            style: prism_core::document::ShapeStyle::default(),
-            rotation: 0.0,
-        };
+        let embedded = EmbeddedBlock::markup(EmbeddedKind::Html, html_content);
 
         // Page setup
         let page = Page {
@@ -123,7 +109,7 @@ impl Parser for MhtParser {
                 width: 850.0,
                 height: 1100.0,
             },
-            content: vec![ContentBlock::Text(text_block)],
+            content: vec![ContentBlock::Embedded(embedded)],
             metadata: PageMetadata::default(),
             annotations: Vec::new(),
         };

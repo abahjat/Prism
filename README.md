@@ -2,7 +2,7 @@
 
 > **"Any document, any platform, in milliseconds."**
 
-Prism is a next-generation document processing SDK built in Rust, designed to view, convert, and extract content from 600+ file formats. It's the modern, developer-friendly alternative to Oracle Outside In.
+Prism is a document processing SDK built in Rust for viewing, converting and extracting content from documents. It aims to become an open-source alternative to Oracle Outside In for forensic and eDiscovery review. About 70 formats are supported today. The long-term target is 600+ (see [docs/ROADMAP.md](docs/ROADMAP.md)).
 
 ## 🖼️ Visuals
 
@@ -32,10 +32,10 @@ Prism is a next-generation document processing SDK built in Rust, designed to vi
   - **Text:** TXT, HTML, JSON, XML, CSV, Markdown, LOG
 
 - **Modern Architecture**: Built with Rust for memory safety, performance, and reliability
-- **Cloud-Native**: Designed for containerization, horizontal scaling, and serverless deployment
-- **Secure by Default**: WebAssembly sandboxing for parser isolation
-- **Developer-Friendly**: Clean APIs with SDKs for 10+ languages
-- **High Performance**: Parallel processing, streaming support, and optimized rendering
+- **Forensically safe output**: Rendered HTML loads nothing from the network and runs no document content. Untrusted HTML is sanitized, remote images (read-receipt pixels) are blocked, and a strict Content Security Policy is applied. Bundled pdf.js means the viewer works air-gapped.
+- **Robust**: Every parser is tested against truncated and corrupted inputs (no panics or hangs), and fuzz targets are included.
+- **Embeddable**: Rust API, a C ABI (`prism-bindings`) and a .NET wrapper (`Prism.Native`)
+- **Cloud-Ready**: REST server and container image
 
 ## 📦 Components
 
@@ -46,9 +46,10 @@ Prism is a next-generation document processing SDK built in Rust, designed to vi
 | **prism-core** | Core engine, Unified Document Model (UDM), parser/renderer traits | ✅ Foundation complete |
 | **prism-parsers** | Format parser implementations | 🚧 In development |
 | **prism-render** | Rendering engine (HTML, PDF, Image output) | 🚧 Basic HTML renderer |
-| **prism-sandbox** | WebAssembly sandboxing for secure parser execution | 🚧 Framework ready |
-| **prism-server** | REST API server (Axum-based) | 🚧 Basic endpoints |
-| **prism-cli** | Command-line interface | 🚧 Structure ready |
+| **prism-sandbox** | Parser isolation (WebAssembly planned) | 🚧 Configuration types only; parsers are **not** sandboxed yet |
+| **prism-server** | REST API server (Axum-based) | 🚧 `/api/health`, `/api/version`, `/api/convert` |
+| **prism-bindings** | C ABI for native hosts (.NET, Java, C/C++) | ✅ Detect, HTML, text, metadata, last-error |
+| **prism-cli** | Command-line interface | 🚧 Only `version` works; other commands are placeholders |
 
 ## 🛠️ Installation
 
@@ -83,6 +84,8 @@ After building, you'll find the binaries in `target/release/`:
 ## 🚀 Quick Start
 
 ### Using the CLI
+
+> The CLI is not functional yet: argument parsing is a placeholder and only prints the version. The commands below show the planned interface.
 
 ```bash
 # Detect document format
@@ -494,32 +497,15 @@ Current performance targets:
 
 ## 🔒 Security
 
-- **Parser Sandboxing**: All parsers run in WebAssembly sandboxes with strict memory/CPU limits
-- **No Code Execution**: Documents cannot execute code; macros are parsed but not run
-- **Memory Limits**: Configurable memory limits per parser instance
-- **Timeout Protection**: Execution time limits prevent infinite loops
-- **No I/O Access**: Sandboxed parsers cannot access filesystem or network
+- **No code execution**: Macros are never run. Scripts, event handlers, frames, forms and plugins are removed from document HTML. Untrusted SVG is displayed as an image, so it cannot run scripts.
+- **No network access from rendered output**: A Content Security Policy (`default-src 'none'`, nonce-only scripts) and the sanitizer block remote images, fonts and stylesheets. Links are neutralized, so the target stays visible but can't be followed.
+- **Malformed input**: Parsers must return errors rather than panic or hang. This is enforced by `crates/prism-tests/tests/robustness_tests.rs` and the fuzz targets in `fuzz/`.
+- **Not yet implemented**: Parsers run in-process without memory or time limits. Process isolation and WASM sandboxing are on the roadmap.
+- **Known exception**: Some image conversions shell out to ImageMagick when it is installed (`prism-parsers/src/image/converter.rs`).
 
 ## 🗺️ Roadmap
 
-### Phase 1 (Current - Year 1): Foundation
-- ✅ Core architecture and UDM
-- ✅ Basic format detection
-- ✅ HTML renderer
-- 🚧 200 format support
-- 🚧 REST API
-- 🚧 CLI tool
-
-### Phase 2 (Year 2): Expansion
-- 400 format support
-- AI-powered features (classification, summarization)
-- SOC 2 Type II compliance
-- Enterprise features
-
-### Phase 3 (Year 3): Parity
-- 600+ format support
-- FedRAMP certification
-- Format parity with Oracle Outside In
+See [docs/ROADMAP.md](docs/ROADMAP.md). In short: Phase 0 foundations (safe output, robustness, bindings), then a native Rust layout engine (`prism-layout`) with a shared page model, then Word, PowerPoint and Excel fidelity, and finally review and production features.
 
 ## 🤝 Contributing
 
@@ -560,7 +546,7 @@ Prism is inspired by and aims to be a modern alternative to:
 
 ## 🌟 Status
 
-**Current Status**: Early Development (v0.5.0)
+**Current Status**: Early development (v0.5.0). Office documents render as approximate HTML: there is no layout engine yet, so DOCX pagination is synthetic. Legacy DOC/PPT give text only.
 
 - ✅ Core architecture complete
 - ✅ Format detection working

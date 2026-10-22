@@ -51,6 +51,8 @@ pub struct ParseContext {
 /// Trait for document parsers
 ///
 /// Implement this trait to add support for a new document format.
+// async_trait wraps the #[must_use] future in a Box, which this lint flags
+#[allow(clippy::double_must_use)]
 #[async_trait]
 pub trait Parser: Send + Sync {
     /// Get the format this parser handles

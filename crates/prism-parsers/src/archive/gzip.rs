@@ -8,24 +8,21 @@ use prism_core::{
         ContentBlock, Dimensions, Document, Page, PageMetadata, Rect, ShapeStyle, TableBlock,
         TableCell, TableRow, TextBlock, TextRun,
     },
-    error::{Error, Result},
+    error::Result,
     metadata::Metadata,
     parser::ParseContext,
 };
-use std::io::Read;
 use tracing::debug;
 
 /// Parse a `GZIP` archive
 ///
 /// # Errors
 ///
-/// Returns an error if decompression fails or the inner content is invalid.
+/// Returns an error if decompression fails, exceeds the memory limit, or the inner content is invalid.
 pub fn parse(context: ParseContext, data: &Bytes) -> Result<Document> {
-    let mut decoder = GzDecoder::new(&data[..]);
-    let mut decompressed = Vec::new();
-    decoder
-        .read_to_end(&mut decompressed)
-        .map_err(|e| Error::ParseError(format!("Gzip decompression failed: {e}")))?;
+    let limit = crate::limits::max_decompressed_bytes(&context);
+    let decoder = GzDecoder::new(&data[..]);
+    let decompressed = crate::limits::read_bounded(decoder, limit)?;
 
     // Check if inner content is a TAR archive
     if decompressed.len() > 512 && is_tar(&decompressed) {
@@ -52,7 +49,11 @@ pub fn parse(context: ParseContext, data: &Bytes) -> Result<Document> {
     ));
 
     #[allow(clippy::cast_precision_loss)]
-    let ratio = (context.size as f64 / decompressed.len() as f64) * 100.0;
+    let ratio = if decompressed.is_empty() {
+        0.0
+    } else {
+        (context.size as f64 / decompressed.len() as f64) * 100.0
+    };
     rows.push(create_prop_row(
         "Compression Ratio",
         &format!("{ratio:.2}%"),
@@ -92,9 +93,10 @@ pub fn parse(context: ParseContext, data: &Bytes) -> Result<Document> {
 }
 
 fn is_tar(data: &[u8]) -> bool {
-    // Check USTAR magic at offset 257 (5 bytes of "ustar" followed by NUL or space)
-    // "ustar\0" or "ustar "
-    let magic = &data[257..263]; // 6 bytes
+    if data.len() < 263 {
+        return false;
+    }
+    let magic = &data[257..263];
     magic == b"ustar\0" || magic == b"ustar "
 }
 

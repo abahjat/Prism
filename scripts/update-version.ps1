@@ -33,6 +33,15 @@ else {
     Write-Warning "Could not find [workspace.package] version in Cargo.toml"
 }
 
+# 2b. Update the versions of internal crates in [workspace.dependencies]
+$CargoContent = Get-Content $CargoToml -Raw
+$InternalDepPattern = '(?<prefix>prism-[a-z]+ = \{ path = "crates/prism-[a-z]+", version = ")(?<ver>[^"]+)(?<suffix>")'
+if ($CargoContent -match $InternalDepPattern) {
+    $NewCargoContent = $CargoContent -replace $InternalDepPattern, ('${prefix}' + $Version + '${suffix}')
+    Set-Content -Path $CargoToml -Value $NewCargoContent -Encoding UTF8
+    Write-Host "Updated internal dependency versions" -ForegroundColor Green
+}
+
 # 3. Update Prism.Native.csproj
 $CsprojContent = Get-Content $Csproj -Raw
 # Simple replacement for unique tag
