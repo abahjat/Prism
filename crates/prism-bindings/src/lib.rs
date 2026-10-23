@@ -18,7 +18,7 @@ use prism_core::format::{DetectionResult, detect_format};
 use prism_core::parser::{ParseContext, ParseOptions};
 use prism_core::render::{RenderContext, Renderer};
 use prism_layout::{
-    LayoutDocument, LayoutOptions, SearchOptions, interpret_pdf_bytes, layout_document,
+    LayoutDocument, LayoutOptions, MarkupMode, SearchOptions, interpret_pdf_bytes, layout_document,
 };
 use prism_parsers::registry::ParserRegistry;
 use prism_render::html::HtmlRenderer;
@@ -379,10 +379,21 @@ pub const PRISM_SEARCH_IGNORE_DIACRITICS: u32 = 1 << 1;
 /// Search flag bit 2: match whole words only.
 pub const PRISM_SEARCH_WHOLE_WORD: u32 = 1 << 2;
 
+/// Tracked-changes markup mode: show insertions, deletions, change bars, and comments (`AllMarkup`).
+pub const PRISM_MARKUP_ALL: u32 = 0;
+/// Tracked-changes markup mode: final text with left-margin change bars (`SimpleMarkup`).
+pub const PRISM_MARKUP_SIMPLE: u32 = 1;
+/// Tracked-changes markup mode: final text as if all revisions were accepted (`NoMarkup`).
+pub const PRISM_MARKUP_NONE: u32 = 2;
+/// Tracked-changes markup mode: original text as if all revisions were rejected (`Original`).
+pub const PRISM_MARKUP_ORIGINAL: u32 = 3;
+
 /// Opaque handle to a parsed and positioned Prism document (`LayoutDocument`).
 pub struct PrismDocument {
     layout: LayoutDocument,
     title: Option<String>,
+    word_doc: Option<prism_word::WordDocument>,
+    options: LayoutOptions,
 }
 
 /// Run a fallible closure returning `i32` (`0` on success, `-1` on error/panic).
@@ -444,6 +455,42 @@ pub unsafe extern "C" fn prism_document_open(
                 return Ok(PrismDocument {
                     layout,
                     title: filename_opt,
+                    word_doc: None,
+                    options,
+                });
+            }
+
+            // Native prism-word layout path for DOCX and legacy binary DOC buffers
+            if prism_word::is_docx_zip(bytes)
+                && let Ok(word_doc) = prism_word::parse_docx(
+                    bytes,
+                    filename_opt.as_deref(),
+                    options.max_decompressed_stream_bytes,
+                )
+            {
+                let layout = prism_word::layout_word_document(&word_doc, &options)
+                    .map_err(|e| format!("Word layout failed: {e}"))?;
+                let title = word_doc.title.clone().or(filename_opt);
+                return Ok(PrismDocument {
+                    layout,
+                    title,
+                    word_doc: Some(word_doc),
+                    options,
+                });
+            }
+
+            if prism_word::is_doc_bytes(bytes)
+                && let Ok(word_doc) =
+                    prism_word::parse_doc(bytes, options.max_decompressed_stream_bytes)
+            {
+                let layout = prism_word::layout_word_document(&word_doc, &options)
+                    .map_err(|e| format!("Word DOC layout failed: {e}"))?;
+                let title = word_doc.title.clone().or(filename_opt);
+                return Ok(PrismDocument {
+                    layout,
+                    title,
+                    word_doc: Some(word_doc),
+                    options,
                 });
             }
 
@@ -455,7 +502,12 @@ pub unsafe extern "C" fn prism_document_open(
                 }
                 _ => format!("layout failed: {e}"),
             })?;
-            Ok(PrismDocument { layout, title })
+            Ok(PrismDocument {
+                layout,
+                title,
+                word_doc: None,
+                options,
+            })
         },
     ));
 
@@ -584,7 +636,7 @@ pub unsafe extern "C" fn prism_document_render_page(
             )
         })?;
 
-        let opts = LayoutOptions::default();
+        let opts = doc_ref.options.clone();
         let bytes = match format {
             PRISM_PAGE_FORMAT_SVG => render_page_svg(
                 layout_page,
@@ -732,7 +784,7 @@ pub unsafe extern "C" fn prism_document_export(
                 let viewer_opts = SvgViewerOptions {
                     title: doc_ref.title.clone(),
                     white_background: true,
-                    layout_options: LayoutOptions::default(),
+                    layout_options: doc_ref.options.clone(),
                 };
                 render_document_viewer_html(&doc_ref.layout, &viewer_opts)
                     .map(String::into_bytes)
@@ -768,6 +820,63 @@ pub unsafe extern "C" fn prism_document_font_report(doc: *const PrismDocument) -
         let doc_ref = unsafe { &*doc };
         serde_json::to_string(&doc_ref.layout.font_report)
             .map_err(|e| format!("failed to serialize font report: {e}"))
+    })
+}
+
+/// Set the tracked-changes markup mode on a [`PrismDocument`] and re-layout if it is a Word document.
+///
+/// `mode` must be one of [`PRISM_MARKUP_ALL`] (`0`), [`PRISM_MARKUP_SIMPLE`] (`1`),
+/// [`PRISM_MARKUP_NONE`] (`2`), or [`PRISM_MARKUP_ORIGINAL`] (`3`).
+/// Returns `0` on success, `-1` on error.
+///
+/// # Safety
+///
+/// `doc` must be a valid mutable [`PrismDocument`] pointer.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn prism_document_set_markup_mode(doc: *mut PrismDocument, mode: u32) -> i32 {
+    guarded_status(|| {
+        if doc.is_null() {
+            return Err("doc is null".to_string());
+        }
+        let markup_mode = match mode {
+            PRISM_MARKUP_ALL => MarkupMode::AllMarkup,
+            PRISM_MARKUP_SIMPLE => MarkupMode::SimpleMarkup,
+            PRISM_MARKUP_NONE => MarkupMode::NoMarkup,
+            PRISM_MARKUP_ORIGINAL => MarkupMode::Original,
+            other => return Err(format!("unsupported markup mode: {other}")),
+        };
+        // SAFETY: guaranteed by caller
+        let doc_mut = unsafe { &mut *doc };
+        doc_mut.options.markup_mode = markup_mode;
+        if let Some(ref word_doc) = doc_mut.word_doc {
+            doc_mut.layout = prism_word::layout_word_document(word_doc, &doc_mut.options)
+                .map_err(|e| format!("Word re-layout failed: {e}"))?;
+        }
+        Ok(())
+    })
+}
+
+/// Return the per-document Word forensic facts (macros, external links, revisions, comments) as JSON.
+///
+/// Free the returned string with [`prism_free_string`].
+///
+/// # Safety
+///
+/// `doc` must be a valid [`PrismDocument`] pointer.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn prism_document_forensic_facts(doc: *const PrismDocument) -> *mut c_char {
+    guarded(|| {
+        if doc.is_null() {
+            return Err("doc is null".to_string());
+        }
+        // SAFETY: guaranteed by caller
+        let doc_ref = unsafe { &*doc };
+        let default_facts = prism_word::ForensicFacts::default();
+        let facts = doc_ref
+            .word_doc
+            .as_ref()
+            .map_or(&default_facts, |w| &w.forensic);
+        serde_json::to_string(facts).map_err(|e| format!("failed to serialize forensic facts: {e}"))
     })
 }
 
@@ -907,6 +1016,13 @@ mod tests {
         let font_report =
             take(unsafe { prism_document_font_report(doc) }).expect("font report json");
         assert!(font_report.contains("entries"));
+
+        // Markup mode + forensic facts
+        let rc_mode = unsafe { prism_document_set_markup_mode(doc, PRISM_MARKUP_NONE) };
+        assert_eq!(rc_mode, 0);
+        let facts_json =
+            take(unsafe { prism_document_forensic_facts(doc) }).expect("forensic facts json");
+        assert!(facts_json.contains("vba_project_present"));
 
         // Export PDF
         let mut pdf_buf: *mut u8 = ptr::null_mut();

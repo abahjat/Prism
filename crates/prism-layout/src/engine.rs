@@ -120,17 +120,86 @@ pub struct ParagraphSpec {
     pub block_index: u32,
 }
 
+/// Metrics and run range for a single broken line inside a [`ShapedParagraph`].
+#[derive(Debug, Clone, Default)]
+pub struct ShapedLine {
+    /// Top Y offset of the line relative to `origin.y` in points.
+    pub top: f32,
+    /// Baseline Y offset of the line relative to `origin.y` in points.
+    pub baseline: f32,
+    /// Bottom Y offset of the line relative to `origin.y` in points.
+    pub bottom: f32,
+    /// Advance width of the line in points.
+    pub width: f32,
+    /// Index range into [`ShapedParagraph::runs`] belonging to this line.
+    pub run_range: std::ops::Range<usize>,
+}
+
 /// Result of shaping and line-breaking a [`ParagraphSpec`].
 #[derive(Debug, Clone, Default)]
 pub struct ShapedParagraph {
     /// Positioned [`GlyphRun`]s for all lines in the paragraph.
     pub runs: Vec<GlyphRun>,
+    /// Per-line metrics and run ranges in top-to-bottom order.
+    pub lines: Vec<ShapedLine>,
     /// Total height of the shaped paragraph in points.
     pub height: f32,
     /// Maximum line width encountered in points.
     pub width: f32,
     /// Number of broken lines.
     pub line_count: usize,
+}
+
+/// Span count above which adjacent spans are merged before shaping. `parley` indexes styles
+/// with `u16` and panics past `u16::MAX`; long run lists are also slow to shape.
+const MAX_SPANS_PER_PARAGRAPH: usize = 8192;
+
+/// Merge spans so that at most [`MAX_SPANS_PER_PARAGRAPH`] remain, keeping all text.
+///
+/// Adjacent spans with the same appearance are merged first. If that is not enough, consecutive
+/// groups take the style (and run index) of their first span.
+fn coalesce_spans(spec: &ParagraphSpec) -> ParagraphSpec {
+    let same_style = |a: &SpanSpec, b: &SpanSpec| {
+        a.family == b.family
+            && a.size.to_bits() == b.size.to_bits()
+            && a.bold == b.bold
+            && a.italic == b.italic
+            && a.color == b.color
+            && a.underline == b.underline
+            && a.strikethrough == b.strikethrough
+            && a.highlight == b.highlight
+            && a.script == b.script
+    };
+    let mut merged: Vec<SpanSpec> = Vec::new();
+    for span in &spec.spans {
+        match merged.last_mut() {
+            Some(last) if same_style(last, span) => last.text.push_str(&span.text),
+            _ => merged.push(span.clone()),
+        }
+    }
+    if merged.len() > MAX_SPANS_PER_PARAGRAPH {
+        let group = merged.len().div_ceil(MAX_SPANS_PER_PARAGRAPH);
+        merged = merged
+            .chunks(group)
+            .map(|chunk| {
+                let mut first = chunk[0].clone();
+                for span in &chunk[1..] {
+                    first.text.push_str(&span.text);
+                }
+                first
+            })
+            .collect();
+    }
+    ParagraphSpec {
+        spans: merged,
+        align: spec.align,
+        line_spacing: spec.line_spacing,
+        max_width: spec.max_width,
+        first_line_indent: spec.first_line_indent,
+        origin: spec.origin,
+        page_index: spec.page_index,
+        block_index: spec.block_index,
+    }
 }
 
 /// Stateful text layout engine wrapping `parley::LayoutContext`.
@@ -163,6 +232,13 @@ impl TextLayoutEngine {
         if spec.spans.is_empty() || spec.spans.iter().all(|s| s.text.is_empty()) {
             return ShapedParagraph::default();
         }
+        let coalesced;
+        let spec = if spec.spans.len() > MAX_SPANS_PER_PARAGRAPH {
+            coalesced = coalesce_spans(spec);
+            &coalesced
+        } else {
+            spec
+        };
 
         // Build full paragraph text and resolve font families up front.
         let mut full_text = String::new();
@@ -226,6 +302,12 @@ impl TextLayoutEngine {
         }
 
         let mut layout = builder.build(&full_text);
+        // Applied by parley so the first line also breaks at the reduced (or, when hanging,
+        // widened) width; a negative indent protrudes past the start edge.
+        layout.set_text_indent(
+            spec.first_line_indent,
+            parley::layout::IndentOptions::default(),
+        );
         let max_advance = spec.max_width.map(|w| w.max(1.0));
         layout.break_all_lines(max_advance);
 
@@ -239,11 +321,14 @@ impl TextLayoutEngine {
 
         let styles = layout.styles();
         let mut out_runs = Vec::new();
+        let mut out_lines = Vec::new();
         let mut line_count = 0usize;
+        let mut line_top_cursor = 0.0_f32;
 
         for line in layout.lines() {
             line_count += 1;
             let line_metrics = line.metrics();
+            let line_run_start = out_runs.len();
             let mut cursor_x = line_metrics.offset;
 
             for parley_run in line.runs() {
@@ -346,10 +431,22 @@ impl TextLayoutEngine {
                     ));
                 }
             }
+
+            let line_run_end = out_runs.len();
+            let line_bottom = line_top_cursor + line_metrics.line_height;
+            out_lines.push(ShapedLine {
+                top: line_top_cursor,
+                baseline: line_metrics.baseline,
+                bottom: line_bottom,
+                width: line_metrics.advance,
+                run_range: line_run_start..line_run_end,
+            });
+            line_top_cursor = line_bottom;
         }
 
         ShapedParagraph {
             runs: out_runs,
+            lines: out_lines,
             height: layout.height(),
             width: layout.width(),
             line_count,
@@ -412,6 +509,73 @@ mod tests {
     use crate::model::{Item, LayoutDocument, LayoutOptions, LayoutPage, Size};
     use crate::text_ops::SearchOptions;
 
+    fn plain_paragraph(text: &str, first_line_indent: f32) -> ParagraphSpec {
+        ParagraphSpec {
+            spans: vec![SpanSpec {
+                text: text.to_string(),
+                ..SpanSpec::default()
+            }],
+            max_width: Some(200.0),
+            first_line_indent,
+            ..ParagraphSpec::default()
+        }
+    }
+
+    /// Left edge (run origin x) of the first run on each line.
+    fn line_starts(shaped: &ShapedParagraph) -> Vec<f32> {
+        shaped
+            .lines
+            .iter()
+            .map(|l| shaped.runs[l.run_range.start].transform.coeffs[4])
+            .collect()
+    }
+
+    #[test]
+    fn test_first_line_indent_offsets_and_narrows_only_the_first_line() {
+        let mut font_sys = FontSystem::new(&LayoutOptions::default());
+        let mut engine = TextLayoutEngine::new();
+        let text = "word ".repeat(60);
+
+        for indent in [36.0_f32, -18.0] {
+            let shaped = engine.layout_paragraph(&plain_paragraph(&text, indent), &mut font_sys);
+            assert!(shaped.lines.len() > 2);
+            let starts = line_starts(&shaped);
+            assert!(
+                (starts[0] - indent).abs() < 0.01,
+                "first line at {}",
+                starts[0]
+            );
+            assert!(starts[1..].iter().all(|x| x.abs() < 0.01));
+            // The first line breaks within the width left after the indent.
+            assert!(shaped.lines[0].width <= 200.0 - indent + 0.01);
+        }
+    }
+
+    #[test]
+    fn test_paragraph_with_many_spans_keeps_all_text() {
+        let mut font_sys = FontSystem::new(&LayoutOptions::default());
+        let mut engine = TextLayoutEngine::new();
+        // More distinct styles than parley can index (u16), alternating so none can merge.
+        let spans = (0..70_000)
+            .map(|i| SpanSpec {
+                text: "a".to_string(),
+                bold: i % 2 == 0,
+                run_index: i,
+                ..SpanSpec::default()
+            })
+            .collect();
+        let spec = ParagraphSpec {
+            spans,
+            max_width: Some(400.0),
+            ..ParagraphSpec::default()
+        };
+        let shaped = engine.layout_paragraph(&spec, &mut font_sys);
+        let mut page = LayoutPage::new(0, Size::LETTER);
+        page.items.extend(shaped.runs.into_iter().map(Item::Glyphs));
+        let chars = page.text().chars().filter(|c| *c == 'a').count();
+        assert_eq!(chars, 70_000);
+    }
+
     #[test]
     fn test_layout_paragraph_shapes_and_extracts_text() {
         let mut font_sys = FontSystem::new(&LayoutOptions::default());
@@ -449,6 +613,7 @@ mod tests {
 
         let shaped = engine.layout_paragraph(&spec, &mut font_sys);
         assert_eq!(shaped.line_count, 1);
+        assert_eq!(shaped.lines.len(), 1);
         assert!(shaped.runs.len() >= 2);
         assert!(shaped.height > 10.0);
 

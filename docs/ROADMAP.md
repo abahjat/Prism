@@ -76,22 +76,35 @@ Parsers ──► Flow/fixed model ──► prism-layout ──► LayoutPage[]
 - [x] Viewer component: offline TypeScript/JS viewer (`prism-viewer.js`) with
       virtualized pages, selectable text layer, search-hit highlighting,
       thumbnails, zoom/rotate. Page-on-demand C ABI (`bindings/c/prism.h`,
-      `PrismDocument` in `Prism.Native`):
+      `Prism.Native`):
       `open → page_count → render_page(n, dpi) → page_text(n) → search → export`.
 
 ## Phase 2 – Word (DOCX, then DOC), 4–8 months
 
-1. **Complete model.** Style inheritance (docDefaults → style chain → direct),
-   numbering/lists, sections and columns, headers/footers, footnotes/endnotes,
-   tables (grid, merges, borders, shading), tabs, fields (cached results),
-   text boxes, anchored images and shapes, **tracked changes and comments**.
-2. **Flow layout.** Block stacking, page breaking (keep-with-next, widow/orphan
-   control, table row splitting), header/footer placement, footnote areas.
-3. **Floats and wrapping** (square, tight, top-and-bottom, behind/in front of text).
-4. **Word compatibility quirks** (line-spacing rules, contextual spacing,
-   compatibility settings).
-5. **Legacy DOC** ([MS-DOC] binary format) parsed into the same model, so the
-   layout engine is reused.
+- [x] **M0 – Complete Word model & DOCX reader (`prism-word`).** Style inheritance
+      (docDefaults → style chain → direct with `ToggleProp` XOR semantics),
+      numbering/lists (`abstractNum`, `num`, `lvlOverride`), sections and columns,
+      headers/footers, footnotes/endnotes, tables (`tblGrid`, `gridSpan`, `vMerge`,
+      borders, shading, conditional table styles), custom tab stops, fields
+      (cached results, external reference capture), text boxes, anchored images
+      and shapes, tracked changes (`w:ins`, `w:del`, `w:moveFrom`, `w:moveTo`),
+      comments, and forensic indicators (`ForensicFacts`).
+- [x] **Flow layout.** Block stacking, page breaking (keep-with-next, widow/orphan
+      control, table row splitting), header/footer placement, footnote areas.
+- [ ] **Floats and wrapping.** Square, top-and-bottom and behind/in front of text
+      done; tight and through wrap like square (wrap polygons are parsed but not
+      used yet).
+- [ ] **Word compatibility quirks.** Contextual spacing done; `compatibilityMode`
+      and `w:compat` flags are parsed but do not change layout yet.
+- [ ] **Legacy DOC** ([MS-DOC] binary format) parsed into the same model, so the
+      layout engine is reused. Done: FIB, piece table, CHPX/PAPX direct formatting,
+      fields, single-level tables, encryption detection. Footnote, header,
+      annotation, endnote and text box text is kept as unplaced stories (extracted,
+      not drawn). Pending: stylesheet, fonts, sections, story placement, lists,
+      pictures and shapes; Word 6/95 still uses the text fallback.
+- [ ] **Fidelity and performance.** Word reference fixtures, fidelity scores in
+      `fidelity-baseline.json`, and Word latency budgets are not in place yet; the
+      page-on-demand C ABI already opens DOCX/DOC through `prism-word`.
 
 ## Phase 3 – PowerPoint and Excel, 3–6 months (overlaps Phase 2)
 

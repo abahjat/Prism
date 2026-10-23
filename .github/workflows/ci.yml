@@ -84,6 +84,25 @@ jobs:
         working-directory: fuzz
         run: cargo fuzz run pdf_interpret -- -max_total_time=180 -rss_limit_mb=2048 -timeout=20
 
+      - name: Seed Word corpora
+        run: |
+          mkdir -p fuzz/corpus/word_docx fuzz/corpus/word_doc fuzz/corpus/word_layout
+          cp test-files/*.docx fuzz/corpus/word_docx/ || true
+          cp test-files/*.doc test-files/*.DOC fuzz/corpus/word_doc/ || true
+          cp fuzz/corpus/word_docx/* fuzz/corpus/word_doc/* fuzz/corpus/word_layout/ || true
+
+      - name: Fuzz Word DOCX reader (2 minutes)
+        working-directory: fuzz
+        run: cargo fuzz run word_docx -- -max_total_time=120 -rss_limit_mb=2048 -timeout=20
+
+      - name: Fuzz Word DOC reader (2 minutes)
+        working-directory: fuzz
+        run: cargo fuzz run word_doc -- -max_total_time=120 -rss_limit_mb=2048 -timeout=20
+
+      - name: Fuzz Word layout (3 minutes)
+        working-directory: fuzz
+        run: cargo fuzz run word_layout -- -max_total_time=180 -rss_limit_mb=2048 -timeout=20
+
       - name: Upload crashes
         if: failure()
         uses: actions/upload-artifact@v4

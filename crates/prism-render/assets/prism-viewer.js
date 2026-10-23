@@ -220,6 +220,22 @@
         });
       }
       const rotCcw = this.root.querySelector("#prism-btn-rotate-ccw");
+      const markupSelect = this.root.querySelector("#prism-markup-select");
+      // Changing the mode needs a native host that re-lays out the document; a static export
+      // keeps the mode it was rendered with, so the selector stays hidden there.
+      if (markupSelect && window.PrismHost && window.PrismHost.setMarkupMode) {
+        markupSelect.hidden = false;
+        markupSelect.addEventListener("change", async () => {
+          const mode = parseInt(markupSelect.value, 10) || 0;
+          await window.PrismHost.setMarkupMode(mode);
+          this.root.setAttribute("data-markup-mode", String(mode));
+          this.pageDescriptors.forEach((d) => { d.htmlFragment = undefined; });
+          for (const idx of Array.from(this.mountedPages)) {
+            this.mountedPages.delete(idx);
+            await this.mountPage(idx);
+          }
+        });
+      }
       if (rotCcw) {
         rotCcw.addEventListener("click", () => {
           this.rotationDeg = (this.rotationDeg + 270) % 360;

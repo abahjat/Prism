@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/prism-core",
     "crates/prism-layout",
+    "crates/prism-word",
     "crates/prism-parsers",
     "crates/prism-render",
     "crates/prism-sandbox",
@@ -61,6 +62,7 @@ predicates = "3.0"
 # Internal crates
 prism-core = { path = "crates/prism-core", version = "0.5.0" }
 prism-layout = { path = "crates/prism-layout", version = "0.5.0" }
+prism-word = { path = "crates/prism-word", version = "0.5.0" }
 prism-parsers = { path = "crates/prism-parsers", version = "0.5.0" }
 prism-render = { path = "crates/prism-render", version = "0.5.0" }
 prism-sandbox = { path = "crates/prism-sandbox", version = "0.5.0" }

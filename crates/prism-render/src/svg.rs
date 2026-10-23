@@ -12,7 +12,8 @@ use prism_core::error::{Error, Result};
 use prism_layout::{
     Affine, CharBox, ClipPath, FillPaint, FillRule, FontId, FontStore, GlyphRun, GroupItem,
     ImageItem, ImageStore, Item, LayoutDocument, LayoutOptions, LayoutPage, LineCap,
-    LineDecoration, LineJoin, NORMALIZED_UPEM, PathCommand, PathItem, StrokeStyle, normalize_zero,
+    LineDecoration, LineJoin, MarkupMode, NORMALIZED_UPEM, PathCommand, PathItem, StrokeStyle,
+    normalize_zero,
 };
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
@@ -195,6 +196,7 @@ pub fn render_document_viewer_html(
         "default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'nonce-{nonce}'; form-action 'none'; base-uri 'none'; frame-src 'none'; object-src 'none'"
     );
     let page_count = doc.pages.len();
+    let markup_options = markup_mode_options(options.layout_options.markup_mode);
 
     let mut html = String::new();
     let _ = write!(
@@ -388,6 +390,8 @@ body {{
     <button type="button" id="prism-btn-zoom-in" aria-label="Zoom in" title="Zoom in">+</button>
     <button type="button" id="prism-btn-rotate-ccw" aria-label="Rotate counter-clockwise" title="Rotate counter-clockwise">&#8634;</button>
     <button type="button" id="prism-btn-rotate-cw" aria-label="Rotate clockwise" title="Rotate clockwise">&#8635;</button>
+    <select id="prism-markup-select" aria-label="Tracked changes markup mode" title="Tracked changes markup mode" hidden>
+{markup_options}    </select>
   </div>
   <div class="prism-toolbar-group" role="search" aria-label="Find in document">
     <input type="search" id="prism-search-input" aria-label="Search document" placeholder="Find in document...">
@@ -874,6 +878,26 @@ fn fmt_num(val: f32) -> String {
     } else {
         trimmed.to_string()
     }
+}
+
+/// `<option>` list for the viewer's markup selector, with the mode the pages were laid out in
+/// selected. The selector stays hidden unless a native host can re-lay out the document.
+fn markup_mode_options(current: MarkupMode) -> String {
+    let modes = [
+        (MarkupMode::AllMarkup, "All Markup"),
+        (MarkupMode::SimpleMarkup, "Simple Markup"),
+        (MarkupMode::NoMarkup, "No Markup"),
+        (MarkupMode::Original, "Original"),
+    ];
+    let mut out = String::new();
+    for (value, (mode, label)) in modes.into_iter().enumerate() {
+        let selected = if mode == current { " selected" } else { "" };
+        let _ = writeln!(
+            out,
+            r#"      <option value="{value}"{selected}>{label}</option>"#
+        );
+    }
+    out
 }
 
 fn xml_escape(input: &str) -> String {
