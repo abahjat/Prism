@@ -106,19 +106,38 @@ Parsers ──► Flow/fixed model ──► prism-layout ──► LayoutPage[]
       `fidelity-baseline.json`, and Word latency budgets are not in place yet; the
       page-on-demand C ABI already opens DOCX/DOC through `prism-word`.
 
-## Phase 3 – PowerPoint and Excel, 3–6 months (overlaps Phase 2)
+## Phase 3 – PowerPoint and Excel, 3–6 months (in progress)
 
-- **PPTX → page model.** Real text layout with autofit, the full preset-shape
-  geometry set (generated from the ECMA-376 presetShapeDefinitions), charts,
-  SmartArt (from the pre-rendered drawing part), EMF/WMF, speaker notes,
-  hidden-slide flags. Legacy PPT ([MS-PPT]) into the same model.
-- **Excel as a native grid**, not pages. Sheet model with value, *formatted*
-  display string (ECMA-376 number-format engine), formula, style, column
-  widths and row heights, merges, frozen panes, hidden sheets/rows/columns,
-  comments, conditional formats and charts. Virtualized canvas grid in the
-  viewer with sheet tabs, formula bar and "show hidden" toggles. Print layout
-  through the page model for productions. Legacy XLS styles (BIFF8).
-- Shared DrawingML chart renderer for PPTX and XLSX.
+- [ ] **Shared DrawingML (`prism-drawingml`).** Done: theme colour scheme and
+      colour transforms, fills and lines, custom geometry, the guide formula
+      evaluator, and a path for each of the 187 preset names. Pending: presets are
+      hand-written approximations (several draw as plain or rounded rectangles),
+      not generated from `presetShapeDefinitions.xml`, and have no golden tests.
+- [ ] **PowerPoint (`prism-ppt`).** Done: `Presentation` model; PPTX reader with
+      master → layout → slide placeholder inheritance, stored `normAutofit` scale,
+      tables, SmartArt from the drawing part, charts, speaker notes, comments and
+      hidden slides; legacy PPT text and basic shapes. Pending: PPT backgrounds,
+      text colours and connectors; notes-page output; off-slide content in review
+      mode; fidelity scores.
+- [ ] **Excel (`prism-excel`, `prism-numfmt`).** Done: sparse `Workbook` model;
+      XLSX and BIFF8 XLS readers (cells, styles, number formats, hidden sheets,
+      rows and columns, merges, comments); stored-value conditional formatting;
+      print layout over the whole used range (blank pages skipped, `max_pages`
+      enforced); workbook C ABI (`prism_workbook_*`) and `PrismWorkbook`. Pending:
+      lazy sheet loading and limits on cells, shared strings and styles; XLS
+      formula text (stored as `BIFF8_FORMULA`), drawings and charts; Excel's
+      default "VelvetSweatshop" RC4 encryption (reported as encrypted); the canvas
+      grid viewer (only sheet tabs and a formula bar showing the first cell exist);
+      the Excel-generated number-format conformance fixture.
+- [ ] **Charts (`prism_drawingml::chart`).** Done: chart parser using cached
+      values only (sparse caches keep point positions), bar/column, line, area,
+      pie/doughnut and chartex basics, automatic axis scaling. Pending: scatter and
+      bubble X values (points are placed by index), log axes, radar geometry,
+      secondary axes, axis-scaling fixtures against Excel.
+- [ ] **Fidelity and performance.** PowerPoint and Excel reference fixtures,
+      SSIM and displayed-text scores, and the workbook latency and memory budgets
+      are not in place yet; the page-on-demand C ABI already opens PPTX/PPT and
+      XLSX/XLS through the new engines.
 
 ## Phase 4 – Review and production features, 3–6 months
 

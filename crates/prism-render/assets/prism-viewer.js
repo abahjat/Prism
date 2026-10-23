@@ -27,6 +27,7 @@
       this.setupThumbnails();
       this.setupVirtualization();
       this.setupKeyboardShortcuts();
+      await this.setupWorkbookGrid();
       this.applyZoomAndRotation();
 
       window.addEventListener("resize", () => {
@@ -34,6 +35,118 @@
           this.applyZoomAndRotation();
         }
       });
+    }
+
+    // Ask the host to lay the document out again in `mode`, then remount the visible pages.
+    async relayout(mode) {
+      if (!window.PrismHost || !window.PrismHost.setMarkupMode) return;
+      await window.PrismHost.setMarkupMode(mode);
+      this.root.setAttribute("data-markup-mode", String(mode));
+      this.pageDescriptors.forEach((d) => { d.htmlFragment = undefined; });
+      for (const idx of Array.from(this.mountedPages)) {
+        this.mountedPages.delete(idx);
+        await this.mountPage(idx);
+      }
+    }
+
+    async setupWorkbookGrid() {
+      if (!window.PrismHost || !window.PrismHost.getWorkbookSheets) {
+        return;
+      }
+      const info = await window.PrismHost.getWorkbookSheets();
+      const sheets = (info && info.sheets) || [];
+      if (sheets.length === 0) {
+        return;
+      }
+      const formulaBar = this.root.querySelector("#prism-formula-bar");
+      const sheetTabs = this.root.querySelector("#prism-sheet-tabs");
+      const hiddenWrap = this.root.querySelector("#prism-forensic-hidden-wrap");
+      const concealedWrap = this.root.querySelector("#prism-forensic-concealed-wrap");
+      const hiddenToggle = this.root.querySelector("#prism-toggle-hidden-sheets");
+      const concealedToggle = this.root.querySelector("#prism-toggle-concealed");
+      if (formulaBar) formulaBar.hidden = false;
+      if (sheetTabs) sheetTabs.hidden = false;
+      if (hiddenWrap) hiddenWrap.hidden = false;
+      // Concealed (`;;;`) values are already shown, in brackets, whenever hidden content is
+      // shown, so the separate reveal toggle stays hidden.
+      if (concealedWrap) concealedWrap.hidden = true;
+      // Review mode: hidden and veryHidden sheets are listed by default.
+      if (hiddenToggle) hiddenToggle.checked = true;
+
+      let activeSheet = 0;
+      const inspectFirstCell = async (sheetIdx) => {
+        if (!window.PrismHost || !window.PrismHost.getWorkbookCells) return;
+        const res = await window.PrismHost.getWorkbookCells(sheetIdx, 0, 0, 25, 15);
+        const first = res && res.cells && res.cells[0];
+        const refEl = this.root.querySelector("#prism-cell-ref");
+        const exprEl = this.root.querySelector("#prism-formula-expr");
+        const metaEl = this.root.querySelector("#prism-cell-meta");
+        if (first) {
+          if (refEl) refEl.textContent = first.a1;
+          if (exprEl) {
+            exprEl.textContent =
+              first.formula && first.formula.expression
+                ? `=${first.formula.expression}  (cached: ${first.display_text})`
+                : first.display_text;
+          }
+          if (metaEl) {
+            const fmt = first.num_fmt_code || "General";
+            const conc = first.is_concealed ? " [concealed ;;;]" : "";
+            metaEl.textContent = `numFmt: ${fmt}${conc}`;
+          }
+        }
+      };
+
+      const renderTabs = () => {
+        if (!sheetTabs) return;
+        sheetTabs.innerHTML = "";
+        const showHidden = Boolean(hiddenToggle && hiddenToggle.checked);
+        sheets.forEach((s) => {
+          if (s.visibility !== "Visible" && !showHidden) return;
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.setAttribute("role", "tab");
+          btn.className =
+            s.index === activeSheet
+              ? "prism-sheet-tab prism-sheet-tab-active"
+              : "prism-sheet-tab";
+          btn.textContent = s.name;
+          if (s.visibility !== "Visible") {
+            const badge = document.createElement("span");
+            badge.className = "prism-sheet-badge";
+            badge.textContent = s.visibility === "VeryHidden" ? "veryHidden" : "hidden";
+            btn.appendChild(badge);
+          }
+          btn.addEventListener("click", () => {
+            activeSheet = s.index;
+            renderTabs();
+            // A sheet spans several pages; go to its first one.
+            const first = this.pageDescriptors.find((d) => d.label === s.name);
+            if (first) this.goToPage(first.index);
+            void inspectFirstCell(activeSheet);
+          });
+          sheetTabs.appendChild(btn);
+        });
+      };
+
+      if (hiddenToggle) {
+        hiddenToggle.addEventListener("change", () => {
+          renderTabs();
+          void this.relayout(hiddenToggle.checked ? 0 : 2);
+        });
+      }
+      if (concealedToggle) {
+        concealedToggle.addEventListener("change", () => {
+          if (concealedToggle.checked) {
+            this.root.setAttribute("data-reveal-concealed", "true");
+          } else {
+            this.root.removeAttribute("data-reveal-concealed");
+          }
+        });
+      }
+
+      renderTabs();
+      await inspectFirstCell(activeSheet);
     }
 
     async discoverPages() {
@@ -226,14 +339,7 @@
       if (markupSelect && window.PrismHost && window.PrismHost.setMarkupMode) {
         markupSelect.hidden = false;
         markupSelect.addEventListener("change", async () => {
-          const mode = parseInt(markupSelect.value, 10) || 0;
-          await window.PrismHost.setMarkupMode(mode);
-          this.root.setAttribute("data-markup-mode", String(mode));
-          this.pageDescriptors.forEach((d) => { d.htmlFragment = undefined; });
-          for (const idx of Array.from(this.mountedPages)) {
-            this.mountedPages.delete(idx);
-            await this.mountPage(idx);
-          }
+          await this.relayout(parseInt(markupSelect.value, 10) || 0);
         });
       }
       if (rotCcw) {

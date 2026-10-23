@@ -13,8 +13,12 @@ libfuzzer-sys = "0.4"
 bytes = "1.5"
 tokio = { version = "1.35", features = ["rt"] }
 prism-core = { path = "../crates/prism-core" }
+prism-drawingml = { path = "../crates/prism-drawingml" }
+prism-excel = { path = "../crates/prism-excel" }
 prism-layout = { path = "../crates/prism-layout" }
+prism-numfmt = { path = "../crates/prism-numfmt" }
 prism-parsers = { path = "../crates/prism-parsers" }
+prism-ppt = { path = "../crates/prism-ppt" }
 prism-render = { path = "../crates/prism-render" }
 prism-word = { path = "../crates/prism-word" }
 
@@ -63,6 +67,34 @@ bench = false
 [[bin]]
 name = "word_layout"
 path = "fuzz_targets/word_layout.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "ppt_parse"
+path = "fuzz_targets/ppt_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "workbook_parse"
+path = "fuzz_targets/workbook_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "numfmt"
+path = "fuzz_targets/numfmt.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "chart_render"
+path = "fuzz_targets/chart_render.rs"
 test = false
 doc = false
 bench = false

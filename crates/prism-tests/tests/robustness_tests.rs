@@ -121,6 +121,38 @@ fn parse_isolated(
             {
                 let _ = render_page_svg(first, &layout_doc.fonts, &layout_doc.images, &layout_opts);
             }
+            if prism_ppt::is_pptx_zip(&data)
+                && let Ok(pres) =
+                    prism_ppt::parse_pptx(&data, layout_opts.max_decompressed_stream_bytes)
+                && let Ok(layout_doc) = prism_ppt::layout_presentation(&pres, &layout_opts)
+                && let Some(first) = layout_doc.pages.first()
+            {
+                let _ = render_page_svg(first, &layout_doc.fonts, &layout_doc.images, &layout_opts);
+            }
+            if prism_ppt::is_ppt_bytes(&data)
+                && let Ok(pres) =
+                    prism_ppt::parse_ppt(&data, layout_opts.max_decompressed_stream_bytes)
+                && let Ok(layout_doc) = prism_ppt::layout_presentation(&pres, &layout_opts)
+                && let Some(first) = layout_doc.pages.first()
+            {
+                let _ = render_page_svg(first, &layout_doc.fonts, &layout_doc.images, &layout_opts);
+            }
+            if prism_excel::is_xlsx_zip(&data)
+                && let Ok(wb) =
+                    prism_excel::parse_xlsx(&data, layout_opts.max_decompressed_stream_bytes)
+                && let Ok(layout_doc) = prism_excel::layout_workbook(&wb, &layout_opts)
+                && let Some(first) = layout_doc.pages.first()
+            {
+                let _ = render_page_svg(first, &layout_doc.fonts, &layout_doc.images, &layout_opts);
+            }
+            if prism_excel::is_xls_bytes(&data)
+                && let Ok(wb) =
+                    prism_excel::parse_xls(&data, layout_opts.max_decompressed_stream_bytes)
+                && let Ok(layout_doc) = prism_excel::layout_workbook(&wb, &layout_opts)
+                && let Some(first) = layout_doc.pages.first()
+            {
+                let _ = render_page_svg(first, &layout_doc.fonts, &layout_doc.images, &layout_opts);
+            }
             if data.starts_with(b"%PDF-")
                 && let Ok(pdf_doc) = interpret_pdf_bytes(&data, &layout_opts)
                 && let Some(first) = pdf_doc.pages.first()

@@ -311,11 +311,35 @@ impl Parser for XlsParser {
         false
     }
 
+    #[allow(clippy::too_many_lines)]
     async fn parse(&self, data: Bytes, context: ParseContext) -> Result<Document> {
         debug!(
             "Parsing XLS file, size: {} bytes, filename: {:?}",
             context.size, context.filename
         );
+
+        let max_bytes = crate::limits::max_decompressed_bytes(&context);
+        match prism_excel::parse_xls(&data, max_bytes) {
+            Ok(wb) if !wb.sheets.is_empty() => {
+                let mut document = prism_excel::workbook_to_udm(&wb, "XLS");
+                if document.metadata.title.is_none() {
+                    document.metadata.title.clone_from(&context.filename);
+                }
+                document.metadata.add_custom("legacy_format", true);
+                info!(
+                    "Successfully parsed XLS file via prism-excel [MS-XLS] BIFF8 reader ({} sheets)",
+                    wb.sheets.len()
+                );
+                return Ok(document);
+            }
+            Ok(_) => {
+                warn!("prism-excel [MS-XLS] parsed 0 sheets, falling back to calamine");
+            }
+            Err(e @ Error::Encrypted(_)) => return Err(e),
+            Err(e) => {
+                warn!("prism-excel [MS-XLS] parser fell back to calamine: {e}");
+            }
+        }
 
         // Try using calamine which supports XLS format
         let cursor = Cursor::new(data.as_ref());
@@ -478,11 +502,35 @@ impl Parser for PptParser {
         false
     }
 
+    #[allow(clippy::too_many_lines)]
     async fn parse(&self, data: Bytes, context: ParseContext) -> Result<Document> {
         debug!(
             "Parsing PPT file, size: {} bytes, filename: {:?}",
             context.size, context.filename
         );
+
+        let max_bytes = crate::limits::max_decompressed_bytes(&context);
+        match prism_ppt::parse_ppt(&data, max_bytes) {
+            Ok(pres) if !pres.slides.is_empty() => {
+                let mut document = prism_ppt::presentation_to_udm(&pres, "PPT");
+                if document.metadata.title.is_none() {
+                    document.metadata.title.clone_from(&context.filename);
+                }
+                document.metadata.add_custom("legacy_format", true);
+                info!(
+                    "Successfully parsed PPT file via prism-ppt [MS-PPT] reader ({} slides)",
+                    pres.slides.len()
+                );
+                return Ok(document);
+            }
+            Ok(_) => {
+                warn!("prism-ppt [MS-PPT] parsed 0 slides, falling back to heuristic extraction");
+            }
+            Err(e @ Error::Encrypted(_)) => return Err(e),
+            Err(e) => {
+                warn!("prism-ppt [MS-PPT] parser fell back to heuristic extraction: {e}");
+            }
+        }
 
         let cursor = Cursor::new(data.as_ref());
         let mut comp = CompoundFile::open(cursor)

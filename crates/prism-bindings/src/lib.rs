@@ -31,7 +31,7 @@ use std::cell::RefCell;
 use std::ffi::{CStr, CString};
 use std::ptr;
 use std::slice;
-use std::sync::LazyLock;
+use std::sync::{LazyLock, OnceLock};
 use tokio::runtime::Runtime;
 
 static RUNTIME: LazyLock<Runtime> = LazyLock::new(|| {
@@ -393,8 +393,20 @@ pub struct PrismDocument {
     layout: LayoutDocument,
     title: Option<String>,
     word_doc: Option<prism_word::WordDocument>,
+    ppt_doc: Option<prism_ppt::Presentation>,
+    excel_doc: Option<prism_excel::Workbook>,
     options: LayoutOptions,
 }
+
+/// Opaque handle to a parsed Excel workbook (`prism_excel::Workbook`) for grid-mode inspection.
+pub struct PrismWorkbook {
+    wb: prism_excel::Workbook,
+    title: Option<String>,
+    /// Conditional formatting per sheet, evaluated on the first tile request for that sheet.
+    conditionals: Vec<OnceLock<ConditionalMap>>,
+}
+
+type ConditionalMap = std::collections::BTreeMap<(u32, u32), prism_excel::ResolvedCellConditional>;
 
 /// Run a fallible closure returning `i32` (`0` on success, `-1` on error/panic).
 fn guarded_status(f: impl FnOnce() -> Result<(), String>) -> i32 {
@@ -456,6 +468,8 @@ pub unsafe extern "C" fn prism_document_open(
                     layout,
                     title: filename_opt,
                     word_doc: None,
+                    ppt_doc: None,
+                    excel_doc: None,
                     options,
                 });
             }
@@ -475,6 +489,8 @@ pub unsafe extern "C" fn prism_document_open(
                     layout,
                     title,
                     word_doc: Some(word_doc),
+                    ppt_doc: None,
+                    excel_doc: None,
                     options,
                 });
             }
@@ -490,8 +506,90 @@ pub unsafe extern "C" fn prism_document_open(
                     layout,
                     title,
                     word_doc: Some(word_doc),
+                    ppt_doc: None,
+                    excel_doc: None,
                     options,
                 });
+            }
+
+            // Native prism-ppt layout path for PPTX/PPSX/POTX and legacy binary PPT buffers
+            if prism_ppt::is_pptx_zip(bytes)
+                && let Ok(ppt_doc) =
+                    prism_ppt::parse_pptx(bytes, options.max_decompressed_stream_bytes)
+            {
+                let layout = prism_ppt::layout_presentation(&ppt_doc, &options)
+                    .map_err(|e| format!("PowerPoint layout failed: {e}"))?;
+                let title = ppt_doc.title.clone().or(filename_opt);
+                return Ok(PrismDocument {
+                    layout,
+                    title,
+                    word_doc: None,
+                    ppt_doc: Some(ppt_doc),
+                    excel_doc: None,
+                    options,
+                });
+            }
+
+            if prism_ppt::is_ppt_bytes(bytes) {
+                match prism_ppt::parse_ppt(bytes, options.max_decompressed_stream_bytes) {
+                    Ok(ppt_doc) if !ppt_doc.slides.is_empty() => {
+                        let layout = prism_ppt::layout_presentation(&ppt_doc, &options)
+                            .map_err(|e| format!("PowerPoint PPT layout failed: {e}"))?;
+                        let title = ppt_doc.title.clone().or(filename_opt);
+                        return Ok(PrismDocument {
+                            layout,
+                            title,
+                            word_doc: None,
+                            ppt_doc: Some(ppt_doc),
+                            excel_doc: None,
+                            options,
+                        });
+                    }
+                    Err(prism_core::Error::Encrypted(msg)) => {
+                        return Err(format!("Encrypted PPT document: {msg}"));
+                    }
+                    _ => {}
+                }
+            }
+
+            // Native prism-excel layout path for XLSX/XLSM and legacy BIFF8 XLS buffers
+            if prism_excel::is_xlsx_zip(bytes)
+                && let Ok(excel_doc) =
+                    prism_excel::parse_xlsx(bytes, options.max_decompressed_stream_bytes)
+            {
+                let layout = prism_excel::layout_workbook(&excel_doc, &options)
+                    .map_err(|e| format!("Excel layout failed: {e}"))?;
+                let title = excel_doc.title.clone().or(filename_opt);
+                return Ok(PrismDocument {
+                    layout,
+                    title,
+                    word_doc: None,
+                    ppt_doc: None,
+                    excel_doc: Some(excel_doc),
+                    options,
+                });
+            }
+
+            if prism_excel::is_xls_bytes(bytes) {
+                match prism_excel::parse_xls(bytes, options.max_decompressed_stream_bytes) {
+                    Ok(excel_doc) if !excel_doc.sheets.is_empty() => {
+                        let layout = prism_excel::layout_workbook(&excel_doc, &options)
+                            .map_err(|e| format!("Excel XLS layout failed: {e}"))?;
+                        let title = excel_doc.title.clone().or(filename_opt);
+                        return Ok(PrismDocument {
+                            layout,
+                            title,
+                            word_doc: None,
+                            ppt_doc: None,
+                            excel_doc: Some(excel_doc),
+                            options,
+                        });
+                    }
+                    Err(prism_core::Error::Encrypted(msg)) => {
+                        return Err(format!("Encrypted XLS workbook: {msg}"));
+                    }
+                    _ => {}
+                }
             }
 
             let udm = parse(bytes, filename_opt.clone())?;
@@ -506,6 +604,8 @@ pub unsafe extern "C" fn prism_document_open(
                 layout,
                 title,
                 word_doc: None,
+                ppt_doc: None,
+                excel_doc: None,
                 options,
             })
         },
@@ -848,15 +948,27 @@ pub unsafe extern "C" fn prism_document_set_markup_mode(doc: *mut PrismDocument,
         // SAFETY: guaranteed by caller
         let doc_mut = unsafe { &mut *doc };
         doc_mut.options.markup_mode = markup_mode;
+        // For slides and sheets the non-review modes are the "as presented" view, which
+        // leaves out hidden slides, sheets, rows and columns. Word hidden text keeps its own
+        // setting, so choosing "No Markup" does not hide it.
+        if doc_mut.word_doc.is_none() {
+            doc_mut.options.show_hidden_text = matches!(markup_mode, MarkupMode::AllMarkup);
+        }
         if let Some(ref word_doc) = doc_mut.word_doc {
             doc_mut.layout = prism_word::layout_word_document(word_doc, &doc_mut.options)
                 .map_err(|e| format!("Word re-layout failed: {e}"))?;
+        } else if let Some(ref ppt_doc) = doc_mut.ppt_doc {
+            doc_mut.layout = prism_ppt::layout_presentation(ppt_doc, &doc_mut.options)
+                .map_err(|e| format!("PowerPoint re-layout failed: {e}"))?;
+        } else if let Some(ref excel_doc) = doc_mut.excel_doc {
+            doc_mut.layout = prism_excel::layout_workbook(excel_doc, &doc_mut.options)
+                .map_err(|e| format!("Excel re-layout failed: {e}"))?;
         }
         Ok(())
     })
 }
 
-/// Return the per-document Word forensic facts (macros, external links, revisions, comments) as JSON.
+/// Return the per-document forensic facts (Word, PowerPoint, or Excel) as JSON.
 ///
 /// Free the returned string with [`prism_free_string`].
 ///
@@ -871,12 +983,547 @@ pub unsafe extern "C" fn prism_document_forensic_facts(doc: *const PrismDocument
         }
         // SAFETY: guaranteed by caller
         let doc_ref = unsafe { &*doc };
+        if let Some(ref w) = doc_ref.word_doc {
+            return serde_json::to_string(&w.forensic)
+                .map_err(|e| format!("failed to serialize Word forensic facts: {e}"));
+        }
+        if let Some(ref p) = doc_ref.ppt_doc {
+            return serde_json::to_string(&p.forensic)
+                .map_err(|e| format!("failed to serialize PowerPoint forensic facts: {e}"));
+        }
+        if let Some(ref wb) = doc_ref.excel_doc {
+            return serde_json::to_string(&wb.forensic)
+                .map_err(|e| format!("failed to serialize Excel forensic facts: {e}"));
+        }
         let default_facts = prism_word::ForensicFacts::default();
-        let facts = doc_ref
-            .word_doc
-            .as_ref()
-            .map_or(&default_facts, |w| &w.forensic);
-        serde_json::to_string(facts).map_err(|e| format!("failed to serialize forensic facts: {e}"))
+        serde_json::to_string(&default_facts)
+            .map_err(|e| format!("failed to serialize forensic facts: {e}"))
+    })
+}
+
+// ============================================================================
+// Workbook Grid-Mode C ABI (`PrismWorkbook`)
+// ============================================================================
+
+/// Open an Excel workbook (`.xlsx`, `.xlsm`, or `.xls`) from an in-memory buffer.
+///
+/// Returns a non-null [`PrismWorkbook`] handle on success, or null on failure (check [`prism_last_error`]).
+/// Free the returned handle with [`prism_workbook_close`].
+///
+/// # Safety
+///
+/// `data` must point to `len` readable bytes; `filename` must be null or a valid
+/// NUL-terminated UTF-8 string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn prism_workbook_open(
+    data: *const u8,
+    len: size_t,
+    filename: *const c_char,
+) -> *mut PrismWorkbook {
+    clear_last_error();
+    let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(
+        || -> Result<PrismWorkbook, String> {
+            // SAFETY: forwarded caller guarantees
+            let (bytes, filename_opt) = unsafe { (input(data, len)?, filename_hint(filename)) };
+            let max_bytes = LayoutOptions::default().max_decompressed_stream_bytes;
+
+            let wb = if prism_excel::is_xlsx_zip(bytes) {
+                prism_excel::parse_xlsx(bytes, max_bytes)
+                    .map_err(|e| format!("failed to parse XLSX workbook: {e}"))?
+            } else if prism_excel::is_xls_bytes(bytes) {
+                prism_excel::parse_xls(bytes, max_bytes)
+                    .map_err(|e| format!("failed to parse XLS workbook: {e}"))?
+            } else {
+                return Err("buffer is neither an XLSX/XLSM nor a BIFF8 XLS workbook".to_string());
+            };
+            let title = wb.title.clone().or(filename_opt);
+            let conditionals = wb.sheets.iter().map(|_| OnceLock::new()).collect();
+            Ok(PrismWorkbook {
+                wb,
+                title,
+                conditionals,
+            })
+        },
+    ));
+
+    match res {
+        Ok(Ok(wb)) => Box::into_raw(Box::new(wb)),
+        Ok(Err(message)) => {
+            set_last_error(&message);
+            ptr::null_mut()
+        }
+        Err(payload) => {
+            let message = payload
+                .downcast_ref::<String>()
+                .map(String::as_str)
+                .or_else(|| payload.downcast_ref::<&str>().copied())
+                .unwrap_or("unknown panic");
+            set_last_error(&format!("internal error: {message}"));
+            ptr::null_mut()
+        }
+    }
+}
+
+/// Close and free a [`PrismWorkbook`] handle returned by [`prism_workbook_open`].
+///
+/// Passing null is a safe no-op.
+///
+/// # Safety
+///
+/// `wb` must be null or a valid pointer returned by [`prism_workbook_open`] that has
+/// not yet been closed.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn prism_workbook_close(wb: *mut PrismWorkbook) {
+    if !wb.is_null() {
+        // SAFETY: guaranteed by caller
+        drop(unsafe { Box::from_raw(wb) });
+    }
+}
+
+/// Return workbook sheet descriptors (`index`, `name`, `visibility`, `tab_color`, `used_rows`,
+/// `used_cols`, `populated_cells`) and workbook-level forensic facts as JSON.
+///
+/// Free the returned string with [`prism_free_string`].
+///
+/// # Safety
+///
+/// `wb` must be a valid [`PrismWorkbook`] pointer.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn prism_workbook_sheets(wb: *const PrismWorkbook) -> *mut c_char {
+    guarded(|| {
+        if wb.is_null() {
+            return Err("wb is null".to_string());
+        }
+        // SAFETY: guaranteed by caller
+        let wb_ref = unsafe { &(*wb).wb };
+        let sheets: Vec<_> = wb_ref
+            .sheets
+            .iter()
+            .enumerate()
+            .map(|(idx, s)| {
+                let (max_r, max_c) = s.used_bounds().unwrap_or((0, 0));
+                serde_json::json!({
+                    "index": idx,
+                    "name": s.name,
+                    "sheet_id": s.sheet_id,
+                    "visibility": s.visibility,
+                    "tab_color": s.tab_color,
+                    "show_gridlines": s.show_gridlines,
+                    "show_row_col_headers": s.show_row_col_headers,
+                    "used_rows": if s.cells.is_empty() { 0 } else { max_r + 1 },
+                    "used_cols": if s.cells.is_empty() { 0 } else { max_c + 1 },
+                    "populated_cells": s.cells.len(),
+                })
+            })
+            .collect();
+        let out = serde_json::json!({
+            "title": unsafe { &(*wb).title },
+            "date_system": wb_ref.date_system,
+            "sheets": sheets,
+            "defined_names": wb_ref.defined_names,
+            "forensic": wb_ref.forensic,
+        });
+        Ok(out.to_string())
+    })
+}
+
+/// Return the grid layout metadata for 0-based `sheet`: column spans, explicit row metrics,
+/// merged ranges, frozen panes, tables, hyperlinks, comments, conditional formatting rules,
+/// and print setup as JSON.
+///
+/// Free the returned string with [`prism_free_string`].
+///
+/// # Safety
+///
+/// `wb` must be a valid [`PrismWorkbook`] pointer.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn prism_workbook_sheet_layout(
+    wb: *const PrismWorkbook,
+    sheet: u32,
+) -> *mut c_char {
+    guarded(|| {
+        if wb.is_null() {
+            return Err("wb is null".to_string());
+        }
+        // SAFETY: guaranteed by caller
+        let wb_ref = unsafe { &(*wb).wb };
+        let s = wb_ref.sheets.get(sheet as usize).ok_or_else(|| {
+            format!(
+                "sheet index {sheet} out of range (sheet_count = {})",
+                wb_ref.sheets.len()
+            )
+        })?;
+        let rows: Vec<_> = s
+            .row_props
+            .iter()
+            .map(|(&r, props)| {
+                serde_json::json!({
+                    "row": r,
+                    "height_pt": props.height_pt,
+                    "hidden": props.hidden,
+                    "style_idx": props.style_idx,
+                    "outline_level": props.outline_level,
+                })
+            })
+            .collect();
+        let comments: Vec<_> = s
+            .comments
+            .iter()
+            .map(|(&(r, c), cm)| {
+                serde_json::json!({
+                    "row": r,
+                    "col": c,
+                    "a1": format!("{}{}", prism_excel::col_index_to_letters(c), r + 1),
+                    "author": cm.author,
+                    "text": cm.text,
+                    "replies": cm.replies,
+                })
+            })
+            .collect();
+        let hyperlinks: Vec<_> = s
+            .cells
+            .iter()
+            .filter_map(|(&(r, c), cell)| {
+                cell.hyperlink.as_ref().map(|target| {
+                    serde_json::json!({
+                        "row": r,
+                        "col": c,
+                        "a1": format!("{}{}", prism_excel::col_index_to_letters(c), r + 1),
+                        "target": target,
+                    })
+                })
+            })
+            .collect();
+        let out = serde_json::json!({
+            "sheet": sheet,
+            "name": s.name,
+            "visibility": s.visibility,
+            "default_row_height_pt": s.default_row_height_pt,
+            "default_col_width_pt": s.default_col_width_pt,
+            "col_spans": s.col_spans,
+            "rows": rows,
+            "merged_ranges": s.merged_ranges,
+            "freeze_pane": s.pane,
+            "tables": s.tables,
+            "hyperlinks": hyperlinks,
+            "comments": comments,
+            "conditional_rules": s.conditional_rules,
+            "print_setup": s.print_setup,
+        });
+        Ok(out.to_string())
+    })
+}
+
+/// Query populated cells in the 0-based inclusive rectangle `[r0..=r1, c0..=c1]` on `sheet`.
+///
+/// Each returned cell object includes its coordinates, A1 reference, stored [`prism_excel::CellValue`],
+/// formatted `display_text`, optional `formula`, `style_idx`, `num_fmt_code`, `is_concealed`,
+/// and any resolved conditional formatting overrides.
+///
+/// Free the returned string with [`prism_free_string`].
+///
+/// # Safety
+///
+/// `wb` must be a valid [`PrismWorkbook`] pointer.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn prism_workbook_cells(
+    wb: *const PrismWorkbook,
+    sheet: u32,
+    r0: u32,
+    c0: u32,
+    r1: u32,
+    c1: u32,
+) -> *mut c_char {
+    guarded(|| {
+        if wb.is_null() {
+            return Err("wb is null".to_string());
+        }
+        // SAFETY: guaranteed by caller
+        let handle = unsafe { &*wb };
+        let wb_ref = &handle.wb;
+        let s = wb_ref.sheets.get(sheet as usize).ok_or_else(|| {
+            format!(
+                "sheet index {sheet} out of range (sheet_count = {})",
+                wb_ref.sheets.len()
+            )
+        })?;
+        let cond_map = handle.conditionals[sheet as usize]
+            .get_or_init(|| prism_excel::evaluate_sheet_conditionals(s, &wb_ref.styles));
+        let mut cells = Vec::new();
+        // `BTreeMap::range` panics on a reversed range; an inverted rectangle is just empty.
+        let tile = if r0 <= r1 && c0 <= c1 {
+            Some(s.cells.range((r0, c0)..=(r1, c1)))
+        } else {
+            None
+        };
+        for (&(r, c), cell) in tile.into_iter().flatten() {
+            if c < c0 || c > c1 {
+                continue;
+            }
+            let a1 = format!("{}{}", prism_excel::col_index_to_letters(c), r + 1);
+            let num_fmt_code = wb_ref.styles.num_fmt_for_style(cell.style_idx);
+            let cond = cond_map.get(&(r, c));
+            let hyperlink = cell.hyperlink.as_ref();
+            let comment = s.comments.get(&(r, c));
+            cells.push(serde_json::json!({
+                "row": r,
+                "col": c,
+                "a1": a1,
+                "value": cell.value,
+                "display_text": cell.display_text,
+                "formula": cell.formula,
+                "style_idx": cell.style_idx,
+                "num_fmt_code": num_fmt_code,
+                "is_concealed": cell.is_concealed,
+                "hyperlink": hyperlink,
+                "comment": comment,
+                "conditional": cond,
+            }));
+        }
+        let out = serde_json::json!({
+            "sheet": sheet,
+            "r0": r0,
+            "c0": c0,
+            "r1": r1,
+            "c1": c1,
+            "cells": cells,
+        });
+        Ok(out.to_string())
+    })
+}
+
+/// Return the deduplicated workbook `StylesTable` (`num_fmts`, `fonts`, `fills`, `borders`,
+/// `cell_xfs`, `dxfs`) as JSON.
+///
+/// Free the returned string with [`prism_free_string`].
+///
+/// # Safety
+///
+/// `wb` must be a valid [`PrismWorkbook`] pointer.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn prism_workbook_styles(wb: *const PrismWorkbook) -> *mut c_char {
+    guarded(|| {
+        if wb.is_null() {
+            return Err("wb is null".to_string());
+        }
+        // SAFETY: guaranteed by caller
+        let wb_ref = unsafe { &(*wb).wb };
+        serde_json::to_string(&wb_ref.styles)
+            .map_err(|e| format!("failed to serialize workbook styles: {e}"))
+    })
+}
+
+/// Return the floating drawing objects (charts, images, shapes) anchored on 0-based `sheet` as JSON.
+///
+/// Free the returned string with [`prism_free_string`].
+///
+/// # Safety
+///
+/// `wb` must be a valid [`PrismWorkbook`] pointer.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn prism_workbook_drawings(
+    wb: *const PrismWorkbook,
+    sheet: u32,
+) -> *mut c_char {
+    guarded(|| {
+        if wb.is_null() {
+            return Err("wb is null".to_string());
+        }
+        // SAFETY: guaranteed by caller
+        let wb_ref = unsafe { &(*wb).wb };
+        let s = wb_ref.sheets.get(sheet as usize).ok_or_else(|| {
+            format!(
+                "sheet index {sheet} out of range (sheet_count = {})",
+                wb_ref.sheets.len()
+            )
+        })?;
+        let drawings: Vec<_> = s
+            .drawings
+            .iter()
+            .enumerate()
+            .map(|(idx, d)| {
+                let (x_pt, y_pt, width_pt, height_pt) =
+                    prism_excel::compute_drawing_bounds_on_sheet(s, d, false);
+                let kind_type = match &d.kind {
+                    prism_excel::WorksheetDrawingKind::Chart(_) => "chart",
+                    prism_excel::WorksheetDrawingKind::Image { .. } => "image",
+                    prism_excel::WorksheetDrawingKind::Shape { .. } => "shape",
+                };
+                serde_json::json!({
+                    "object_id": idx,
+                    "id": d.id,
+                    "name": d.name,
+                    "kind_type": kind_type,
+                    "anchor": d.anchor,
+                    "bounds_pt": {
+                        "x": x_pt,
+                        "y": y_pt,
+                        "width": width_pt,
+                        "height": height_pt,
+                    },
+                })
+            })
+            .collect();
+        serde_json::to_string(&drawings)
+            .map_err(|e| format!("failed to serialize sheet drawings: {e}"))
+    })
+}
+
+/// Render a single floating drawing object (`object_id`, 0-based index on `sheet`) to
+/// `PRISM_PAGE_FORMAT_SVG` (`0`) or `PRISM_PAGE_FORMAT_PNG` (`1`).
+///
+/// On success, writes the allocated buffer pointer and length to `out_buf` and `out_len`
+/// and returns `0`. Release the buffer with [`prism_buffer_free`].
+///
+/// # Safety
+///
+/// `wb` must be a valid [`PrismWorkbook`] pointer; `out_buf` and `out_len` must be valid,
+/// non-null writable pointers.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn prism_workbook_render_object(
+    wb: *const PrismWorkbook,
+    sheet: u32,
+    object_id: u32,
+    format: u32,
+    dpi: f32,
+    out_buf: *mut *mut u8,
+    out_len: *mut size_t,
+) -> i32 {
+    guarded_status(|| {
+        if wb.is_null() {
+            return Err("wb is null".to_string());
+        }
+        if out_buf.is_null() || out_len.is_null() {
+            return Err("out_buf or out_len pointer is null".to_string());
+        }
+        // SAFETY: guaranteed by caller
+        let wb_ref = unsafe { &(*wb).wb };
+        let s = wb_ref.sheets.get(sheet as usize).ok_or_else(|| {
+            format!(
+                "sheet index {sheet} out of range (sheet_count = {})",
+                wb_ref.sheets.len()
+            )
+        })?;
+        let drawing = s.drawings.get(object_id as usize).ok_or_else(|| {
+            format!(
+                "object_id {object_id} out of range on sheet '{}' (count = {})",
+                s.name,
+                s.drawings.len()
+            )
+        })?;
+        let doc = prism_excel::render_worksheet_drawing_to_doc(wb_ref, s, drawing)
+            .map_err(|e| format!("failed to layout worksheet drawing: {e}"))?;
+        let page = &doc.pages[0];
+        let opts = LayoutOptions::default();
+
+        let bytes = match format {
+            PRISM_PAGE_FORMAT_SVG => render_page_svg(page, &doc.fonts, &doc.images, &opts)
+                .map(String::into_bytes)
+                .map_err(|e| format!("SVG render failed: {e}"))?,
+            PRISM_PAGE_FORMAT_PNG => {
+                let raster_opts = RasterOptions {
+                    dpi: if dpi > 0.0 { dpi } else { 150.0 },
+                    layout_options: opts,
+                    ..RasterOptions::default()
+                };
+                render_page_png(page, &doc.fonts, &doc.images, &raster_opts)
+                    .map_err(|e| format!("PNG render failed: {e}"))?
+            }
+            other => return Err(format!("unsupported object render format: {other}")),
+        };
+
+        let (ptr, len) = into_raw_buffer(bytes);
+        // SAFETY: checked non-null above
+        unsafe {
+            *out_buf = ptr;
+            *out_len = len;
+        }
+        Ok(())
+    })
+}
+
+/// Search across all sheets of `wb` (including `hidden` and `veryHidden` sheets, displayed text,
+/// raw values, formulas, and comments) for `query` and return matching hits as JSON.
+///
+/// Free the returned string with [`prism_free_string`].
+///
+/// # Safety
+///
+/// `wb` must be a valid [`PrismWorkbook`] pointer; `query` must be a valid NUL-terminated UTF-8 string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn prism_workbook_search(
+    wb: *const PrismWorkbook,
+    query: *const c_char,
+    flags: u32,
+) -> *mut c_char {
+    guarded(|| {
+        if wb.is_null() {
+            return Err("wb is null".to_string());
+        }
+        if query.is_null() {
+            return Err("query is null".to_string());
+        }
+        // SAFETY: guaranteed by caller
+        let wb_ref = unsafe { &(*wb).wb };
+        let raw_query = unsafe { CStr::from_ptr(query) }.to_string_lossy();
+        if raw_query.is_empty() {
+            return Ok("[]".to_string());
+        }
+        let case_sensitive = (flags & PRISM_SEARCH_CASE_SENSITIVE) != 0;
+        let needle = if case_sensitive {
+            raw_query.to_string()
+        } else {
+            raw_query.to_lowercase()
+        };
+
+        let matches_str = |haystack: &str| -> bool {
+            if case_sensitive {
+                haystack.contains(&needle)
+            } else {
+                haystack.to_lowercase().contains(&needle)
+            }
+        };
+
+        let mut hits = Vec::new();
+        for (sheet_idx, s) in wb_ref.sheets.iter().enumerate() {
+            for (&(r, c), cell) in &s.cells {
+                let mut matched_in = Vec::new();
+                if matches_str(&cell.display_text) {
+                    matched_in.push("display_text");
+                }
+                if let prism_excel::CellValue::Text(ref raw_s) = cell.value
+                    && raw_s != &cell.display_text
+                    && matches_str(raw_s)
+                {
+                    matched_in.push("value");
+                }
+                if let Some(ref f) = cell.formula
+                    && matches_str(&f.expression)
+                {
+                    matched_in.push("formula");
+                }
+                if let Some(cm) = s.comments.get(&(r, c))
+                    && matches_str(&cm.text)
+                {
+                    matched_in.push("comment");
+                }
+                if !matched_in.is_empty() {
+                    hits.push(serde_json::json!({
+                        "sheet": sheet_idx,
+                        "sheet_name": s.name,
+                        "visibility": s.visibility,
+                        "row": r,
+                        "col": c,
+                        "a1": format!("{}{}", prism_excel::col_index_to_letters(c), r + 1),
+                        "display_text": cell.display_text,
+                        "formula": cell.formula.as_ref().map(|f| &f.expression),
+                        "is_concealed": cell.is_concealed,
+                        "matched_in": matched_in,
+                    }));
+                }
+            }
+        }
+        serde_json::to_string(&hits).map_err(|e| format!("failed to serialize search hits: {e}"))
     })
 }
 

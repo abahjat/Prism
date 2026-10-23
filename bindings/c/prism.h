@@ -29,6 +29,9 @@ extern "C" {
 /** Opaque handle to a parsed and positioned Prism document (`LayoutDocument`). */
 typedef struct PrismDocument PrismDocument;
 
+/** Opaque handle to a parsed Excel workbook (`prism_excel::Workbook`) for grid-mode inspection. */
+typedef struct PrismWorkbook PrismWorkbook;
+
 /** Page render format: standalone UTF-8 SVG document (`<svg ...>...</svg>`). */
 #define PRISM_PAGE_FORMAT_SVG             0u
 /** Page render format: 8-bit RGBA PNG image bytes. */
@@ -173,10 +176,91 @@ char* prism_document_font_report(const PrismDocument* doc);
 int32_t prism_document_set_markup_mode(PrismDocument* doc, uint32_t mode);
 
 /**
- * Return the per-document Word forensic facts (macros, external links, revisions, comments) as JSON.
+ * Return the per-document forensic facts (Word, PowerPoint, or Excel) as JSON.
  * Release the returned string with `prism_free_string()`.
  */
 char* prism_document_forensic_facts(const PrismDocument* doc);
+
+/* ========================================================================== *
+ * Workbook Grid-Mode API (`PrismWorkbook`)                                   *
+ * ========================================================================== */
+
+/**
+ * Open an Excel workbook (`.xlsx`, `.xlsm`, or `.xls`) from an in-memory buffer.
+ * Returns a non-NULL `PrismWorkbook*` on success, or NULL on error (`prism_last_error()`).
+ */
+PrismWorkbook* prism_workbook_open(const uint8_t* data, size_t len, const char* filename);
+
+/** Close and free a `PrismWorkbook*`. Passing NULL is a safe no-op. */
+void prism_workbook_close(PrismWorkbook* wb);
+
+/**
+ * Return workbook sheet descriptors (`index`, `name`, `visibility`, `tab_color`, `used_rows`,
+ * `used_cols`, `populated_cells`) and workbook-level forensic facts as JSON.
+ * Release the returned string with `prism_free_string()`.
+ */
+char* prism_workbook_sheets(const PrismWorkbook* wb);
+
+/**
+ * Return the grid layout metadata for 0-based `sheet`: column spans, explicit row metrics,
+ * merged ranges, frozen panes, tables, hyperlinks, comments, conditional formatting rules,
+ * and print setup as JSON.
+ * Release the returned string with `prism_free_string()`.
+ */
+char* prism_workbook_sheet_layout(const PrismWorkbook* wb, uint32_t sheet);
+
+/**
+ * Query populated cells in the 0-based inclusive rectangle `[r0..=r1, c0..=c1]` on `sheet` as JSON.
+ * Release the returned string with `prism_free_string()`.
+ */
+char* prism_workbook_cells(
+    const PrismWorkbook* wb,
+    uint32_t sheet,
+    uint32_t r0,
+    uint32_t c0,
+    uint32_t r1,
+    uint32_t c1
+);
+
+/**
+ * Return the deduplicated workbook `StylesTable` (`num_fmts`, `fonts`, `fills`, `borders`,
+ * `cell_xfs`, `dxfs`) as JSON.
+ * Release the returned string with `prism_free_string()`.
+ */
+char* prism_workbook_styles(const PrismWorkbook* wb);
+
+/**
+ * Return the floating drawing objects (charts, images, shapes) anchored on 0-based `sheet` as JSON.
+ * Release the returned string with `prism_free_string()`.
+ */
+char* prism_workbook_drawings(const PrismWorkbook* wb, uint32_t sheet);
+
+/**
+ * Render a single floating drawing object (`object_id`, 0-based index on `sheet`) to
+ * `PRISM_PAGE_FORMAT_SVG` (0) or `PRISM_PAGE_FORMAT_PNG` (1).
+ * Release `*out_buf` with `prism_buffer_free(*out_buf, *out_len)`.
+ * Returns 0 on success, -1 on error.
+ */
+int32_t prism_workbook_render_object(
+    const PrismWorkbook* wb,
+    uint32_t sheet,
+    uint32_t object_id,
+    uint32_t format,
+    float dpi,
+    uint8_t** out_buf,
+    size_t* out_len
+);
+
+/**
+ * Search across all sheets of `wb` (including `hidden` and `veryHidden` sheets, displayed text,
+ * raw values, formulas, and comments) for `query` and return matching hits as JSON.
+ * Release the returned string with `prism_free_string()`.
+ */
+char* prism_workbook_search(
+    const PrismWorkbook* wb,
+    const char* query,
+    uint32_t flags
+);
 
 #ifdef __cplusplus
 }

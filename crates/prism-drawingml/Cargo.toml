@@ -1,0 +1,16 @@
+[package]
+name = "prism-drawingml"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Shared DrawingML theme, 187 preset geometries, guide formulas, and cached-data chart renderer for Prism"
+
+[dependencies]
+prism-core = { workspace = true }
+prism-layout = { workspace = true }
+prism-numfmt = { workspace = true }
+quick-xml = "0.42"
+serde = { workspace = true }

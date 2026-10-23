@@ -11,6 +11,7 @@ description = "Rich Word document model (DOCX and legacy DOC), style inheritance
 [dependencies]
 prism-core = { workspace = true }
 prism-layout = { workspace = true }
+prism-drawingml = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }

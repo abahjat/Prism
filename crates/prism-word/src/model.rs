@@ -909,6 +909,8 @@ pub enum DrawingPayload {
         /// Stroke width in points.
         stroke_width_pt: f32,
     },
+    /// Native `DrawingML` chart (`c:chartSpace` or `cx:chartSpace`).
+    Chart(Box<prism_drawingml::ChartSpace>),
     /// Labelled placeholder for a chart or OLE object without an image preview.
     Placeholder {
         /// Descriptive label.

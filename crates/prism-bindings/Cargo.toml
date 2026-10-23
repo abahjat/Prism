@@ -12,8 +12,10 @@ crate-type = ["cdylib"]
 
 [dependencies]
 prism-core = { workspace = true }
+prism-excel = { workspace = true }
 prism-layout = { workspace = true }
 prism-parsers = { workspace = true }
+prism-ppt = { workspace = true }
 prism-render = { workspace = true }
 prism-word = { workspace = true }
 libc = "0.2"

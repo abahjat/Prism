@@ -34,6 +34,19 @@ impl XlsxParser {
         Self
     }
 
+    /// Parse an XLSX/XLSM byte slice directly into a rich [`prism_excel::Workbook`].
+    ///
+    /// # Errors
+    /// Returns an error if the ZIP archive is malformed or exceeds memory limits.
+    pub fn parse_workbook(
+        &self,
+        data: &[u8],
+        context: &ParseContext,
+    ) -> Result<prism_excel::Workbook> {
+        let limit = crate::limits::max_decompressed_bytes(context);
+        prism_excel::parse_xlsx(data, limit)
+    }
+
     /// Check if data is an XLSX file by checking ZIP signature
     #[must_use]
     fn is_xlsx_zip(data: &[u8]) -> bool {

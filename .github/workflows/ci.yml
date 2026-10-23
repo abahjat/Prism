@@ -103,6 +103,28 @@ jobs:
         working-directory: fuzz
         run: cargo fuzz run word_layout -- -max_total_time=180 -rss_limit_mb=2048 -timeout=20
 
+      - name: Seed PowerPoint and Excel corpora
+        run: |
+          mkdir -p fuzz/corpus/ppt_parse fuzz/corpus/workbook_parse
+          cp test-files/*.ppt test-files/*.pptx fuzz/corpus/ppt_parse/ || true
+          cp test-files/*.xls test-files/*.xlsx fuzz/corpus/workbook_parse/ || true
+
+      - name: Fuzz presentation readers (2 minutes)
+        working-directory: fuzz
+        run: cargo fuzz run ppt_parse -- -max_total_time=120 -rss_limit_mb=2048 -timeout=20
+
+      - name: Fuzz workbook readers (2 minutes)
+        working-directory: fuzz
+        run: cargo fuzz run workbook_parse -- -max_total_time=120 -rss_limit_mb=2048 -timeout=20
+
+      - name: Fuzz number formats (1 minute)
+        working-directory: fuzz
+        run: cargo fuzz run numfmt -- -max_total_time=60 -timeout=10
+
+      - name: Fuzz chart renderer (1 minute)
+        working-directory: fuzz
+        run: cargo fuzz run chart_render -- -max_total_time=60 -rss_limit_mb=2048 -timeout=20
+
       - name: Upload crashes
         if: failure()
         uses: actions/upload-artifact@v4

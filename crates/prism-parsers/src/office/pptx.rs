@@ -53,6 +53,19 @@ impl PptxParser {
         Self { format }
     }
 
+    /// Parse a PPTX/PPSX/POTX byte slice directly into a rich [`prism_ppt::Presentation`].
+    ///
+    /// # Errors
+    /// Returns an error if the ZIP archive is malformed or exceeds memory limits.
+    pub fn parse_presentation(
+        &self,
+        data: &[u8],
+        context: &ParseContext,
+    ) -> Result<prism_ppt::Presentation> {
+        let limit = crate::limits::max_decompressed_bytes(context);
+        prism_ppt::parse_pptx(data, limit)
+    }
+
     /// Check if data is a valid PPTX file (ZIP with ppt/ directory)
     fn is_pptx_zip(data: &[u8]) -> bool {
         // Check ZIP signature: PK (0x504B)

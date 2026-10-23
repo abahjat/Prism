@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- `prism-drawingml`: shared ECMA-376 `DrawingML` crate across Word, PowerPoint, and Excel:
+  - 12-slot `DrawingTheme` color scheme (`dk1`, `lt1`, `dk2`, `lt2`, `accent1..6`, `hlink`, `folHlink`), font scheme (`majorFont`, `minorFont`), and exact RGB/HSL color transform pipeline (`tint`, `shade`, `lumMod`, `lumOff`, `satMod`, `satOff`, `alpha`).
+  - Preset geometry for the 187 `ST_ShapeType` names (`build_preset_geometry_paths`; hand-written approximations, not yet generated from `presetShapeDefinitions.xml`), custom geometry (`custGeom`), and the 17-operator guide formula evaluator.
+  - Native `c:chartSpace` and Office 2016+ `cx:chartSpace` (`chartex`) chart parser and vector renderer (`parse_chart_xml`, `render_chart`) drawing bar/column (clustered, stacked, 100% stacked), line, area, pie/doughnut, combo, waterfall, treemap and histogram charts strictly from cached series values (`c:numCache`, `c:strCache`, `cx:data`); scatter, bubble and radar charts are approximations.
+- `prism-numfmt`: deterministic, locale-independent ECMA-376 number and date/time formatting engine (`format_cell_value`, `builtin_format_code`, `is_date_format`, `is_concealed_format`) supporting built-in IDs `0..=49`, multi-section format strings, conditional brackets, color tokens, grouping/scaling commas, percentages, scientific notation, continued-fraction rational approximations, `1900` (with Lotus 1-2-3 leap-year bug serial `60` = `1900-02-29`) and `1904` date systems, elapsed time (`[h]:mm:ss`), and `;;;` forensic concealment detection.
+- `prism-ppt`: native PowerPoint presentation model (`Presentation`), `.pptx`/`.ppsx`/`.potx` reader (`parse_pptx`) with 3-level `SlideMaster` → `SlideLayout` → `Slide` inheritance, text autofit (`normAutofit` / `spAutoFit`), tables, SmartArt (`diagrams/drawing*.xml` + `data*.xml` fallback), charts, speaker notes, comments, hidden slides (`show="0"`), legacy binary `.ppt` (`[MS-PPT]` + `[MS-ODRAW]`) reader (`parse_ppt`), fixed-coordinate slide layout engine (`layout_presentation`), and `PresentationForensicFacts`.
+- `prism-excel`: sparse Excel workbook model (`Workbook`, `BTreeMap<(u32, u32), Cell>`, compressed `ColumnSpan`s) scaling to `1,048,576 × 16,384` (`XFD1048576`) without dense allocation, `.xlsx`/`.xlsm` reader (`parse_xlsx`), legacy BIFF8 `.xls` (`[MS-XLS]`) reader (`parse_xls`), cached-value formula preservation (never recalculating formulas), stored-value conditional formatting evaluator (`evaluate_sheet_conditionals` for `cellIs`, `containsText`, `top10`, `aboveAverage`, `duplicateValues`, `colorScale`, `dataBar`, `iconSet`), paginated print layout (`layout_workbook`), standalone drawing renderer (`render_worksheet_drawing_to_doc`), and `WorkbookForensicFacts`.
+- Workbook Grid-Mode C ABI (`prism_workbook_open`, `prism_workbook_sheets`, `prism_workbook_sheet_layout`, `prism_workbook_cells`, `prism_workbook_styles`, `prism_workbook_drawings`, `prism_workbook_render_object`, `prism_workbook_search`, `prism_workbook_close`) in `prism-bindings`, `bindings/c/prism.h`, and `PrismWorkbook : IDisposable` in `Prism.Native`, plus viewer formula inspector bar (`#prism-formula-bar`), sheet tabs (`#prism-sheet-tabs`), and hidden/concealed forensic toggles.
+- Phase 3 ADRs (`0007`–`0009`), architecture docs (`docs/architecture/{powerpoint,excel,charts}.md`, `docs/numfmt-compat.md`), fuzz targets (`ppt_parse`, `workbook_parse`, `numfmt`, `chart_render`, run in CI), and `phase3_ppt_excel_tests.rs`.
 - `prism-word`: complete Phase 2 Word layout and legacy binary `.doc` engine:
   - Rich format-independent Word document model (`WordDocument`, `WordStyleSheet`, `WordNumbering`, `WordTheme`, `WordSettings`, `WordSection`, `WordParagraph`, `WordRun`, `WordTable`, `WordDrawing`, `WordField`, `WordStory`, `WordComment`, `ForensicFacts`), style inheritance and toggle-property XOR evaluation (`prism_word::inheritance`), full WordprocessingML `.docx` reader (`prism_word::docx`), and UDM conversion (`prism_word::udm`).
   - Stateful numbering/list engine (`prism_word::numbering`) supporting multi-level `%1.%2.` templates, `startOverride`, `lvlRestart`, `isLgl`, and Symbol/Wingdings/Webdings PUA bullet mapping.
@@ -50,6 +59,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Remaining advisories (zip extraction APIs that are not used; unmaintained transitive crates) are listed with reasons in `deny.toml`.
 
 ### Fixed
+- Excel print layout covers the whole used range (it stopped at 5,000 rows × 256 columns without notice), skips pages with nothing on them as Excel does, and reports `max_pages` as an error. A whole-sheet print area or merge (`A1:XFD1048576`) no longer hangs.
+- Workbook text extraction (`workbook_to_udm`) keeps every row and column (it stopped at 2,000 × 128), includes the stored value of `;;;` cells and cell comments, and no longer scans the sheet once per row.
+- XLSX: entity and character references (`&amp;`, `&lt;`, `&#10;`) in strings, formulas, comments and names were dropped; numbers in the Text (`@`) format showed a literal `@`.
+- XLS: cell comments (`NOTE` / `TXO` records) are read.
+- Number formats: weekdays were one day late; `1.005` with `0.00` showed `1.00` (Excel rounds on 15 significant digits); `0.##` dropped the decimal point; times are rounded to the displayed seconds; non-ASCII literals in date formats were garbled.
+- Charts: a `NaN` or infinite axis bound panicked; sparse caches (blank cells) shifted later points onto the wrong category.
+- PowerPoint: XML nested deeper than 128 levels could re-parent later elements; more than `max_pages` slides is an error instead of a silently shortened deck.
+- `prism_workbook_cells` no longer panics on a reversed rectangle and evaluates conditional formatting once per sheet; `prism_document_set_markup_mode` no longer turns off Word hidden text.
+- Viewer: the hidden-sheets toggle is on by default and re-lays out the pages; sheet tabs no longer jump to the page with the sheet's index.
+- Non-ASCII hex colour values no longer panic in `prism-drawingml`.
+- Word 2.0 inputs shorter than 32 bytes no longer panic (`word_doc` fuzz target).
 - Text engine: a first-line indent is applied once, by `parley`, so the first line also breaks at the narrower width; it was added twice on the DOCX layout path and could run past the right margin.
 - Text engine: paragraphs with more than 65,535 runs no longer panic in `parley` (adjacent spans are merged above 8,192).
 - Extracted text of PDF, HTML, email, EPUB, Markdown, SVG, DXF and XPS documents no longer contains base64 or markup.

@@ -1,0 +1,32 @@
+[package]
+name = "prism-ppt"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Native PowerPoint presentation model (PPTX and legacy PPT), master/layout inheritance, and slide layout for Prism"
+
+[dependencies]
+prism-core = { workspace = true }
+prism-layout = { workspace = true }
+prism-drawingml = { workspace = true }
+prism-word = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+bytes = { workspace = true }
+quick-xml = { version = "0.42", features = ["serialize"] }
+zip = "0.6"
+cfb = "0.10"
+image = { version = "0.25", default-features = false, features = [
+    "png",
+    "jpeg",
+    "tiff",
+    "gif",
+    "webp",
+    "bmp",
+    "ico",
+    "tga",
+] }

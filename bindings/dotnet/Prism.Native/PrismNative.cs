@@ -116,6 +116,52 @@ public static class PrismLib
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
     public static extern IntPtr prism_document_font_report(IntPtr doc);
 
+    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern int prism_document_set_markup_mode(IntPtr doc, uint mode);
+
+    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern IntPtr prism_document_forensic_facts(IntPtr doc);
+
+    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern IntPtr prism_workbook_open(byte[] data, UIntPtr len, byte[]? filename);
+
+    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern void prism_workbook_close(IntPtr wb);
+
+    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern IntPtr prism_workbook_sheets(IntPtr wb);
+
+    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern IntPtr prism_workbook_sheet_layout(IntPtr wb, uint sheet);
+
+    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern IntPtr prism_workbook_cells(
+        IntPtr wb,
+        uint sheet,
+        uint r0,
+        uint c0,
+        uint r1,
+        uint c1);
+
+    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern IntPtr prism_workbook_styles(IntPtr wb);
+
+    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern IntPtr prism_workbook_drawings(IntPtr wb, uint sheet);
+
+    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern int prism_workbook_render_object(
+        IntPtr wb,
+        uint sheet,
+        uint objectId,
+        uint format,
+        float dpi,
+        out IntPtr outBuf,
+        out UIntPtr outLen);
+
+    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern IntPtr prism_workbook_search(IntPtr wb, byte[] query, uint flags);
+
     /// <summary>Library version, e.g. "0.5.0+abc1234".</summary>
     public static string Version => PtrToString(prism_version()) ?? string.Empty;
 
@@ -328,6 +374,112 @@ public sealed class PrismDocument : IDisposable
     }
 
     ~PrismDocument()
+    {
+        Dispose();
+    }
+}
+
+/// <summary>
+/// Managed wrapper around the native <c>PrismWorkbook</c> spreadsheet grid-mode handle.
+/// </summary>
+public sealed class PrismWorkbook : IDisposable
+{
+    private IntPtr handle;
+
+    private PrismWorkbook(IntPtr handle)
+    {
+        this.handle = handle;
+    }
+
+    /// <summary>Open an Excel workbook (.xlsx, .xlsm, or .xls) from an in-memory buffer.</summary>
+    public static PrismWorkbook Open(byte[] data, string? fileName = null)
+    {
+        if (data == null) throw new ArgumentNullException(nameof(data));
+        IntPtr ptr = PrismLib.prism_workbook_open(data, PrismLib.Len(data), PrismLib.Utf8Z(fileName));
+        if (ptr == IntPtr.Zero)
+        {
+            throw new PrismException(PrismLib.LastError() ?? "Failed to open PrismWorkbook");
+        }
+        return new PrismWorkbook(ptr);
+    }
+
+    /// <summary>Return sheet descriptors and workbook forensic facts as JSON.</summary>
+    public string GetSheetsJson()
+    {
+        EnsureOpen();
+        return PrismLib.Call(PrismLib.prism_workbook_sheets(handle));
+    }
+
+    /// <summary>Return column spans, row metrics, merged ranges, freeze pane, and print setup for a 0-based sheet as JSON.</summary>
+    public string GetSheetLayoutJson(uint sheetIndex)
+    {
+        EnsureOpen();
+        return PrismLib.Call(PrismLib.prism_workbook_sheet_layout(handle, sheetIndex));
+    }
+
+    /// <summary>Return populated cells in the 0-based inclusive rectangle [r0..=r1, c0..=c1] as JSON.</summary>
+    public string GetCellsJson(uint sheetIndex, uint r0, uint c0, uint r1, uint c1)
+    {
+        EnsureOpen();
+        return PrismLib.Call(PrismLib.prism_workbook_cells(handle, sheetIndex, r0, c0, r1, c1));
+    }
+
+    /// <summary>Return the deduplicated workbook StylesTable as JSON.</summary>
+    public string GetStylesJson()
+    {
+        EnsureOpen();
+        return PrismLib.Call(PrismLib.prism_workbook_styles(handle));
+    }
+
+    /// <summary>Return floating drawing objects (charts, images, shapes) anchored on a 0-based sheet as JSON.</summary>
+    public string GetDrawingsJson(uint sheetIndex)
+    {
+        EnsureOpen();
+        return PrismLib.Call(PrismLib.prism_workbook_drawings(handle, sheetIndex));
+    }
+
+    /// <summary>Render a floating drawing object on a 0-based sheet to SVG or PNG.</summary>
+    public byte[] RenderObject(uint sheetIndex, uint objectId, PrismPageFormat format, float dpi = 150.0f)
+    {
+        EnsureOpen();
+        int rc = PrismLib.prism_workbook_render_object(
+            handle, sheetIndex, objectId, (uint)format, dpi, out IntPtr buf, out UIntPtr len);
+        if (rc != 0)
+        {
+            throw new PrismException(PrismLib.LastError() ?? $"Failed to render object {objectId} on sheet {sheetIndex}");
+        }
+        return PrismLib.CopyBufferAndFree(buf, len);
+    }
+
+    /// <summary>Search across all sheets (including hidden/veryHidden) and return matching hits as JSON.</summary>
+    public string SearchJson(string query, PrismSearchFlags flags = PrismSearchFlags.None)
+    {
+        if (query == null) throw new ArgumentNullException(nameof(query));
+        EnsureOpen();
+        byte[] queryBytes = PrismLib.Utf8Z(query)!;
+        return PrismLib.Call(PrismLib.prism_workbook_search(handle, queryBytes, (uint)flags));
+    }
+
+    private void EnsureOpen()
+    {
+        if (handle == IntPtr.Zero)
+        {
+            throw new ObjectDisposedException(nameof(PrismWorkbook));
+        }
+    }
+
+    public void Dispose()
+    {
+        IntPtr h = handle;
+        if (h != IntPtr.Zero)
+        {
+            handle = IntPtr.Zero;
+            PrismLib.prism_workbook_close(h);
+        }
+        GC.SuppressFinalize(this);
+    }
+
+    ~PrismWorkbook()
     {
         Dispose();
     }

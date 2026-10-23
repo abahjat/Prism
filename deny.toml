@@ -67,6 +67,22 @@ crate = "prism-word"
 
 [[licenses.exceptions]]
 allow = ["AGPL-3.0-only"]
+crate = "prism-drawingml"
+
+[[licenses.exceptions]]
+allow = ["AGPL-3.0-only"]
+crate = "prism-numfmt"
+
+[[licenses.exceptions]]
+allow = ["AGPL-3.0-only"]
+crate = "prism-ppt"
+
+[[licenses.exceptions]]
+allow = ["AGPL-3.0-only"]
+crate = "prism-excel"
+
+[[licenses.exceptions]]
+allow = ["AGPL-3.0-only"]
 crate = "prism-parsers"
 
 [[licenses.exceptions]]

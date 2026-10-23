@@ -10,10 +10,16 @@ publish = false
 
 [dependencies]
 prism-core = { workspace = true }
+prism-drawingml = { workspace = true }
+prism-excel = { workspace = true }
 prism-layout = { workspace = true }
+prism-numfmt = { workspace = true }
 prism-parsers = { workspace = true }
+prism-ppt = { workspace = true }
 prism-render = { workspace = true }
 prism-word = { workspace = true }
+zip = "0.6"
+cfb = "0.10"
 tokio = { workspace = true, features = ["full"] }
 walkdir = "2.4"
 anyhow = { workspace = true }

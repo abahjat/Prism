@@ -2265,6 +2265,30 @@ fn parse_drawing_element(
         }));
     }
 
+    if let Some(chart_node) = find_node_by_local(wp, "chart")
+        && let Some(rid) = chart_node.attr("r:id").or_else(|| chart_node.attr("id"))
+        && let Some(rel) = ctx.rels.get(rid)
+        && !rel.external
+    {
+        let zip_path = resolve_word_zip_path(&rel.target);
+        if let Ok(mut chart_file) = ctx.archive.by_name(&zip_path) {
+            let mut chart_bytes = Vec::new();
+            read_to_end_with_limit(&mut chart_file, &mut chart_bytes, ctx.max_entry_bytes)?;
+            let chart_xml = String::from_utf8_lossy(&chart_bytes);
+            if let Ok(chart_space) = prism_drawingml::parse_chart_xml(&chart_xml) {
+                return Ok(Some(WordDrawing {
+                    width_pt,
+                    height_pt,
+                    alt_text,
+                    rotation_deg: 0.0,
+                    wrap,
+                    anchor,
+                    payload: DrawingPayload::Chart(Box::new(chart_space)),
+                }));
+            }
+        }
+    }
+
     Ok(None)
 }
 

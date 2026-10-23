@@ -253,6 +253,12 @@ fn convert_run_to_udm(
                         }
                     }
                 }
+                DrawingPayload::Chart(chart) => {
+                    if let Some(ref title) = chart.title {
+                        text.push_str(title);
+                        text.push(' ');
+                    }
+                }
                 DrawingPayload::Placeholder { .. } => {}
             },
         }
