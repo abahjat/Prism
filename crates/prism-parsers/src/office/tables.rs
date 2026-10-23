@@ -59,10 +59,10 @@ pub fn parse_table<R: BufRead>(reader: &mut Reader<R>) -> Result<TableBlock> {
                     }
                     b"w:gridSpan" => {
                         for attr in e.attributes().flatten() {
-                            if attr.key.as_ref().as_bytes() == b"w:val" {
-                                if let Ok(val) = utils::attr_value(&attr.value).parse::<usize>() {
-                                    grid_span = val;
-                                }
+                            if attr.key.as_ref().as_bytes() == b"w:val"
+                                && let Ok(val) = utils::attr_value(&attr.value).parse::<usize>()
+                            {
+                                grid_span = val;
                             }
                         }
                     }
@@ -70,10 +70,10 @@ pub fn parse_table<R: BufRead>(reader: &mut Reader<R>) -> Result<TableBlock> {
                         for attr in e.attributes().flatten() {
                             if attr.key.as_ref().as_bytes() == b"w:fill" {
                                 let val = utils::attr_value(&attr.value);
-                                if val != "auto" {
-                                    if let Some(cell) = &mut current_cell {
-                                        cell.background_color = Some(format!("#{val}"));
-                                    }
+                                if val != "auto"
+                                    && let Some(cell) = &mut current_cell
+                                {
+                                    cell.background_color = Some(format!("#{val}"));
                                 }
                             }
                         }

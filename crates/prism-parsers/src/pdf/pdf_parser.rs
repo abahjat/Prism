@@ -89,10 +89,10 @@ fn decode_pdf_bytes(
     font_name: Option<&[u8]>,
     encodings: &BTreeMap<Vec<u8>, Encoding<'_>>,
 ) -> String {
-    if let Some(enc) = font_name.and_then(|name| encodings.get(name)) {
-        if let Ok(decoded) = LopdfDocument::decode_text(enc, bytes) {
-            return decoded;
-        }
+    if let Some(enc) = font_name.and_then(|name| encodings.get(name))
+        && let Ok(decoded) = LopdfDocument::decode_text(enc, bytes)
+    {
+        return decoded;
     }
     String::from_utf8_lossy(bytes).into_owned()
 }
@@ -444,13 +444,17 @@ impl Parser for PdfParser {
         // A PDF that lopdf cannot read may still render in the viewer, so a
         // load failure only costs text and metadata.
         let text = match LopdfDocument::load_mem(&data) {
-            Ok(pdf) => {
+            Ok(mut pdf) => {
+                let was_encrypted = pdf.is_encrypted();
+                if was_encrypted {
+                    let _ = pdf.decrypt("");
+                }
                 Self::extract_metadata(&pdf, &mut metadata);
                 metadata.add_custom(
                     "page_count",
                     i64::try_from(pdf.get_pages().len()).unwrap_or(0),
                 );
-                metadata.add_custom("encrypted", pdf.is_encrypted());
+                metadata.add_custom("encrypted", was_encrypted);
                 Some(Self::extract_text(&pdf, stream_limit)).filter(|t| !t.trim().is_empty())
             }
             Err(e) => {

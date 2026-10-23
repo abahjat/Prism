@@ -67,13 +67,14 @@ impl XlsxParser {
                         if e.name().as_ref().as_bytes() == b"si" {
                             in_si = true;
                             current_string.clear();
-                        } else if e.name().as_ref().as_bytes() == b"t" && in_si {
-                            if let Ok(text) = reader.read_text(e.name()) {
-                                if let Ok(unescaped) = quick_xml::escape::unescape(&text) {
-                                    current_string.push_str(&unescaped);
-                                } else {
-                                    current_string.push_str(&text);
-                                }
+                        } else if e.name().as_ref().as_bytes() == b"t"
+                            && in_si
+                            && let Ok(text) = reader.read_text(e.name())
+                        {
+                            if let Ok(unescaped) = quick_xml::escape::unescape(&text) {
+                                current_string.push_str(&unescaped);
+                            } else {
+                                current_string.push_str(&text);
                             }
                         }
                     }
@@ -466,10 +467,10 @@ impl XlsxParser {
         cells_to_remove.dedup();
 
         for (r, c) in cells_to_remove {
-            if let Some(row) = rows.get_mut(r) {
-                if c < row.cells.len() {
-                    row.cells.remove(c);
-                }
+            if let Some(row) = rows.get_mut(r)
+                && c < row.cells.len()
+            {
+                row.cells.remove(c);
             }
         }
 

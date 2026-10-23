@@ -7,7 +7,8 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use prism_core::{
     document::{
-        ContentBlock, Dimensions, Document, Page, PageMetadata, Rect, TextBlock, TextRun, TextStyle,
+        ContentBlock, Dimensions, Document, FontResource, Page, PageMargins, PageMetadata, Rect,
+        TextBlock, TextRun, TextStyle,
     },
     error::{Error, Result},
     format::Format,
@@ -151,10 +152,11 @@ fn section_page_size(document_xml: &str) -> Option<Dimensions> {
                 // Sizes are in twentieths of a point
                 let twips =
                     |key: &[u8]| utils::attr_value_opt(&e, key).and_then(|v| v.parse::<f64>().ok());
-                if let (Some(w), Some(h)) = (twips(b"w:w"), twips(b"w:h")) {
-                    if w > 0.0 && h > 0.0 {
-                        size = Some(Dimensions::new(w / 20.0, h / 20.0));
-                    }
+                if let (Some(w), Some(h)) = (twips(b"w:w"), twips(b"w:h"))
+                    && w > 0.0
+                    && h > 0.0
+                {
+                    size = Some(Dimensions::new(w / 20.0, h / 20.0));
                 }
             }
             Ok(Event::Eof) | Err(_) => break,
@@ -163,6 +165,157 @@ fn section_page_size(document_xml: &str) -> Option<Dimensions> {
         buf.clear();
     }
     size
+}
+
+/// Page margins of the document's final section (`w:body/w:sectPr/w:pgMar`), in points
+fn section_page_margins(document_xml: &str) -> Option<PageMargins> {
+    let mut reader = Reader::from_str(document_xml);
+    let mut buf = Vec::new();
+    let mut margins = None;
+    loop {
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Start(e) | Event::Empty(e)) if e.name().as_ref().as_bytes() == b"w:pgMar" => {
+                let twips = |key: &[u8]| {
+                    utils::attr_value_opt(&e, key)
+                        .and_then(|v| v.parse::<f64>().ok())
+                        .map(|t| (t / 20.0).max(0.0))
+                };
+                let top = twips(b"w:top").unwrap_or(72.0);
+                let right = twips(b"w:right").unwrap_or(72.0);
+                let bottom = twips(b"w:bottom").unwrap_or(72.0);
+                let left = twips(b"w:left").unwrap_or(72.0);
+                margins = Some(PageMargins::new(top, right, bottom, left));
+            }
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+        buf.clear();
+    }
+    margins
+}
+
+/// Deobfuscate an OOXML `.odttf` font stream using its 16-byte GUID key (ECMA-376 §17.8.1).
+fn deobfuscate_odttf_bytes(data: &[u8], guid: &str) -> Option<Vec<u8>> {
+    if data.len() < 32 {
+        return None;
+    }
+    let hex_digits: String = guid.chars().filter(char::is_ascii_hexdigit).collect();
+    if hex_digits.len() != 32 {
+        return None;
+    }
+    let mut guid_bytes = [0u8; 16];
+    for i in 0..16 {
+        guid_bytes[i] = u8::from_str_radix(&hex_digits[i * 2..i * 2 + 2], 16).ok()?;
+    }
+    let mut out = data.to_vec();
+    for i in 0..32 {
+        out[i] ^= guid_bytes[15 - (i % 16)];
+    }
+    Some(out)
+}
+
+/// Extract embedded fonts declared in `word/fontTable.xml` and `word/_rels/fontTable.xml.rels`.
+fn extract_embedded_fonts(
+    archive: &mut ZipArchive<Cursor<&[u8]>>,
+    limit: usize,
+) -> Vec<FontResource> {
+    let mut font_rels = Relationships::new();
+    if let Ok(mut file) = archive.by_name("word/_rels/fontTable.xml.rels") {
+        let mut xml = String::new();
+        if crate::limits::read_to_string_with_limit(&mut file, &mut xml, limit).is_ok()
+            && let Ok(r) = Relationships::from_xml(&xml)
+        {
+            font_rels = r;
+        }
+    }
+    if font_rels.map.is_empty() {
+        return Vec::new();
+    }
+
+    let mut font_table_xml = String::new();
+    let Ok(mut ft_file) = archive.by_name("word/fontTable.xml") else {
+        return Vec::new();
+    };
+    if crate::limits::read_to_string_with_limit(&mut ft_file, &mut font_table_xml, limit).is_err() {
+        return Vec::new();
+    }
+    drop(ft_file);
+
+    // Collect (family_name, style_label, r_id, font_key)
+    let mut specs: Vec<(String, &'static str, String, Option<String>)> = Vec::new();
+    let mut reader = Reader::from_str(&font_table_xml);
+    let mut buf = Vec::new();
+    let mut current_family: Option<String> = None;
+
+    loop {
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Start(e) | Event::Empty(e)) => {
+                let name = e.name();
+                match name.as_ref().as_bytes() {
+                    b"w:font" => {
+                        current_family = utils::attr_value_opt(&e, b"w:name");
+                    }
+                    b"w:embedRegular" | b"w:embedBold" | b"w:embedItalic"
+                    | b"w:embedBoldItalic" => {
+                        if let Some(ref fam) = current_family
+                            && let Some(r_id) = utils::attr_value_opt(&e, b"r:id")
+                        {
+                            let style = match name.as_ref().as_bytes() {
+                                b"w:embedBold" => "Bold",
+                                b"w:embedItalic" => "Italic",
+                                b"w:embedBoldItalic" => "BoldItalic",
+                                _ => "Regular",
+                            };
+                            let font_key = utils::attr_value_opt(&e, b"w:fontKey");
+                            specs.push((fam.clone(), style, r_id, font_key));
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            Ok(Event::End(e)) if e.name().as_ref().as_bytes() == b"w:font" => {
+                current_family = None;
+            }
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+        buf.clear();
+    }
+
+    let mut resources = Vec::new();
+    for (family, style, r_id, font_key) in specs {
+        let Some(rel) = font_rels.get(&r_id) else {
+            continue;
+        };
+        let target = rel.target.trim_start_matches('/');
+        let zip_path = if target.starts_with("word/") {
+            target.to_string()
+        } else {
+            format!("word/{target}")
+        };
+        let Ok(mut font_file) = archive.by_name(&zip_path) else {
+            continue;
+        };
+        let mut raw = Vec::new();
+        if crate::limits::read_to_end_with_limit(&mut font_file, &mut raw, limit).is_err() {
+            continue;
+        }
+        let is_odttf = std::path::Path::new(&zip_path)
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("odttf"));
+        let decoded = if is_odttf && let Some(ref key) = font_key {
+            deobfuscate_odttf_bytes(&raw, key).unwrap_or(raw)
+        } else {
+            raw
+        };
+        resources.push(FontResource {
+            family,
+            style: style.to_string(),
+            embedded: true,
+            data: Some(decoded),
+        });
+    }
+    resources
 }
 
 /// MIME type of an embedded image, detected from its content
@@ -203,10 +356,10 @@ impl DocxParser {
         let cursor = std::io::Cursor::new(data);
         if let Ok(mut archive) = ZipArchive::new(cursor) {
             for i in 0..archive.len() {
-                if let Ok(file) = archive.by_index(i) {
-                    if file.name() == "word/document.xml" {
-                        return true;
-                    }
+                if let Ok(file) = archive.by_index(i)
+                    && file.name() == "word/document.xml"
+                {
+                    return true;
                 }
             }
         }
@@ -310,6 +463,7 @@ impl Parser for DocxParser {
         let mut current_drawing_alt: Option<String> = None;
 
         let page_size = section_page_size(&document_xml).unwrap_or(Dimensions::LETTER);
+        let page_margins = section_page_margins(&document_xml);
 
         // Count paragraphs for approximate pagination
         let mut para_count = 0;
@@ -445,7 +599,10 @@ impl Parser for DocxParser {
                                         dimensions: page_size,
                                         content: current_page_content.clone(),
                                         annotations: Vec::new(),
-                                        metadata: PageMetadata::default(),
+                                        metadata: PageMetadata {
+                                            margins: page_margins,
+                                            ..PageMetadata::default()
+                                        },
                                     });
                                     current_page_content.clear();
                                     para_count = 0;
@@ -481,46 +638,46 @@ impl Parser for DocxParser {
                         }
                         b"w:drawing" => {
                             in_drawing = false;
-                            if let Some(r_id) = current_drawing_image_id.take() {
-                                if let Some(rel) = _rels.get(&r_id) {
-                                    // Construct path in zip
-                                    let mut path = rel.target.clone();
-                                    if path.starts_with('/') {
-                                        path = path.trim_start_matches('/').to_string();
-                                    } else {
-                                        path = format!("word/{path}");
-                                    }
+                            if let Some(r_id) = current_drawing_image_id.take()
+                                && let Some(rel) = _rels.get(&r_id)
+                            {
+                                // Construct path in zip
+                                let mut path = rel.target.clone();
+                                if path.starts_with('/') {
+                                    path = path.trim_start_matches('/').to_string();
+                                } else {
+                                    path = format!("word/{path}");
+                                }
 
-                                    if let Ok(mut image_file) = archive.by_name(&path) {
-                                        let mut image_data = Vec::new();
-                                        crate::limits::read_to_end_with_limit(
-                                            &mut image_file,
-                                            &mut image_data,
-                                            limit,
-                                        )?;
-                                        let (width, height) = image_pixel_size(&image_data);
-                                        let image_resource = prism_core::document::ImageResource {
-                                            id: r_id.clone(),
-                                            mime_type: image_mime_type(&image_data, &path),
-                                            data: Some(image_data),
-                                            url: None,
-                                            width,
-                                            height,
-                                        };
+                                if let Ok(mut image_file) = archive.by_name(&path) {
+                                    let mut image_data = Vec::new();
+                                    crate::limits::read_to_end_with_limit(
+                                        &mut image_file,
+                                        &mut image_data,
+                                        limit,
+                                    )?;
+                                    let (width, height) = image_pixel_size(&image_data);
+                                    let image_resource = prism_core::document::ImageResource {
+                                        id: r_id.clone(),
+                                        mime_type: image_mime_type(&image_data, &path),
+                                        data: Some(image_data),
+                                        url: None,
+                                        width,
+                                        height,
+                                    };
 
-                                        images_found.push(image_resource);
+                                    images_found.push(image_resource);
 
-                                        let image_block = prism_core::document::ImageBlock {
-                                            bounds: Rect::default(),
-                                            resource_id: r_id.clone(),
-                                            alt_text: current_drawing_alt.take(),
-                                            format: None,
-                                            original_size: current_drawing_extent.take(),
-                                            style: prism_core::document::ShapeStyle::default(),
-                                            rotation: 0.0,
-                                        };
-                                        current_page_content.push(ContentBlock::Image(image_block));
-                                    }
+                                    let image_block = prism_core::document::ImageBlock {
+                                        bounds: Rect::default(),
+                                        resource_id: r_id.clone(),
+                                        alt_text: current_drawing_alt.take(),
+                                        format: None,
+                                        original_size: current_drawing_extent.take(),
+                                        style: prism_core::document::ShapeStyle::default(),
+                                        rotation: 0.0,
+                                    };
+                                    current_page_content.push(ContentBlock::Image(image_block));
                                 }
                             }
                         }
@@ -533,10 +690,11 @@ impl Parser for DocxParser {
                     }
                 }
                 Ok(Event::GeneralRef(e)) => {
-                    if in_run && in_text {
-                        if let Some(resolved) = utils::resolve_general_ref(&e) {
-                            current_run_text.push_str(&resolved);
-                        }
+                    if in_run
+                        && in_text
+                        && let Some(resolved) = utils::resolve_general_ref(&e)
+                    {
+                        current_run_text.push_str(&resolved);
                     }
                 }
                 Ok(Event::Eof) => break,
@@ -557,14 +715,21 @@ impl Parser for DocxParser {
                 dimensions: page_size,
                 content: current_page_content,
                 annotations: Vec::new(),
-                metadata: PageMetadata::default(),
+                metadata: PageMetadata {
+                    margins: page_margins,
+                    ..PageMetadata::default()
+                },
             });
         }
 
         // Ensure at least one page
         if pages.is_empty() {
-            pages.push(Page::new(1, page_size));
+            let mut p = Page::new(1, page_size);
+            p.metadata.margins = page_margins;
+            pages.push(p);
         }
+
+        let embedded_fonts = extract_embedded_fonts(&mut archive, limit);
 
         let mut metadata = Metadata::new();
         if let Some(filename) = context.filename {
@@ -577,6 +742,7 @@ impl Parser for DocxParser {
         document.structure.headings = Vec::new(); // TODO: Extract headings from structure
 
         document.resources.images = images_found;
+        document.resources.fonts = embedded_fonts;
 
         Ok(document)
     }
@@ -691,10 +857,15 @@ mod tests {
     #[tokio::test]
     async fn page_size_from_final_section() {
         let body = r#"<w:p><w:r><w:t>x</w:t></w:r></w:p>
-            <w:sectPr><w:pgSz w:w="16838" w:h="11906" w:orient="landscape"/></w:sectPr>"#;
+            <w:sectPr><w:pgSz w:w="16838" w:h="11906" w:orient="landscape"/><w:pgMar w:top="1440" w:right="1080" w:bottom="1440" w:left="1080"/></w:sectPr>"#;
         let document = parse(build_docx(body, None, &[])).await;
         let dims = document.pages[0].dimensions;
         assert!((dims.width - 841.9).abs() < 0.1 && (dims.height - 595.3).abs() < 0.1);
+        let margins = document.pages[0].metadata.margins.expect("w:pgMar margins");
+        assert!((margins.top - 72.0).abs() < 0.1);
+        assert!((margins.bottom - 72.0).abs() < 0.1);
+        assert!((margins.left - 54.0).abs() < 0.1);
+        assert!((margins.right - 54.0).abs() < 0.1);
     }
 
     #[tokio::test]

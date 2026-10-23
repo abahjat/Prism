@@ -1,0 +1,13 @@
+{
+  "name": "@prism/viewer",
+  "version": "0.5.0",
+  "private": true,
+  "description": "Self-contained offline TypeScript viewer for Prism LayoutDocument pages",
+  "license": "AGPL-3.0-only",
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0"
+  }
+}

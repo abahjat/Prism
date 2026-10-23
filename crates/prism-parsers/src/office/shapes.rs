@@ -45,10 +45,10 @@ pub fn parse_shape<S: std::hash::BuildHasher>(
                 match e.name().as_ref().as_bytes() {
                     b"p:ph" => {
                         for attr in e.attributes().flatten() {
-                            if attr.key.as_ref().as_bytes() == b"idx" {
-                                if let Ok(val) = utils::attr_value(&attr.value).parse::<u32>() {
-                                    ph_idx = Some(val);
-                                }
+                            if attr.key.as_ref().as_bytes() == b"idx"
+                                && let Ok(val) = utils::attr_value(&attr.value).parse::<u32>()
+                            {
+                                ph_idx = Some(val);
                             }
                         }
                         if ph_idx.is_none() {
@@ -59,10 +59,10 @@ pub fn parse_shape<S: std::hash::BuildHasher>(
                         bounds = parse_transform_2d(reader, &mut inner_buf);
                         // Rotation? a:xfrm has rot attribute (60000ths of a degree)
                         for attr in e.attributes().flatten() {
-                            if attr.key.as_ref().as_bytes() == b"rot" {
-                                if let Ok(val) = utils::attr_value(&attr.value).parse::<f64>() {
-                                    rotation = val / 60_000.0;
-                                }
+                            if attr.key.as_ref().as_bytes() == b"rot"
+                                && let Ok(val) = utils::attr_value(&attr.value).parse::<f64>()
+                            {
+                                rotation = val / 60_000.0;
                             }
                         }
                     }
@@ -95,6 +95,14 @@ pub fn parse_shape<S: std::hash::BuildHasher>(
                             } else {
                                 style.fill_image = Some(embed_id);
                             }
+                        }
+                    }
+                    b"a:gradFill" if !in_ln => {
+                        let mut stops = Vec::new();
+                        let mut angle = 90.0;
+                        parse_gradient_fill(reader, &mut inner_buf, &mut stops, &mut angle, theme);
+                        if !stops.is_empty() {
+                            style.fill_color = Some(build_css_gradient(&stops, angle));
                         }
                     }
                     b"a:solidFill" => {
@@ -139,11 +147,11 @@ pub fn parse_shape<S: std::hash::BuildHasher>(
                     b"a:ln" => {
                         in_ln = true;
                         for attr in e.attributes().flatten() {
-                            if attr.key.as_ref().as_bytes() == b"w" {
-                                if let Ok(val) = utils::attr_value(&attr.value).parse::<f64>() {
-                                    // EMUs to points
-                                    style.stroke_width = Some(val / 12700.0);
-                                }
+                            if attr.key.as_ref().as_bytes() == b"w"
+                                && let Ok(val) = utils::attr_value(&attr.value).parse::<f64>()
+                            {
+                                // EMUs to points
+                                style.stroke_width = Some(val / 12700.0);
                             }
                         }
                     }
@@ -291,10 +299,10 @@ pub fn parse_shape<S: std::hash::BuildHasher>(
             Ok(Event::Empty(e)) => match e.name().as_ref().as_bytes() {
                 b"p:ph" => {
                     for attr in e.attributes().flatten() {
-                        if attr.key.as_ref().as_bytes() == b"idx" {
-                            if let Ok(val) = utils::attr_value(&attr.value).parse::<u32>() {
-                                ph_idx = Some(val);
-                            }
+                        if attr.key.as_ref().as_bytes() == b"idx"
+                            && let Ok(val) = utils::attr_value(&attr.value).parse::<u32>()
+                        {
+                            ph_idx = Some(val);
                         }
                     }
                     if ph_idx.is_none() {
@@ -303,10 +311,10 @@ pub fn parse_shape<S: std::hash::BuildHasher>(
                 }
                 b"a:ln" => {
                     for attr in e.attributes().flatten() {
-                        if attr.key.as_ref().as_bytes() == b"w" {
-                            if let Ok(val) = utils::attr_value(&attr.value).parse::<f64>() {
-                                style.stroke_width = Some(val / 12700.0);
-                            }
+                        if attr.key.as_ref().as_bytes() == b"w"
+                            && let Ok(val) = utils::attr_value(&attr.value).parse::<f64>()
+                        {
+                            style.stroke_width = Some(val / 12700.0);
                         }
                     }
                 }
@@ -353,29 +361,28 @@ pub fn parse_shape<S: std::hash::BuildHasher>(
 
     // Merge with placeholder if present
     // Merge with placeholder if present
-    if let Some(idx) = ph_idx {
-        if let Some(placeholders) = placeholders {
-            if let Some(ContentBlock::Text(ph_text)) = placeholders.get(&idx) {
-                // Inherit bounds if default
-                if bounds.width == 0.0 && bounds.height == 0.0 {
-                    bounds = ph_text.bounds;
-                    rotation = ph_text.rotation;
-                }
+    if let Some(idx) = ph_idx
+        && let Some(placeholders) = placeholders
+        && let Some(ContentBlock::Text(ph_text)) = placeholders.get(&idx)
+    {
+        // Inherit bounds if default
+        if bounds.width == 0.0 && bounds.height == 0.0 {
+            bounds = ph_text.bounds;
+            rotation = ph_text.rotation;
+        }
 
-                // Inherit styling
-                if style.fill_color.is_none() {
-                    style.fill_color.clone_from(&ph_text.style.fill_color);
-                }
-                if style.stroke_color.is_none() {
-                    style.stroke_color.clone_from(&ph_text.style.stroke_color);
-                }
-                if style.stroke_width.is_none() {
-                    style.stroke_width = ph_text.style.stroke_width;
-                }
-                if style.font_color.is_none() {
-                    style.font_color.clone_from(&ph_text.style.font_color);
-                }
-            }
+        // Inherit styling
+        if style.fill_color.is_none() {
+            style.fill_color.clone_from(&ph_text.style.fill_color);
+        }
+        if style.stroke_color.is_none() {
+            style.stroke_color.clone_from(&ph_text.style.stroke_color);
+        }
+        if style.stroke_width.is_none() {
+            style.stroke_width = ph_text.style.stroke_width;
+        }
+        if style.font_color.is_none() {
+            style.font_color.clone_from(&ph_text.style.font_color);
         }
     }
 
@@ -681,11 +688,11 @@ fn parse_gradient_fill(
                 b"a:lin" => {
                     // Linear gradient angle
                     for attr in e.attributes().flatten() {
-                        if attr.key.as_ref().as_bytes() == b"ang" {
-                            if let Ok(val) = utils::attr_value(&attr.value).parse::<f64>() {
-                                // OOXML angle is in 1/60000 of a degree
-                                *angle = val / 60000.0;
-                            }
+                        if attr.key.as_ref().as_bytes() == b"ang"
+                            && let Ok(val) = utils::attr_value(&attr.value).parse::<f64>()
+                        {
+                            // OOXML angle is in 1/60000 of a degree
+                            *angle = val / 60000.0;
                         }
                     }
                 }
@@ -693,10 +700,10 @@ fn parse_gradient_fill(
                     // Gradient stop
                     let mut pos: u32 = 0;
                     for attr in e.attributes().flatten() {
-                        if attr.key.as_ref().as_bytes() == b"pos" {
-                            if let Ok(val) = utils::attr_value(&attr.value).parse::<u32>() {
-                                pos = val / 1000; // Convert from 1/100000 to percentage
-                            }
+                        if attr.key.as_ref().as_bytes() == b"pos"
+                            && let Ok(val) = utils::attr_value(&attr.value).parse::<u32>()
+                        {
+                            pos = val / 1000; // Convert from 1/100000 to percentage
                         }
                     }
                     // Parse color inside gs
@@ -817,10 +824,10 @@ fn parse_blip_fill(reader: &mut Reader<&[u8]>, buf: &mut Vec<u8>) -> Option<Stri
 /// Resolve OOXML scheme color to RGB hex
 /// Falls back to default `PowerPoint` color palette
 fn resolve_scheme_color(scheme: &str, theme: Option<&Theme>) -> String {
-    if let Some(t) = theme {
-        if let Some(color) = t.resolve_color(scheme) {
-            return format!("#{color}");
-        }
+    if let Some(t) = theme
+        && let Some(color) = t.resolve_color(scheme)
+    {
+        return format!("#{color}");
     }
     match scheme {
         "dk1" | "tx1" => "#000000".to_string(), // Dark 1 (usually black)
@@ -1086,23 +1093,21 @@ pub fn parse_text_body<R: BufRead>(
                 }
                 b"a:normAutofit" => {
                     for attr in e.attributes().flatten() {
-                        if attr.key.as_ref().as_bytes() == b"fontScale" {
-                            if let Ok(val) = utils::attr_value(&attr.value).parse::<f64>() {
+                        if attr.key.as_ref().as_bytes() == b"fontScale"
+                            && let Ok(val) = utils::attr_value(&attr.value).parse::<f64>() {
                                 // 90000 = 90%. So divide by 100,000.
                                 current_font_scale = val / 100_000.0;
                             }
-                        }
                     }
                 }
                 b"a:defRPr" => {
                     if in_lvl1_ppr {
                         for attr in e.attributes().flatten() {
-                            if attr.key.as_ref().as_bytes() == b"sz" {
-                                if let Ok(val) = utils::attr_value(&attr.value).parse::<f64>() {
+                            if attr.key.as_ref().as_bytes() == b"sz"
+                                && let Ok(val) = utils::attr_value(&attr.value).parse::<f64>() {
                                     // 100ths of a point
                                     list_style_font_size = Some(val / 100.0);
                                 }
-                            }
                         }
                     }
                 }
@@ -1244,21 +1249,21 @@ pub fn parse_text_body<R: BufRead>(
                 }
                 b"a:normAutofit" => {
                     for attr in e.attributes().flatten() {
-                        if attr.key.as_ref().as_bytes() == b"fontScale" {
-                            if let Ok(val) = utils::attr_value(&attr.value).parse::<f64>() {
-                                // 90000 = 90%. So divide by 100,000.
-                                current_font_scale = val / 100_000.0;
-                            }
+                        if attr.key.as_ref().as_bytes() == b"fontScale"
+                            && let Ok(val) = utils::attr_value(&attr.value).parse::<f64>()
+                        {
+                            // 90000 = 90%. So divide by 100,000.
+                            current_font_scale = val / 100_000.0;
                         }
                     }
                 }
                 b"a:defRPr" if in_lvl1_ppr => {
                     for attr in e.attributes().flatten() {
-                        if attr.key.as_ref().as_bytes() == b"sz" {
-                            if let Ok(val) = utils::attr_value(&attr.value).parse::<f64>() {
-                                // 100ths of a point
-                                list_style_font_size = Some(val / 100.0);
-                            }
+                        if attr.key.as_ref().as_bytes() == b"sz"
+                            && let Ok(val) = utils::attr_value(&attr.value).parse::<f64>()
+                        {
+                            // 100ths of a point
+                            list_style_font_size = Some(val / 100.0);
                         }
                     }
                 }
@@ -1270,10 +1275,8 @@ pub fn parse_text_body<R: BufRead>(
                 }
             }
             Ok(Event::GeneralRef(e)) => {
-                if in_run {
-                    if let Some(resolved) = utils::resolve_general_ref(&e) {
-                        current_run_text.push_str(&resolved);
-                    }
+                if in_run && let Some(resolved) = utils::resolve_general_ref(&e) {
+                    current_run_text.push_str(&resolved);
                 }
             }
             Ok(Event::End(e)) => {

@@ -9,7 +9,10 @@
 //! corruption) and parsed on a worker thread with a time limit.
 
 use prism_core::parser::{ParseContext, ParseOptions};
+use prism_layout::{LayoutOptions, interpret_pdf_bytes, layout_document};
 use prism_parsers::registry::ParserRegistry;
+use prism_render::raster::{RasterOptions, render_page_png};
+use prism_render::svg::render_page_svg;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::mpsc;
@@ -93,8 +96,33 @@ fn parse_isolated(
             let runtime = tokio::runtime::Builder::new_current_thread()
                 .build()
                 .expect("runtime");
+            let layout_opts = LayoutOptions {
+                max_pages: 64,
+                max_glyphs_per_page: 20_000,
+                max_image_pixels: 4_000_000,
+                max_decompressed_stream_bytes: 16 * 1024 * 1024,
+                max_recursion_depth: 16,
+                allow_system_fonts: false,
+            };
+            if data.starts_with(b"%PDF-")
+                && let Ok(pdf_doc) = interpret_pdf_bytes(&data, &layout_opts)
+                && let Some(first) = pdf_doc.pages.first()
+            {
+                let _ = render_page_svg(first, &pdf_doc.fonts, &pdf_doc.images, &layout_opts);
+            }
             // Errors are acceptable for malformed input; only panics/hangs fail.
-            let _ = runtime.block_on(parser.parse(bytes::Bytes::from(data), context));
+            if let Ok(doc) = runtime.block_on(parser.parse(bytes::Bytes::from(data), context))
+                && let Ok(layout_doc) = layout_document(&doc, &layout_opts)
+                && let Some(first) = layout_doc.pages.first()
+            {
+                let _ = render_page_svg(first, &layout_doc.fonts, &layout_doc.images, &layout_opts);
+                let raster_opts = RasterOptions {
+                    dpi: 72.0,
+                    layout_options: layout_opts,
+                    ..RasterOptions::default()
+                };
+                let _ = render_page_png(first, &layout_doc.fonts, &layout_doc.images, &raster_opts);
+            }
         }));
         let outcome = match result {
             Ok(()) => Outcome::Completed,

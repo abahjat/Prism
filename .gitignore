@@ -59,3 +59,6 @@ parsers_phase2_final_check.txt
 
 *.txt
 *.log
+
+# License texts shipped with bundled assets
+!assets/fonts/OFL.txt

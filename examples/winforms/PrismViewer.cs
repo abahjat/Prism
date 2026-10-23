@@ -12,6 +12,9 @@ namespace Prism.WinForms
     /// Displays documents rendered by Prism in a locked-down WebView2.
     /// </summary>
     /// <remarks>
+    /// Supports both the positioned <see cref="PrismDocument"/> layout viewer
+    /// (with SVG pages, selectable text layer, search, and PDF/TIFF export) and
+    /// sanitized HTML rendering for email/HTML/EPUB/Markdown documents.
     /// The rendered page is written to a private temporary folder and served
     /// through a WebView2 virtual host. This avoids the 2 MB limit of
     /// <c>NavigateToString</c>. The view cannot navigate anywhere else or open
@@ -26,6 +29,7 @@ namespace Prism.WinForms
         private readonly string viewDirectory =
             Path.Combine(Path.GetTempPath(), "PrismViewer", Guid.NewGuid().ToString("N"));
         private readonly Task initialization;
+        private PrismDocument? activeDocument;
 
         public PrismViewer()
         {
@@ -34,6 +38,9 @@ namespace Prism.WinForms
             Controls.Add(webView);
             initialization = InitializeAsync();
         }
+
+        /// <summary>Currently opened <see cref="PrismDocument"/>, if loaded via the layout engine.</summary>
+        public PrismDocument? ActiveDocument => activeDocument;
 
         private async Task InitializeAsync()
         {
@@ -54,18 +61,26 @@ namespace Prism.WinForms
             core.Settings.IsStatusBarEnabled = true; // shows neutralized link targets on hover
         }
 
-        public async Task LoadFileAsync(string filePath)
+        public async Task LoadFileAsync(string filePath, bool useLayoutViewer = true)
         {
             if (!File.Exists(filePath))
                 throw new FileNotFoundException("File not found", filePath);
 
             await initialization;
 
+            activeDocument?.Dispose();
+            activeDocument = null;
+
             byte[] data = File.ReadAllBytes(filePath);
+            string fileName = Path.GetFileName(filePath);
+
             string html;
             try
             {
-                html = PrismLib.ConvertToHtml(data, Path.GetFileName(filePath));
+                // The format is detected from content, not the extension; formats the layout
+                // engine can't position yet (email, HTML, EPUB, ...) use the sanitized HTML path.
+                html = (useLayoutViewer ? TryRenderLayoutViewer(data, fileName) : null)
+                       ?? PrismLib.ConvertToHtml(data, fileName);
             }
             catch (PrismException ex)
             {
@@ -83,10 +98,49 @@ namespace Prism.WinForms
             webView.CoreWebView2.Navigate($"https://{VirtualHost}/{PageName}");
         }
 
+        /// <summary>
+        /// Opens the document with the layout engine and returns the viewer HTML, or null when
+        /// the layout engine can't handle the document.
+        /// </summary>
+        private string? TryRenderLayoutViewer(byte[] data, string fileName)
+        {
+            PrismDocument? document = null;
+            try
+            {
+                document = PrismDocument.Open(data, fileName);
+                string html = Encoding.UTF8.GetString(document.Export(PrismExportFormat.HtmlViewer));
+                activeDocument = document;
+                return html;
+            }
+            catch (PrismException)
+            {
+                document?.Dispose();
+                return null;
+            }
+        }
+
+        /// <summary>Export the currently loaded document to a searchable PDF file.</summary>
+        public void ExportPdf(string outputPath)
+        {
+            if (activeDocument == null)
+                throw new InvalidOperationException("No layout document is currently open.");
+            File.WriteAllBytes(outputPath, activeDocument.Export(PrismExportFormat.Pdf));
+        }
+
+        /// <summary>Export the currently loaded document to a multi-page TIFF file.</summary>
+        public void ExportTiff(string outputPath)
+        {
+            if (activeDocument == null)
+                throw new InvalidOperationException("No layout document is currently open.");
+            File.WriteAllBytes(outputPath, activeDocument.Export(PrismExportFormat.Tiff));
+        }
+
         protected override void Dispose(bool disposing)
         {
             if (disposing)
             {
+                activeDocument?.Dispose();
+                activeDocument = null;
                 webView.Dispose();
                 try
                 {

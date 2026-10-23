@@ -128,10 +128,8 @@ pub fn parse_theme(content: &[u8]) -> Result<Theme> {
                         }
                     }
                     _ => {
-                        if in_clr_scheme {
-                            if let Some(ref slot) = current_clr_tag {
-                                process_color_element(e, slot, &mut theme);
-                            }
+                        if in_clr_scheme && let Some(ref slot) = current_clr_tag {
+                            process_color_element(e, slot, &mut theme);
                         }
                     }
                 }
@@ -144,12 +142,11 @@ pub fn parse_theme(content: &[u8]) -> Result<Theme> {
                     "a:majorFont" => in_major_font = false,
                     "a:minorFont" => in_minor_font = false,
                     tag_name => {
-                        if in_clr_scheme {
-                            if let Some(ref current) = current_clr_tag {
-                                if current == tag_name {
-                                    current_clr_tag = None;
-                                }
-                            }
+                        if in_clr_scheme
+                            && let Some(ref current) = current_clr_tag
+                            && current == tag_name
+                        {
+                            current_clr_tag = None;
                         }
                     }
                 }

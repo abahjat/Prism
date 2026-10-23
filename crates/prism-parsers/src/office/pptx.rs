@@ -150,11 +150,11 @@ impl PptxParser {
             let clean_path = rels_path.replace('\\', "/");
             if let Ok(mut file) = archive.by_name(&clean_path) {
                 let mut xml = String::new();
-                if crate::limits::read_to_string_bounded(&mut file, &mut xml).is_ok() {
-                    if let Ok(parsed) = Relationships::from_xml(&xml) {
-                        for rel in parsed.map.values() {
-                            rels.insert(rel.id.clone(), rel.target.clone());
-                        }
+                if crate::limits::read_to_string_bounded(&mut file, &mut xml).is_ok()
+                    && let Ok(parsed) = Relationships::from_xml(&xml)
+                {
+                    for rel in parsed.map.values() {
+                        rels.insert(rel.id.clone(), rel.target.clone());
                     }
                 }
             }
@@ -324,15 +324,15 @@ impl PptxParser {
                         b"a:defRPr" => {
                             // Extract font size from sz attribute (in hundredths of a point)
                             for attr in e.attributes().flatten() {
-                                if attr.key.as_ref().as_bytes() == b"sz" {
-                                    if let Ok(sz) = utils::attr_value(&attr.value).parse::<f64>() {
-                                        let font_size = sz / 100.0;
-                                        if in_title_style && styles.title_font_size.is_none() {
-                                            styles.title_font_size = Some(font_size);
-                                        }
-                                        if in_body_style && styles.body_font_size.is_none() {
-                                            styles.body_font_size = Some(font_size);
-                                        }
+                                if attr.key.as_ref().as_bytes() == b"sz"
+                                    && let Ok(sz) = utils::attr_value(&attr.value).parse::<f64>()
+                                {
+                                    let font_size = sz / 100.0;
+                                    if in_title_style && styles.title_font_size.is_none() {
+                                        styles.title_font_size = Some(font_size);
+                                    }
+                                    if in_body_style && styles.body_font_size.is_none() {
+                                        styles.body_font_size = Some(font_size);
                                     }
                                 }
                             }
@@ -359,15 +359,15 @@ impl PptxParser {
                     } else if name_ref == b"a:defRPr" {
                         // Extract font size from sz attribute (in hundredths of a point)
                         for attr in e.attributes().flatten() {
-                            if attr.key.as_ref().as_bytes() == b"sz" {
-                                if let Ok(sz) = utils::attr_value(&attr.value).parse::<f64>() {
-                                    let font_size = sz / 100.0; // Convert from hundredths to points
-                                    if in_title_style && styles.title_font_size.is_none() {
-                                        styles.title_font_size = Some(font_size);
-                                    }
-                                    if in_body_style && styles.body_font_size.is_none() {
-                                        styles.body_font_size = Some(font_size);
-                                    }
+                            if attr.key.as_ref().as_bytes() == b"sz"
+                                && let Ok(sz) = utils::attr_value(&attr.value).parse::<f64>()
+                            {
+                                let font_size = sz / 100.0; // Convert from hundredths to points
+                                if in_title_style && styles.title_font_size.is_none() {
+                                    styles.title_font_size = Some(font_size);
+                                }
+                                if in_body_style && styles.body_font_size.is_none() {
+                                    styles.body_font_size = Some(font_size);
                                 }
                             }
                         }
@@ -525,14 +525,13 @@ impl Parser for PptxParser {
                 let mut theme_xml = Vec::new();
                 if crate::limits::read_to_end_with_limit(&mut theme_file, &mut theme_xml, limit)
                     .is_ok()
+                    && let Ok(parsed_theme) = crate::office::theme::parse_theme(&theme_xml)
                 {
-                    if let Ok(parsed_theme) = crate::office::theme::parse_theme(&theme_xml) {
-                        debug!("Parsed theme: {}", parsed_theme.name);
-                        theme_name = Some(parsed_theme.name.clone());
-                        major_font.clone_from(&parsed_theme.major_font);
-                        minor_font.clone_from(&parsed_theme.minor_font);
-                        theme = Some(parsed_theme);
-                    }
+                    debug!("Parsed theme: {}", parsed_theme.name);
+                    theme_name = Some(parsed_theme.name.clone());
+                    major_font.clone_from(&parsed_theme.major_font);
+                    minor_font.clone_from(&parsed_theme.minor_font);
+                    theme = Some(parsed_theme);
                 }
             }
         }
@@ -579,11 +578,10 @@ impl Parser for PptxParser {
                                 limit,
                             )
                             .is_ok()
+                                && let Ok(rels) = Relationships::from_xml(&xml)
                             {
-                                if let Ok(rels) = Relationships::from_xml(&xml) {
-                                    for rel in rels.map.values() {
-                                        slide_rels.insert(rel.id.clone(), rel.target.clone());
-                                    }
+                                for rel in rels.map.values() {
+                                    slide_rels.insert(rel.id.clone(), rel.target.clone());
                                 }
                             }
                         }
@@ -764,33 +762,33 @@ impl Parser for PptxParser {
                         for (idx, mut layout_ph) in layout_phs {
                             if let Some(master_ph) = placeholder_map.get(&idx) {
                                 // Merge properties: Layout inherits from Master if Layout lacks props
-                                if let ContentBlock::Text(ref mut l_text) = layout_ph {
-                                    if let ContentBlock::Text(m_text) = master_ph {
-                                        // Inherit styling if missing in layout
-                                        if l_text.style.fill_color.is_none() {
-                                            l_text
-                                                .style
-                                                .fill_color
-                                                .clone_from(&m_text.style.fill_color);
-                                        }
-                                        if l_text.style.stroke_color.is_none() {
-                                            l_text
-                                                .style
-                                                .stroke_color
-                                                .clone_from(&m_text.style.stroke_color);
-                                        }
-                                        if l_text.style.stroke_width.is_none() {
-                                            l_text.style.stroke_width = m_text.style.stroke_width;
-                                        }
-                                        // Inherit missing bounds?
-                                        // Usually layout defines position. But if layout has 0 bounds (placeholder)?
-                                        // Pptx bounds check is specific.
-                                        // Let's rely on style merging primarily for now.
-
-                                        // Also inherit default text styling if we tracked it?
-                                        // Text runs style inheritance happens in parse_text_body / parse_shape
-                                        // But here we are merging the *containers*.
+                                if let ContentBlock::Text(ref mut l_text) = layout_ph
+                                    && let ContentBlock::Text(m_text) = master_ph
+                                {
+                                    // Inherit styling if missing in layout
+                                    if l_text.style.fill_color.is_none() {
+                                        l_text
+                                            .style
+                                            .fill_color
+                                            .clone_from(&m_text.style.fill_color);
                                     }
+                                    if l_text.style.stroke_color.is_none() {
+                                        l_text
+                                            .style
+                                            .stroke_color
+                                            .clone_from(&m_text.style.stroke_color);
+                                    }
+                                    if l_text.style.stroke_width.is_none() {
+                                        l_text.style.stroke_width = m_text.style.stroke_width;
+                                    }
+                                    // Inherit missing bounds?
+                                    // Usually layout defines position. But if layout has 0 bounds (placeholder)?
+                                    // Pptx bounds check is specific.
+                                    // Let's rely on style merging primarily for now.
+
+                                    // Also inherit default text styling if we tracked it?
+                                    // Text runs style inheritance happens in parse_text_body / parse_shape
+                                    // But here we are merging the *containers*.
                                 }
                             }
                             placeholder_map.insert(idx, layout_ph);
@@ -802,33 +800,29 @@ impl Parser for PptxParser {
                     // Apply master text styles to placeholders AFTER layout merge
                     // This ensures layout placeholders also get the font_color
                     if let Some(ref mts) = master_text_styles_for_slide {
-                        if let Some(ref title_color) = mts.title_color {
-                            if let Some(ContentBlock::Text(t)) = placeholder_map.get_mut(&0) {
-                                if t.style.font_color.is_none() {
-                                    t.style.font_color = Some(title_color.clone());
-                                }
-                            }
+                        if let Some(ref title_color) = mts.title_color
+                            && let Some(ContentBlock::Text(t)) = placeholder_map.get_mut(&0)
+                            && t.style.font_color.is_none()
+                        {
+                            t.style.font_color = Some(title_color.clone());
                         }
-                        if let Some(title_size) = mts.title_font_size {
-                            if let Some(ContentBlock::Text(t)) = placeholder_map.get_mut(&0) {
-                                if t.style.font_size.is_none() {
-                                    t.style.font_size = Some(title_size);
-                                }
-                            }
+                        if let Some(title_size) = mts.title_font_size
+                            && let Some(ContentBlock::Text(t)) = placeholder_map.get_mut(&0)
+                            && t.style.font_size.is_none()
+                        {
+                            t.style.font_size = Some(title_size);
                         }
-                        if let Some(ref body_color) = mts.body_color {
-                            if let Some(ContentBlock::Text(t)) = placeholder_map.get_mut(&1) {
-                                if t.style.font_color.is_none() {
-                                    t.style.font_color = Some(body_color.clone());
-                                }
-                            }
+                        if let Some(ref body_color) = mts.body_color
+                            && let Some(ContentBlock::Text(t)) = placeholder_map.get_mut(&1)
+                            && t.style.font_color.is_none()
+                        {
+                            t.style.font_color = Some(body_color.clone());
                         }
-                        if let Some(body_size) = mts.body_font_size {
-                            if let Some(ContentBlock::Text(t)) = placeholder_map.get_mut(&1) {
-                                if t.style.font_size.is_none() {
-                                    t.style.font_size = Some(body_size);
-                                }
-                            }
+                        if let Some(body_size) = mts.body_font_size
+                            && let Some(ContentBlock::Text(t)) = placeholder_map.get_mut(&1)
+                            && t.style.font_size.is_none()
+                        {
+                            t.style.font_size = Some(body_size);
                         }
                     }
 
@@ -870,15 +864,15 @@ impl Parser for PptxParser {
                                 theme.as_ref(),
                             ) {
                                 page.content.insert(0, bg);
-                            } else if let Some((master_entry, master_rels)) = master_info {
-                                if let Some(bg) = Self::extract_background_from_xml(
+                            } else if let Some((master_entry, master_rels)) = master_info
+                                && let Some(bg) = Self::extract_background_from_xml(
                                     &mut archive,
                                     &master_entry,
                                     &master_rels,
                                     theme.as_ref(),
-                                ) {
-                                    page.content.insert(0, bg);
-                                }
+                                )
+                            {
+                                page.content.insert(0, bg);
                             }
                         }
                     }

@@ -1493,33 +1493,33 @@ pub fn detect_format(data: &[u8], filename: Option<&str>) -> Option<DetectionRes
     // Try magic bytes first (highest confidence)
     if let Some(result) = detect_by_magic(data) {
         // If it's a ZIP, check if it's actually an Office document
-        if result.format.mime_type == "application/zip" {
-            if let Some(office_format) = detect_office_in_zip(data) {
-                return Some(DetectionResult {
-                    format: office_format,
-                    confidence: 0.95,
-                    method: DetectionMethod::ContainerInspection,
-                });
-            }
+        if result.format.mime_type == "application/zip"
+            && let Some(office_format) = detect_office_in_zip(data)
+        {
+            return Some(DetectionResult {
+                format: office_format,
+                confidence: 0.95,
+                method: DetectionMethod::ContainerInspection,
+            });
         }
         // If it's OLE2/CFB, check if it's a legacy Office document
-        if result.format.mime_type == "application/x-cfb" {
-            if let Some(office_format) = detect_office_in_ole(data, filename) {
-                return Some(DetectionResult {
-                    format: office_format,
-                    confidence: 0.95,
-                    method: DetectionMethod::ContainerInspection,
-                });
-            }
+        if result.format.mime_type == "application/x-cfb"
+            && let Some(office_format) = detect_office_in_ole(data, filename)
+        {
+            return Some(DetectionResult {
+                format: office_format,
+                confidence: 0.95,
+                method: DetectionMethod::ContainerInspection,
+            });
         }
         return Some(result);
     }
 
     // Try extension-based detection
-    if let Some(filename) = filename {
-        if let Some(result) = detect_by_extension(filename) {
-            return Some(result);
-        }
+    if let Some(filename) = filename
+        && let Some(result) = detect_by_extension(filename)
+    {
+        return Some(result);
     }
 
     None
@@ -1606,18 +1606,28 @@ fn detect_office_in_zip(data: &[u8]) -> Option<Format> {
         .windows(content_types.len())
         .any(|w| w == content_types)
     {
-        // Check for specific document types - order matters, check most specific first
-        // Look for directory names which are more reliable
-        if data.windows(9).any(|w| w == b"ppt/slides") || data.windows(3).any(|w| w == b"ppt") {
+        // Check for specific OOXML document entry paths inside the ZIP container
+        let word_doc = b"word/document.xml";
+        let word_dir = b"word/";
+        let ppt_pres = b"ppt/presentation.xml";
+        let ppt_slides = b"ppt/slides/";
+        let xl_book = b"xl/workbook.xml";
+        let xl_sheets = b"xl/worksheets/";
+
+        if data.windows(word_doc.len()).any(|w| w == word_doc) {
+            return Some(Format::docx());
+        }
+        if data.windows(ppt_pres.len()).any(|w| w == ppt_pres)
+            || data.windows(ppt_slides.len()).any(|w| w == ppt_slides)
+        {
             return Some(Format::pptx());
         }
-        if data.windows(9).any(|w| w == b"xl/workbook")
-            || data.windows(13).any(|w| w == b"xl/worksheets")
+        if data.windows(xl_book.len()).any(|w| w == xl_book)
+            || data.windows(xl_sheets.len()).any(|w| w == xl_sheets)
         {
             return Some(Format::xlsx());
         }
-        if data.windows(10).any(|w| w == b"word/document") || data.windows(4).any(|w| w == b"word")
-        {
+        if data.windows(word_dir.len()).any(|w| w == word_dir) {
             return Some(Format::docx());
         }
     }

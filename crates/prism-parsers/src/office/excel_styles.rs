@@ -267,10 +267,10 @@ fn parse_font(reader: &mut Reader<&[u8]>, theme: Option<&Theme>) -> Result<Excel
             Ok(Event::Empty(ref sub_e)) => {
                 match sub_e.name().as_ref().as_bytes() {
                     b"sz" => {
-                        if let Some(val) = utils::attr_value_opt(sub_e, b"val") {
-                            if let Ok(s) = val.parse::<f64>() {
-                                font.size = s;
-                            }
+                        if let Some(val) = utils::attr_value_opt(sub_e, b"val")
+                            && let Ok(s) = val.parse::<f64>()
+                        {
+                            font.size = s;
                         }
                     }
                     b"name" => {
@@ -304,20 +304,13 @@ fn parse_font(reader: &mut Reader<&[u8]>, theme: Option<&Theme>) -> Result<Excel
                         let mut final_color = None;
                         if let Some(r) = rgb {
                             final_color = Some(format!("#{r}"));
-                        } else if let Some(idx) = theme_idx {
-                            if let Some(t) = theme {
-                                if let Some(ref_str) = map_theme_index(idx) {
-                                    if let Some(c) = utils::resolve_word_color(
-                                        None,
-                                        Some(ref_str),
-                                        tint,
-                                        None,
-                                        t,
-                                    ) {
-                                        final_color = Some(c);
-                                    }
-                                }
-                            }
+                        } else if let Some(idx) = theme_idx
+                            && let Some(t) = theme
+                            && let Some(ref_str) = map_theme_index(idx)
+                            && let Some(c) =
+                                utils::resolve_word_color(None, Some(ref_str), tint, None, t)
+                        {
+                            final_color = Some(c);
                         }
                         font.color = final_color;
                     }
@@ -344,10 +337,10 @@ fn parse_fill(reader: &mut Reader<&[u8]>, theme: Option<&Theme>) -> Result<Excel
     loop {
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(ref sub_e)) => {
-                if sub_e.name().as_ref().as_bytes() == b"patternFill" {
-                    if let Some(pt) = utils::attr_value_opt(sub_e, b"patternType") {
-                        fill.pattern_type = pt;
-                    }
+                if sub_e.name().as_ref().as_bytes() == b"patternFill"
+                    && let Some(pt) = utils::attr_value_opt(sub_e, b"patternType")
+                {
+                    fill.pattern_type = pt;
                 }
             }
             Ok(Event::Empty(ref sub_e)) => {
@@ -384,16 +377,13 @@ fn parse_fill(reader: &mut Reader<&[u8]>, theme: Option<&Theme>) -> Result<Excel
                     let mut final_color = None;
                     if let Some(r) = rgb {
                         final_color = Some(format!("#{r}"));
-                    } else if let Some(idx) = theme_idx {
-                        if let Some(t) = theme {
-                            if let Some(ref_str) = map_theme_index(idx) {
-                                if let Some(c) =
-                                    utils::resolve_word_color(None, Some(ref_str), tint, None, t)
-                                {
-                                    final_color = Some(c);
-                                }
-                            }
-                        }
+                    } else if let Some(idx) = theme_idx
+                        && let Some(t) = theme
+                        && let Some(ref_str) = map_theme_index(idx)
+                        && let Some(c) =
+                            utils::resolve_word_color(None, Some(ref_str), tint, None, t)
+                    {
+                        final_color = Some(c);
                     }
 
                     if is_fg {

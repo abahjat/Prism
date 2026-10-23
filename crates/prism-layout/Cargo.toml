@@ -1,0 +1,29 @@
+[package]
+name = "prism-layout"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+description = "Deterministic positioned page model, font system, and text layout engine for Prism"
+keywords = ["document", "layout", "typography", "fonts", "forensics"]
+categories = ["text-processing", "rendering"]
+
+[dependencies]
+prism-core = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+image = { version = "0.25", default-features = false, features = ["png"] }
+parley = { version = "0.12.0", default-features = false, features = ["std"] }
+fontique = { version = "0.12.0", default-features = false, features = ["std"] }
+skrifa = { version = "0.44.0", default-features = false, features = ["std", "autohint_shaping"] }
+hayro-interpret = "0.8.0"
+hayro-syntax = "0.8.0"
+kurbo = "0.13.0"
+
+[features]
+default = []
+# Optional CJK fallback font bundle (kept behind a feature flag due to size)
+cjk-fonts = []

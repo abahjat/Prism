@@ -62,7 +62,9 @@ impl MsgParser {
                 // UTF-16LE
                 if buffer.len() >= 2 {
                     let utf16_chars: Vec<u16> = buffer
-                        .chunks_exact(2)
+                        .as_chunks::<2>()
+                        .0
+                        .iter()
                         .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
                         .take_while(|&c| c != 0)
                         .collect();
@@ -80,7 +82,9 @@ impl MsgParser {
                 // Fallback trial for Binary (0102) if it contains UTF-16
                 if buffer.len() >= 2 && buffer.len() % 2 == 0 {
                     let utf16_chars: Vec<u16> = buffer
-                        .chunks_exact(2)
+                        .as_chunks::<2>()
+                        .0
+                        .iter()
                         .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
                         .take_while(|&c| c != 0)
                         .collect();
@@ -160,7 +164,9 @@ impl MsgParser {
                     let mut buf = Vec::new();
                     if stream.read_to_end(&mut buf).is_ok() && buf.len() >= 2 {
                         let chars: Vec<u16> = buf
-                            .chunks_exact(2)
+                            .as_chunks::<2>()
+                            .0
+                            .iter()
                             .map(|c| u16::from_le_bytes([c[0], c[1]]))
                             .take_while(|&c| c != 0)
                             .collect();
@@ -310,10 +316,10 @@ impl Parser for MsgParser {
         }
 
         // Message Class (0x001A) - for identification
-        if let Some(msg_class) = Self::extract_string_property(&mut comp, "001A") {
-            if msg_class.to_lowercase().contains("stickynote") {
-                headers_html.push_str(&Self::format_header_html("Type", "Sticky Note"));
-            }
+        if let Some(msg_class) = Self::extract_string_property(&mut comp, "001A")
+            && msg_class.to_lowercase().contains("stickynote")
+        {
+            headers_html.push_str(&Self::format_header_html("Type", "Sticky Note"));
         }
 
         // Extract attachments BEFORE closing headers so we can add the Attachment row
@@ -397,33 +403,33 @@ fn clean_html_body(html: &str) -> String {
     // Return inner body content if present, or strip doctype/html/head
     let lower = html.to_lowercase();
 
-    if let Some(body_start) = lower.find("<body") {
-        if let Some(content_start) = html[body_start..].find('>') {
-            let start = body_start + content_start + 1;
-            if let Some(body_end) = lower.find("</body>") {
-                if body_end > start {
-                    return html[start..body_end].to_string();
-                }
-            }
-            return html[start..].to_string();
+    if let Some(body_start) = lower.find("<body")
+        && let Some(content_start) = html[body_start..].find('>')
+    {
+        let start = body_start + content_start + 1;
+        if let Some(body_end) = lower.find("</body>")
+            && body_end > start
+        {
+            return html[start..body_end].to_string();
         }
+        return html[start..].to_string();
     }
 
     // If no body tag, check for HTML tag
-    if let Some(html_start) = lower.find("<html") {
-        if let Some(content_start) = html[html_start..].find('>') {
-            let start = html_start + content_start + 1;
-            if let Some(html_end) = lower.rfind("</html>") {
-                return html[start..html_end].to_string();
-            }
+    if let Some(html_start) = lower.find("<html")
+        && let Some(content_start) = html[html_start..].find('>')
+    {
+        let start = html_start + content_start + 1;
+        if let Some(html_end) = lower.rfind("</html>") {
+            return html[start..html_end].to_string();
         }
     }
 
     // Just return as is, maybe strip DOCTYPE
-    if let Some(doctype_end) = lower.find('>') {
-        if lower.trim_start().starts_with("<!doctype") {
-            return html[doctype_end + 1..].to_string();
-        }
+    if let Some(doctype_end) = lower.find('>')
+        && lower.trim_start().starts_with("<!doctype")
+    {
+        return html[doctype_end + 1..].to_string();
     }
 
     html.to_string()

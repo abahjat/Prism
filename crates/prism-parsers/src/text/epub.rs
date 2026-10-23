@@ -99,14 +99,12 @@ impl Parser for EpubParser {
         loop {
             match reader.read_event() {
                 Ok(Event::Start(e) | Event::Empty(e)) => {
-                    if e.name().as_ref().as_bytes() == b"rootfile" {
-                        if let Some(mt) = Self::get_attr(&e, b"media-type") {
-                            if mt == "application/oebps-package+xml" {
-                                if let Some(path) = Self::get_attr(&e, b"full-path") {
-                                    opf_path = path;
-                                }
-                            }
-                        }
+                    if e.name().as_ref().as_bytes() == b"rootfile"
+                        && let Some(mt) = Self::get_attr(&e, b"media-type")
+                        && mt == "application/oebps-package+xml"
+                        && let Some(path) = Self::get_attr(&e, b"full-path")
+                    {
+                        opf_path = path;
                     }
                 }
                 Ok(Event::Eof) => break,
