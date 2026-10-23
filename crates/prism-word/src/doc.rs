@@ -1030,8 +1030,9 @@ fn build_paragraph_contents(
 #[allow(clippy::if_not_else)]
 fn parse_word2_raw(data: &[u8]) -> WordDocument {
     let mut doc = WordDocument::default();
+    // `max(32).min(len)` rather than `clamp(32, len)`, which panics when `len < 32`.
     let fc_min = if data.len() >= 28 {
-        (read_u32(data, 24) as usize).clamp(32, data.len())
+        (read_u32(data, 24) as usize).max(32).min(data.len())
     } else {
         data.len().min(128)
     };
@@ -1290,6 +1291,22 @@ mod tests {
         let doc = parse_doc(&raw, DEFAULT_MAX_DOC_STREAM_BYTES).unwrap();
         assert!(doc_text(&doc).contains("tail"));
         assert!(start.elapsed().as_secs() < 5);
+    }
+
+    #[test]
+    fn short_word2_header_does_not_panic() {
+        // Fuzz crash 04e365be: Word 2.0 magic with fcMin past the end of a 31-byte input.
+        let data = [
+            219, 165, 45, 0, 0, 0, 4, 9, 0, 0, 209, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 221,
+        ];
+        let doc = parse_doc(&data, DEFAULT_MAX_DOC_STREAM_BYTES).unwrap();
+        let _ = crate::udm::word_to_udm(&doc, "DOC");
+        for len in 4..64 {
+            let mut data = WORD2_MAGIC.to_vec();
+            data.resize(len, 0xFF);
+            let _ = parse_doc(&data, DEFAULT_MAX_DOC_STREAM_BYTES);
+        }
     }
 
     #[test]
