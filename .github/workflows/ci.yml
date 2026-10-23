@@ -28,6 +28,7 @@ jobs:
       - name: Build
         run: cargo build --verbose
 
+      # Includes the malformed-input robustness test (crates/prism-tests)
       - name: Run tests
         run: cargo test --verbose
 
@@ -35,4 +36,43 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Clippy Linting
-        run: cargo clippy -- -D warnings
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+  # Dependency licenses must stay compatible with the commercial license;
+  # also checks RustSec advisories and crate sources.
+  cargo-deny:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check advisories licenses bans sources
+
+  fuzz:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Rust (nightly)
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz --locked
+
+      - name: Seed corpus
+        run: mkdir -p fuzz/corpus/parse_any && cp test-files/* fuzz/corpus/parse_any/ || true
+
+      - name: Fuzz parsers (5 minutes)
+        working-directory: fuzz
+        run: cargo fuzz run parse_any -- -max_total_time=300 -rss_limit_mb=2048 -timeout=20
+
+      - name: Fuzz sanitizer (2 minutes)
+        working-directory: fuzz
+        run: cargo fuzz run sanitize_html -- -max_total_time=120
+
+      - name: Upload crashes
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-artifacts
+          path: fuzz/artifacts

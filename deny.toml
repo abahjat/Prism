@@ -1,0 +1,95 @@
+# cargo-deny configuration: https://embarkstudios.github.io/cargo-deny/
+#
+# Prism is dual-licensed (AGPL-3.0 + commercial). The commercial license can
+# only be offered if every dependency is permissive or weak-copyleft, so strong
+# copyleft licenses (GPL, AGPL, SSPL, ...) are rejected for third-party crates.
+
+[graph]
+all-features = true
+
+[advisories]
+version = 2
+yanked = "deny"
+# Every ignore needs a reason. "FOLLOW-UP" entries are real exposure that must
+# be fixed; the others do not apply to how Prism uses the crate.
+ignore = [
+    # zip: only in-memory reading is used; ZipArchive::extract is never called.
+    { id = "RUSTSEC-2026-0367", reason = "zip extraction to disk is not used" },
+    { id = "RUSTSEC-2026-0368", reason = "zip extraction to disk is not used" },
+    { id = "RUSTSEC-2026-0369", reason = "zip extraction to disk is not used" },
+    # Unmaintained transitive dependencies without a maintained release
+    { id = "RUSTSEC-2025-0141", reason = "bincode via syntect" },
+    { id = "RUSTSEC-2024-0320", reason = "yaml-rust via syntect" },
+    { id = "RUSTSEC-2024-0436", reason = "paste via image -> rav1e (AVIF encoder pulled in by dxf)" },
+    { id = "RUSTSEC-2026-0105", reason = "core2 via image -> rav1e (AVIF encoder pulled in by dxf)" },
+    { crate = "core2@0.4.0", reason = "yanked; via image -> rav1e" },
+    { crate = "xml-rs@0.7.0", reason = "yanked; transitive, no compatible release" },
+]
+
+[licenses]
+version = 2
+confidence-threshold = 0.9
+allow = [
+    "MIT",
+    "MIT-0",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "0BSD",
+    "BSL-1.0",
+    "CC0-1.0",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "CDLA-Permissive-2.0",
+    "bzip2-1.0.6",
+    # BSD-style (LLVM); via image -> ravif -> rav1e -> libfuzzer-sys
+    "NCSA",
+    # Weak copyleft, file-level: compatible with the commercial license as long
+    # as modified MPL files are published.
+    "MPL-2.0",
+]
+
+# Prism's own crates carry the project license.
+[[licenses.exceptions]]
+allow = ["AGPL-3.0-only"]
+crate = "prism-core"
+
+[[licenses.exceptions]]
+allow = ["AGPL-3.0-only"]
+crate = "prism-parsers"
+
+[[licenses.exceptions]]
+allow = ["AGPL-3.0-only"]
+crate = "prism-render"
+
+[[licenses.exceptions]]
+allow = ["AGPL-3.0-only"]
+crate = "prism-sandbox"
+
+[[licenses.exceptions]]
+allow = ["AGPL-3.0-only"]
+crate = "prism-server"
+
+[[licenses.exceptions]]
+allow = ["AGPL-3.0-only"]
+crate = "prism-cli"
+
+[[licenses.exceptions]]
+allow = ["AGPL-3.0-only"]
+crate = "prism-bindings"
+
+[[licenses.exceptions]]
+allow = ["AGPL-3.0-only"]
+crate = "prism-tests"
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

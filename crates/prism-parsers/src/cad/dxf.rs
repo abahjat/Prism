@@ -7,8 +7,7 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use prism_core::{
     document::{
-        ContentBlock, Dimensions, Document, Page, PageMetadata, Rect, ShapeStyle, TextBlock,
-        TextRun, TextStyle,
+        ContentBlock, Dimensions, Document, EmbeddedBlock, EmbeddedKind, Page, PageMetadata,
     },
     error::{Error, Result},
     format::{Format, FormatFamily},
@@ -227,25 +226,23 @@ fn render_to_svg(drawing: &dxf::Drawing) -> String {
                     r#"<path d="M {start_x} {start_y} A {r} {r} 0 {large_arc} 0 {end_x} {end_y}" />"#
                 );
             }
-            dxf::entities::EntityType::LwPolyline(poly) => {
-                if !poly.vertices.is_empty() {
-                    let _ = write!(svg, "<polyline points=\"");
-                    for (i, v) in poly.vertices.iter().enumerate() {
-                        let x = v.x - view_min_x;
-                        let y = view_max_y - v.y;
-                        if i > 0 {
-                            let _ = write!(svg, " ");
-                        }
-                        let _ = write!(svg, "{x},{y}");
+            dxf::entities::EntityType::LwPolyline(poly) if !poly.vertices.is_empty() => {
+                let _ = write!(svg, "<polyline points=\"");
+                for (i, v) in poly.vertices.iter().enumerate() {
+                    let x = v.x - view_min_x;
+                    let y = view_max_y - v.y;
+                    if i > 0 {
+                        let _ = write!(svg, " ");
                     }
-                    if poly.is_closed() {
-                        let v = &poly.vertices[0];
-                        let x = v.x - view_min_x;
-                        let y = view_max_y - v.y;
-                        let _ = write!(svg, " {x},{y}");
-                    }
-                    let _ = write!(svg, "\" />");
+                    let _ = write!(svg, "{x},{y}");
                 }
+                if poly.is_closed() {
+                    let v = &poly.vertices[0];
+                    let x = v.x - view_min_x;
+                    let y = view_max_y - v.y;
+                    let _ = write!(svg, " {x},{y}");
+                }
+                let _ = write!(svg, "\" />");
             }
             _ => {}
         }
@@ -358,7 +355,7 @@ impl Parser for DxfParser {
 
         // Build document content as HTML
         let html = format!(
-            r#"__HTML_RAW__:<!DOCTYPE html>
+            r#"<!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
@@ -442,26 +439,12 @@ body {{ font-family: system-ui, sans-serif; padding: 20px; background: #1a1a2e; 
             },
         );
 
-        let text_run = TextRun {
-            text: html,
-            style: TextStyle::default(),
-            bounds: None,
-            char_positions: None,
-        };
-
-        let text_block = TextBlock {
-            vertical_alignment: None,
-            runs: vec![text_run],
-            paragraph_style: None,
-            bounds: Rect::default(),
-            style: ShapeStyle::default(),
-            rotation: 0.0,
-        };
+        let embedded = EmbeddedBlock::markup(EmbeddedKind::GeneratedHtml, html);
 
         let page = Page {
             number: 1,
             dimensions: Dimensions::LETTER,
-            content: vec![ContentBlock::Text(text_block)],
+            content: vec![ContentBlock::Embedded(embedded)],
             annotations: Vec::new(),
             metadata: PageMetadata::default(),
         };

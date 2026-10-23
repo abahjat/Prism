@@ -38,9 +38,12 @@ pub mod license;
 pub mod metadata;
 pub mod parser;
 pub mod render;
+pub mod text;
 
 // Re-exports for convenience
-pub use document::{ContentBlock, Document, ImageBlock, Page, TableBlock, TextBlock};
+pub use document::{
+    ContentBlock, Document, EmbeddedBlock, EmbeddedKind, ImageBlock, Page, TableBlock, TextBlock,
+};
 pub use error::{Error, Result};
 pub use format::{Format, FormatFamily, FormatSignature, detect_format};
 pub use metadata::Metadata;
@@ -78,7 +81,7 @@ mod tests {
 
     #[test]
     fn test_version() {
-        assert!(!VERSION.is_empty());
+        assert_ne!(VERSION, "");
     }
 
     #[test]

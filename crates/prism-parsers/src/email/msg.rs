@@ -9,8 +9,7 @@ use cfb::CompoundFile;
 use chrono::{DateTime, TimeZone, Utc};
 use prism_core::{
     document::{
-        ContentBlock, Dimensions, Document, Page, PageMetadata, Rect, ShapeStyle, TextBlock,
-        TextRun, TextStyle,
+        ContentBlock, Dimensions, Document, EmbeddedBlock, EmbeddedKind, Page, PageMetadata,
     },
     error::{Error, Result},
     format::Format,
@@ -356,31 +355,17 @@ impl Parser for MsgParser {
 
         // Combine into full HTML
         let full_html = format!(
-            r#"__HTML_RAW__:<div class="msg-container" style="background: white; border: 1px solid #ddd; border-radius: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); margin: 20px;">{headers_html}<div class="msg-body" style="padding: 20px; font-family: system-ui, sans-serif;">{body_content}</div></div>"#
+            r#"<div class="msg-container" style="background: white; border: 1px solid #ddd; border-radius: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); margin: 20px;">{headers_html}<div class="msg-body" style="padding: 20px; font-family: system-ui, sans-serif;">{body_content}</div></div>"#
         );
 
         // (attachments already extracted above)
 
-        let text_run = TextRun {
-            text: full_html,
-            style: TextStyle::default(),
-            bounds: None,
-            char_positions: None,
-        };
-
-        let text_block = TextBlock {
-            bounds: Rect::default(),
-            runs: vec![text_run],
-            paragraph_style: None,
-            vertical_alignment: None,
-            style: ShapeStyle::default(),
-            rotation: 0.0,
-        };
+        let embedded = EmbeddedBlock::markup(EmbeddedKind::Html, full_html);
 
         let page = Page {
             number: 1,
             dimensions: Dimensions::LETTER,
-            content: vec![ContentBlock::Text(text_block)],
+            content: vec![ContentBlock::Embedded(embedded)],
             metadata: PageMetadata::default(),
             annotations: Vec::new(),
         };
@@ -538,12 +523,10 @@ mod tests {
 
         // Verify Content
         let page = &document.pages[0];
-        if let ContentBlock::Text(text_block) = &page.content[0] {
-            assert_eq!(text_block.runs.len(), 1);
-            let full_text = &text_block.runs[0].text;
-
-            // Check prefix
-            assert!(full_text.starts_with("__HTML_RAW__:"));
+        if let ContentBlock::Embedded(embedded) = &page.content[0] {
+            assert_eq!(embedded.kind, EmbeddedKind::Html);
+            let full_text = embedded.markup_str();
+            assert!(!document.extract_text().contains("<div"));
 
             // Check headers
             assert!(full_text.contains("Sender Name"));
@@ -554,7 +537,7 @@ mod tests {
             // Check Body
             assert!(full_text.contains("This is the HTML body."));
         } else {
-            panic!("Expected text block");
+            panic!("Expected embedded HTML block");
         }
 
         Ok(())

@@ -8,8 +8,8 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use prism_core::{
     document::{
-        ContentBlock, Dimensions, Document, Page, PageMetadata, Rect, ShapeStyle, TextBlock,
-        TextRun, TextStyle,
+        ContentBlock, Dimensions, Document, EmbeddedBlock, EmbeddedKind, Page, PageMetadata, Rect,
+        ShapeStyle, TextBlock, TextRun, TextStyle,
     },
     error::{Error, Result},
     format::Format,
@@ -279,37 +279,14 @@ impl Parser for MarkdownParser {
         let mut html_output = String::new();
         pulldown_cmark::html::push_html(&mut html_output, parser);
 
-        // Prefix with __HTML_RAW__: to indicate to the renderer that this is raw HTML
-        let raw_html = format!("__HTML_RAW__:{html_output}");
-
-        // Create a single text run with all the content
-        let text_run = TextRun {
-            text: raw_html,
-            style: TextStyle::default(),
-            bounds: None,
-            char_positions: None,
-        };
-
-        // Create text block with wrapping enabled
-        let text_block = TextBlock {
-            vertical_alignment: None,
-            bounds: Rect {
-                x: 0.0,
-                y: 0.0,
-                width: 0.0,
-                height: 0.0,
-            },
-            runs: vec![text_run],
-            paragraph_style: None,
-            style: ShapeStyle::default(),
-            rotation: 0.0,
-        };
+        // Markdown may contain raw inline HTML, so it is treated as untrusted markup
+        let embedded = EmbeddedBlock::markup(EmbeddedKind::Html, html_output);
 
         // Create single page
         let page = Page {
             number: 1,
             dimensions: Dimensions::LETTER,
-            content: vec![ContentBlock::Text(text_block)],
+            content: vec![ContentBlock::Embedded(embedded)],
             metadata: PageMetadata::default(),
             annotations: Vec::new(),
         };
@@ -483,18 +460,22 @@ mod tests {
         let document = result.unwrap();
         assert_eq!(document.page_count(), 1);
 
-        if let ContentBlock::Text(text_block) = &document.pages[0].content[0] {
-            assert_eq!(text_block.runs.len(), 1);
-            let text = &text_block.runs[0].text;
+        if let ContentBlock::Embedded(embedded) = &document.pages[0].content[0] {
+            assert_eq!(embedded.kind, EmbeddedKind::Html);
+            let text = embedded.markup_str();
 
-            // Check for raw HTML prefix
-            assert!(text.starts_with("__HTML_RAW__:"));
+            // Extracted text must not contain markup
+            assert_eq!(
+                document.extract_text(),
+                "Header
+Bold text"
+            );
 
             // Check for HTML content
             assert!(text.contains("<h1>Header</h1>"));
             assert!(text.contains("<strong>Bold</strong>"));
         } else {
-            panic!("Expected text block");
+            panic!("Expected embedded HTML block");
         }
     }
 }

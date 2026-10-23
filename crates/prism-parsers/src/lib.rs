@@ -60,6 +60,8 @@
 pub mod email;
 /// Image format parsers
 pub mod image;
+/// Bounded decompression helpers
+pub mod limits;
 /// Office format parsers
 pub mod office;
 /// PDF format parsers

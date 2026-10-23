@@ -41,23 +41,21 @@ impl Relationships {
     pub fn from_xml(xml: &str) -> Result<Self> {
         let mut map = HashMap::new();
         let mut reader = Reader::from_str(xml);
-        reader.trim_text(true);
-
-        let mut buf = Vec::new();
+        reader.config_mut().trim_text(true);
 
         loop {
-            match reader.read_event_into(&mut buf) {
+            match reader.read_event() {
                 Ok(Event::Empty(e) | Event::Start(e)) => {
-                    if e.name().as_ref() == b"Relationship" {
+                    if e.name().as_ref() == "Relationship" {
                         let mut id = None;
                         let mut target = None;
                         let mut rel_type = None;
 
                         for attr in e.attributes().flatten() {
                             match attr.key.as_ref() {
-                                b"Id" => id = Some(utils::attr_value(&attr.value)),
-                                b"Target" => target = Some(utils::attr_value(&attr.value)),
-                                b"Type" => rel_type = Some(utils::attr_value(&attr.value)),
+                                "Id" => id = Some(utils::attr_value(&attr.value)),
+                                "Target" => target = Some(utils::attr_value(&attr.value)),
+                                "Type" => rel_type = Some(utils::attr_value(&attr.value)),
                                 _ => {}
                             }
                         }
@@ -82,7 +80,6 @@ impl Relationships {
                 }
                 _ => {}
             }
-            buf.clear();
         }
 
         Ok(Self { map })

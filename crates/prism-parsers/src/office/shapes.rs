@@ -42,10 +42,10 @@ pub fn parse_shape<S: std::hash::BuildHasher>(
         let event = reader.read_event_into(buf);
         match event {
             Ok(Event::Start(ref e)) => {
-                match e.name().as_ref() {
+                match e.name().as_ref().as_bytes() {
                     b"p:ph" => {
                         for attr in e.attributes().flatten() {
-                            if attr.key.as_ref() == b"idx" {
+                            if attr.key.as_ref().as_bytes() == b"idx" {
                                 if let Ok(val) = utils::attr_value(&attr.value).parse::<u32>() {
                                     ph_idx = Some(val);
                                 }
@@ -59,7 +59,7 @@ pub fn parse_shape<S: std::hash::BuildHasher>(
                         bounds = parse_transform_2d(reader, &mut inner_buf);
                         // Rotation? a:xfrm has rot attribute (60000ths of a degree)
                         for attr in e.attributes().flatten() {
-                            if attr.key.as_ref() == b"rot" {
+                            if attr.key.as_ref().as_bytes() == b"rot" {
                                 if let Ok(val) = utils::attr_value(&attr.value).parse::<f64>() {
                                     rotation = val / 60_000.0;
                                 }
@@ -68,7 +68,7 @@ pub fn parse_shape<S: std::hash::BuildHasher>(
                     }
                     b"a:prstGeom" => {
                         for attr in e.attributes().flatten() {
-                            if attr.key.as_ref() == b"prst" {
+                            if attr.key.as_ref().as_bytes() == b"prst" {
                                 let val = utils::attr_value(&attr.value);
                                 // Map geometry to border radius
                                 match val.as_str() {
@@ -113,7 +113,7 @@ pub fn parse_shape<S: std::hash::BuildHasher>(
                     }
                     b"a:srgbClr" => {
                         for attr in e.attributes().flatten() {
-                            if attr.key.as_ref() == b"val" {
+                            if attr.key.as_ref().as_bytes() == b"val" {
                                 let color = format!("#{}", utils::attr_value(&attr.value));
                                 if in_ln {
                                     style.stroke_color = Some(color);
@@ -125,7 +125,7 @@ pub fn parse_shape<S: std::hash::BuildHasher>(
                     }
                     b"a:schemeClr" => {
                         for attr in e.attributes().flatten() {
-                            if attr.key.as_ref() == b"val" {
+                            if attr.key.as_ref().as_bytes() == b"val" {
                                 let color =
                                     resolve_scheme_color(&utils::attr_value(&attr.value), theme);
                                 if in_ln {
@@ -139,7 +139,7 @@ pub fn parse_shape<S: std::hash::BuildHasher>(
                     b"a:ln" => {
                         in_ln = true;
                         for attr in e.attributes().flatten() {
-                            if attr.key.as_ref() == b"w" {
+                            if attr.key.as_ref().as_bytes() == b"w" {
                                 if let Ok(val) = utils::attr_value(&attr.value).parse::<f64>() {
                                     // EMUs to points
                                     style.stroke_width = Some(val / 12700.0);
@@ -155,7 +155,7 @@ pub fn parse_shape<S: std::hash::BuildHasher>(
                             match reader.read_event_into(&mut inner_buf) {
                                 Ok(Event::Start(ref e)) => {
                                     let name = e.name();
-                                    let name_ref = name.as_ref();
+                                    let name_ref = name.as_ref().as_bytes();
                                     match name_ref {
                                         b"a:fillRef" | b"a:fontRef" => {
                                             let is_font = name_ref == b"a:fontRef";
@@ -166,12 +166,14 @@ pub fn parse_shape<S: std::hash::BuildHasher>(
                                                     Ok(Event::Empty(ref child)) => {
                                                         // Check for color
                                                         let cname = child.name();
-                                                        let cname_ref = cname.as_ref();
+                                                        let cname_ref = cname.as_ref().as_bytes();
                                                         let mut color_val = None;
                                                         if cname_ref == b"a:schemeClr" {
                                                             for attr in child.attributes().flatten()
                                                             {
-                                                                if attr.key.as_ref() == b"val" {
+                                                                if attr.key.as_ref().as_bytes()
+                                                                    == b"val"
+                                                                {
                                                                     color_val =
                                                                         Some(resolve_scheme_color(
                                                                             &utils::attr_value(
@@ -184,7 +186,9 @@ pub fn parse_shape<S: std::hash::BuildHasher>(
                                                         } else if cname_ref == b"a:srgbClr" {
                                                             for attr in child.attributes().flatten()
                                                             {
-                                                                if attr.key.as_ref() == b"val" {
+                                                                if attr.key.as_ref().as_bytes()
+                                                                    == b"val"
+                                                                {
                                                                     color_val = Some(format!(
                                                                         "#{}",
                                                                         utils::attr_value(
@@ -225,7 +229,7 @@ pub fn parse_shape<S: std::hash::BuildHasher>(
                                     // If a:fillRef is empty, it has no child color. Ignore.
                                 }
                                 Ok(Event::End(ref e)) => {
-                                    if e.name().as_ref() == b"p:style" {
+                                    if e.name().as_ref().as_bytes() == b"p:style" {
                                         break;
                                     }
                                 }
@@ -284,10 +288,10 @@ pub fn parse_shape<S: std::hash::BuildHasher>(
                     _ => {}
                 } // End of inner match
             }
-            Ok(Event::Empty(e)) => match e.name().as_ref() {
+            Ok(Event::Empty(e)) => match e.name().as_ref().as_bytes() {
                 b"p:ph" => {
                     for attr in e.attributes().flatten() {
-                        if attr.key.as_ref() == b"idx" {
+                        if attr.key.as_ref().as_bytes() == b"idx" {
                             if let Ok(val) = utils::attr_value(&attr.value).parse::<u32>() {
                                 ph_idx = Some(val);
                             }
@@ -299,7 +303,7 @@ pub fn parse_shape<S: std::hash::BuildHasher>(
                 }
                 b"a:ln" => {
                     for attr in e.attributes().flatten() {
-                        if attr.key.as_ref() == b"w" {
+                        if attr.key.as_ref().as_bytes() == b"w" {
                             if let Ok(val) = utils::attr_value(&attr.value).parse::<f64>() {
                                 style.stroke_width = Some(val / 12700.0);
                             }
@@ -308,7 +312,7 @@ pub fn parse_shape<S: std::hash::BuildHasher>(
                 }
                 b"a:srgbClr" => {
                     for attr in e.attributes().flatten() {
-                        if attr.key.as_ref() == b"val" {
+                        if attr.key.as_ref().as_bytes() == b"val" {
                             let color = format!("#{}", utils::attr_value(&attr.value));
                             if in_ln {
                                 style.stroke_color = Some(color);
@@ -320,7 +324,7 @@ pub fn parse_shape<S: std::hash::BuildHasher>(
                 }
                 b"a:schemeClr" => {
                     for attr in e.attributes().flatten() {
-                        if attr.key.as_ref() == b"val" {
+                        if attr.key.as_ref().as_bytes() == b"val" {
                             let color =
                                 resolve_scheme_color(&utils::attr_value(&attr.value), theme);
                             if in_ln {
@@ -335,9 +339,9 @@ pub fn parse_shape<S: std::hash::BuildHasher>(
             },
             Ok(Event::End(e)) => {
                 let name = e.name();
-                if name.as_ref() == b"p:sp" {
+                if name.as_ref().as_bytes() == b"p:sp" {
                     break;
-                } else if name.as_ref() == b"a:ln" {
+                } else if name.as_ref().as_bytes() == b"a:ln" {
                     in_ln = false;
                 }
             }
@@ -405,20 +409,22 @@ pub fn parse_picture<S: std::hash::BuildHasher>(
 
     loop {
         match reader.read_event_into(buf) {
-            Ok(Event::Start(e)) => match e.name().as_ref() {
+            Ok(Event::Start(e)) => match e.name().as_ref().as_bytes() {
                 b"a:xfrm" | b"p:xfrm" | b"xfrm" => {
                     bounds = parse_transform_2d(reader, buf);
                 }
                 b"a:blip" | b"blip" => {
                     for attr in e.attributes().flatten() {
-                        if attr.key.as_ref() == b"r:embed" || attr.key.as_ref() == b"embed" {
+                        if attr.key.as_ref().as_bytes() == b"r:embed"
+                            || attr.key.as_ref().as_bytes() == b"embed"
+                        {
                             embed_id = utils::attr_value(&attr.value);
                         }
                     }
                 }
                 b"p:cNvPr" => {
                     for attr in e.attributes().flatten() {
-                        if attr.key.as_ref() == b"descr" {
+                        if attr.key.as_ref().as_bytes() == b"descr" {
                             alt_text = Some(utils::attr_value(&attr.value));
                         }
                     }
@@ -426,16 +432,16 @@ pub fn parse_picture<S: std::hash::BuildHasher>(
                 _ => {}
             },
             Ok(Event::Empty(e)) => {
-                if e.name().as_ref() == b"a:blip" {
+                if e.name().as_ref().as_bytes() == b"a:blip" {
                     for attr in e.attributes().flatten() {
-                        if attr.key.as_ref() == b"r:embed" {
+                        if attr.key.as_ref().as_bytes() == b"r:embed" {
                             embed_id = utils::attr_value(&attr.value);
                         }
                     }
                 }
             }
             Ok(Event::End(e)) => {
-                if e.name().as_ref() == b"p:pic" {
+                if e.name().as_ref().as_bytes() == b"p:pic" {
                     break;
                 }
             }
@@ -493,7 +499,7 @@ pub fn parse_graphic_frame(
 
     loop {
         match reader.read_event_into(buf) {
-            Ok(Event::Start(e)) => match e.name().as_ref() {
+            Ok(Event::Start(e)) => match e.name().as_ref().as_bytes() {
                 b"p:xfrm" => {
                     bounds = parse_transform_2d(reader, buf);
                 }
@@ -509,7 +515,7 @@ pub fn parse_graphic_frame(
                 _ => {}
             },
             Ok(Event::End(e)) => {
-                if e.name().as_ref() == b"p:graphicFrame" {
+                if e.name().as_ref().as_bytes() == b"p:graphicFrame" {
                     break;
                 }
             }
@@ -549,7 +555,7 @@ pub fn parse_background<S: std::hash::BuildHasher>(
     // Parse p:bg to find fill type
     loop {
         match reader.read_event_into(buf) {
-            Ok(Event::Start(e)) => match e.name().as_ref() {
+            Ok(Event::Start(e)) => match e.name().as_ref().as_bytes() {
                 b"a:gradFill" => {
                     // Parse gradient fill
                     parse_gradient_fill(
@@ -566,7 +572,7 @@ pub fn parse_background<S: std::hash::BuildHasher>(
                 }
                 b"a:blip" => {
                     for attr in e.attributes().flatten() {
-                        if attr.key.as_ref() == b"r:embed" {
+                        if attr.key.as_ref().as_bytes() == b"r:embed" {
                             embed_id = utils::attr_value(&attr.value);
                         }
                     }
@@ -574,16 +580,16 @@ pub fn parse_background<S: std::hash::BuildHasher>(
                 _ => {}
             },
             Ok(Event::Empty(e)) => {
-                if e.name().as_ref() == b"a:blip" {
+                if e.name().as_ref().as_bytes() == b"a:blip" {
                     for attr in e.attributes().flatten() {
-                        if attr.key.as_ref() == b"r:embed" {
+                        if attr.key.as_ref().as_bytes() == b"r:embed" {
                             embed_id = utils::attr_value(&attr.value);
                         }
                     }
                 }
             }
             Ok(Event::End(e)) => {
-                if e.name().as_ref() == b"p:bg" {
+                if e.name().as_ref().as_bytes() == b"p:bg" {
                     break;
                 }
             }
@@ -671,11 +677,11 @@ fn parse_gradient_fill(
 ) {
     loop {
         match reader.read_event_into(buf) {
-            Ok(Event::Start(e)) => match e.name().as_ref() {
+            Ok(Event::Start(e)) => match e.name().as_ref().as_bytes() {
                 b"a:lin" => {
                     // Linear gradient angle
                     for attr in e.attributes().flatten() {
-                        if attr.key.as_ref() == b"ang" {
+                        if attr.key.as_ref().as_bytes() == b"ang" {
                             if let Ok(val) = utils::attr_value(&attr.value).parse::<f64>() {
                                 // OOXML angle is in 1/60000 of a degree
                                 *angle = val / 60000.0;
@@ -687,7 +693,7 @@ fn parse_gradient_fill(
                     // Gradient stop
                     let mut pos: u32 = 0;
                     for attr in e.attributes().flatten() {
-                        if attr.key.as_ref() == b"pos" {
+                        if attr.key.as_ref().as_bytes() == b"pos" {
                             if let Ok(val) = utils::attr_value(&attr.value).parse::<u32>() {
                                 pos = val / 1000; // Convert from 1/100000 to percentage
                             }
@@ -701,7 +707,7 @@ fn parse_gradient_fill(
                 _ => {}
             },
             Ok(Event::End(e)) => {
-                if e.name().as_ref() == b"a:gradFill" {
+                if e.name().as_ref().as_bytes() == b"a:gradFill" {
                     break;
                 }
             }
@@ -730,17 +736,17 @@ fn parse_color_inside(
 ) -> Option<String> {
     loop {
         match reader.read_event_into(buf) {
-            Ok(Event::Start(e) | Event::Empty(e)) => match e.name().as_ref() {
+            Ok(Event::Start(e) | Event::Empty(e)) => match e.name().as_ref().as_bytes() {
                 b"a:srgbClr" => {
                     for attr in e.attributes().flatten() {
-                        if attr.key.as_ref() == b"val" {
+                        if attr.key.as_ref().as_bytes() == b"val" {
                             return Some(format!("#{}", utils::attr_value(&attr.value)));
                         }
                     }
                 }
                 b"a:schemeClr" => {
                     for attr in e.attributes().flatten() {
-                        if attr.key.as_ref() == b"val" {
+                        if attr.key.as_ref().as_bytes() == b"val" {
                             let scheme = utils::attr_value(&attr.value);
                             return Some(resolve_scheme_color(&scheme, theme));
                         }
@@ -749,7 +755,7 @@ fn parse_color_inside(
                 _ => {}
             },
             Ok(Event::End(e)) => {
-                if e.name().as_ref() == end_tag {
+                if e.name().as_ref().as_bytes() == end_tag {
                     break;
                 }
             }
@@ -768,10 +774,12 @@ fn parse_blip_fill(reader: &mut Reader<&[u8]>, buf: &mut Vec<u8>) -> Option<Stri
 
     loop {
         match reader.read_event_into(buf) {
-            Ok(Event::Start(e)) => match e.name().as_ref() {
+            Ok(Event::Start(e)) => match e.name().as_ref().as_bytes() {
                 b"a:blip" | b"blip" => {
                     for attr in e.attributes().flatten() {
-                        if attr.key.as_ref() == b"r:embed" || attr.key.as_ref() == b"embed" {
+                        if attr.key.as_ref().as_bytes() == b"r:embed"
+                            || attr.key.as_ref().as_bytes() == b"embed"
+                        {
                             embed_id = Some(utils::attr_value(&attr.value));
                         }
                     }
@@ -779,9 +787,13 @@ fn parse_blip_fill(reader: &mut Reader<&[u8]>, buf: &mut Vec<u8>) -> Option<Stri
                 _ => depth += 1,
             },
             Ok(Event::Empty(e)) => {
-                if e.name().as_ref() == b"a:blip" || e.name().as_ref() == b"blip" {
+                if e.name().as_ref().as_bytes() == b"a:blip"
+                    || e.name().as_ref().as_bytes() == b"blip"
+                {
                     for attr in e.attributes().flatten() {
-                        if attr.key.as_ref() == b"r:embed" || attr.key.as_ref() == b"embed" {
+                        if attr.key.as_ref().as_bytes() == b"r:embed"
+                            || attr.key.as_ref().as_bytes() == b"embed"
+                        {
                             embed_id = Some(utils::attr_value(&attr.value));
                         }
                     }
@@ -790,7 +802,7 @@ fn parse_blip_fill(reader: &mut Reader<&[u8]>, buf: &mut Vec<u8>) -> Option<Stri
             Ok(Event::End(e)) => {
                 if depth > 0 {
                     depth -= 1;
-                } else if e.name().as_ref() == b"a:blipFill" {
+                } else if e.name().as_ref().as_bytes() == b"a:blipFill" {
                     break;
                 }
             }
@@ -853,10 +865,10 @@ pub fn parse_transform_2d(reader: &mut Reader<&[u8]>, buf: &mut Vec<u8>) -> Rect
 
     loop {
         match reader.read_event_into(buf) {
-            Ok(Event::Start(e)) => match e.name().as_ref() {
+            Ok(Event::Start(e)) => match e.name().as_ref().as_bytes() {
                 b"a:off" | b"off" => {
                     for attr in e.attributes().flatten() {
-                        match attr.key.as_ref() {
+                        match attr.key.as_ref().as_bytes() {
                             b"x" => {
                                 if let Ok(val) = utils::attr_value(&attr.value).parse::<f64>() {
                                     bounds.x = val / 12700.0;
@@ -873,7 +885,7 @@ pub fn parse_transform_2d(reader: &mut Reader<&[u8]>, buf: &mut Vec<u8>) -> Rect
                 }
                 b"a:ext" | b"ext" => {
                     for attr in e.attributes().flatten() {
-                        match attr.key.as_ref() {
+                        match attr.key.as_ref().as_bytes() {
                             b"cx" => {
                                 if let Ok(val) = utils::attr_value(&attr.value).parse::<f64>() {
                                     bounds.width = val / 12700.0;
@@ -890,10 +902,10 @@ pub fn parse_transform_2d(reader: &mut Reader<&[u8]>, buf: &mut Vec<u8>) -> Rect
                 }
                 _ => depth += 1,
             },
-            Ok(Event::Empty(e)) => match e.name().as_ref() {
+            Ok(Event::Empty(e)) => match e.name().as_ref().as_bytes() {
                 b"a:off" | b"off" => {
                     for attr in e.attributes().flatten() {
-                        match attr.key.as_ref() {
+                        match attr.key.as_ref().as_bytes() {
                             b"x" => {
                                 if let Ok(val) = utils::attr_value(&attr.value).parse::<f64>() {
                                     bounds.x = val / 12700.0;
@@ -910,7 +922,7 @@ pub fn parse_transform_2d(reader: &mut Reader<&[u8]>, buf: &mut Vec<u8>) -> Rect
                 }
                 b"a:ext" | b"ext" => {
                     for attr in e.attributes().flatten() {
-                        match attr.key.as_ref() {
+                        match attr.key.as_ref().as_bytes() {
                             b"cx" => {
                                 if let Ok(val) = utils::attr_value(&attr.value).parse::<f64>() {
                                     bounds.width = val / 12700.0;
@@ -983,10 +995,10 @@ pub fn parse_text_body<R: BufRead>(
 
     loop {
         match reader.read_event_into(buf) {
-            Ok(Event::Start(e)) => match e.name().as_ref() {
+            Ok(Event::Start(e)) => match e.name().as_ref().as_bytes() {
                 b"a:bodyPr" => {
                     for attr in e.attributes().flatten() {
-                        if attr.key.as_ref() == b"anchor" {
+                        if attr.key.as_ref().as_bytes() == b"anchor" {
                             let val = utils::attr_value(&attr.value);
                             vertical_alignment = Some(match val.as_str() {
                                 "b" => VerticalAlignment::Bottom,
@@ -1018,7 +1030,7 @@ pub fn parse_text_body<R: BufRead>(
                 b"a:pPr" => {
                     // Parse paragraph properties
                     for attr in e.attributes().flatten() {
-                        match attr.key.as_ref() {
+                        match attr.key.as_ref().as_bytes() {
                             b"algn" => {
                                 let val = utils::attr_value(&attr.value);
                                 current_para_alignment = Some(match val.as_str() {
@@ -1041,7 +1053,7 @@ pub fn parse_text_body<R: BufRead>(
                 b"a:buChar" => {
                     // Character bullet - extract the char attribute
                     for attr in e.attributes().flatten() {
-                        if attr.key.as_ref() == b"char" {
+                        if attr.key.as_ref().as_bytes() == b"char" {
                             current_para_bullet =
                                 Some(format!("{} ", utils::attr_value(&attr.value)));
                         }
@@ -1051,7 +1063,7 @@ pub fn parse_text_body<R: BufRead>(
                     // Auto-numbered bullet
                     let mut num_type = String::from("arabicPeriod");
                     for attr in e.attributes().flatten() {
-                        if attr.key.as_ref() == b"type" {
+                        if attr.key.as_ref().as_bytes() == b"type" {
                             num_type = utils::attr_value(&attr.value);
                         }
                     }
@@ -1074,7 +1086,7 @@ pub fn parse_text_body<R: BufRead>(
                 }
                 b"a:normAutofit" => {
                     for attr in e.attributes().flatten() {
-                        if attr.key.as_ref() == b"fontScale" {
+                        if attr.key.as_ref().as_bytes() == b"fontScale" {
                             if let Ok(val) = utils::attr_value(&attr.value).parse::<f64>() {
                                 // 90000 = 90%. So divide by 100,000.
                                 current_font_scale = val / 100_000.0;
@@ -1085,7 +1097,7 @@ pub fn parse_text_body<R: BufRead>(
                 b"a:defRPr" => {
                     if in_lvl1_ppr {
                         for attr in e.attributes().flatten() {
-                            if attr.key.as_ref() == b"sz" {
+                            if attr.key.as_ref().as_bytes() == b"sz" {
                                 if let Ok(val) = utils::attr_value(&attr.value).parse::<f64>() {
                                     // 100ths of a point
                                     list_style_font_size = Some(val / 100.0);
@@ -1112,7 +1124,7 @@ pub fn parse_text_body<R: BufRead>(
                 b"a:rPr" => {
                     if in_run {
                         for attr in e.attributes().flatten() {
-                            match attr.key.as_ref() {
+                            match attr.key.as_ref().as_bytes() {
                                 b"sz" => {
                                     if let Ok(val) = utils::attr_value(&attr.value).parse::<f64>() {
                                         current_run_style.font_size = Some(val / 100.0);
@@ -1137,7 +1149,7 @@ pub fn parse_text_body<R: BufRead>(
                 b"a:latin" => {
                     if in_run {
                         for attr in e.attributes().flatten() {
-                            if attr.key.as_ref() == b"typeface" {
+                            if attr.key.as_ref().as_bytes() == b"typeface" {
                                 current_run_style.font_family =
                                     Some(utils::attr_value(&attr.value));
                             }
@@ -1147,7 +1159,7 @@ pub fn parse_text_body<R: BufRead>(
                 b"a:srgbClr" => {
                     if in_run {
                         for attr in e.attributes().flatten() {
-                            if attr.key.as_ref() == b"val" {
+                            if attr.key.as_ref().as_bytes() == b"val" {
                                 current_run_style.color =
                                     Some(format!("#{}", utils::attr_value(&attr.value)));
                             }
@@ -1157,7 +1169,7 @@ pub fn parse_text_body<R: BufRead>(
                 b"a:schemeClr" => {
                     if in_run {
                         for attr in e.attributes().flatten() {
-                            if attr.key.as_ref() == b"val" {
+                            if attr.key.as_ref().as_bytes() == b"val" {
                                 let scheme = utils::attr_value(&attr.value);
                                 current_run_style.color =
                                     Some(resolve_scheme_color(&scheme, theme));
@@ -1165,18 +1177,18 @@ pub fn parse_text_body<R: BufRead>(
                         }
                     }
                 }
-                b"a:highlight" => {
+                b"a:highlight"
                     // Parse highlight color for text background
-                    if in_run {
+                    if in_run => {
                         // Inline parse for colors within highlight (type safety)
                         let mut inner_buf = Vec::new();
                         loop {
                             match reader.read_event_into(&mut inner_buf) {
                                 Ok(Event::Start(inner) | Event::Empty(inner)) => {
-                                    match inner.name().as_ref() {
+                                    match inner.name().as_ref().as_bytes() {
                                         b"a:srgbClr" => {
                                             for attr in inner.attributes().flatten() {
-                                                if attr.key.as_ref() == b"val" {
+                                                if attr.key.as_ref().as_bytes() == b"val" {
                                                     current_run_style.background_color =
                                                         Some(format!(
                                                             "#{}",
@@ -1187,7 +1199,7 @@ pub fn parse_text_body<R: BufRead>(
                                         }
                                         b"a:schemeClr" => {
                                             for attr in inner.attributes().flatten() {
-                                                if attr.key.as_ref() == b"val" {
+                                                if attr.key.as_ref().as_bytes() == b"val" {
                                                     current_run_style.background_color =
                                                         Some(resolve_scheme_color(
                                                             &utils::attr_value(&attr.value),
@@ -1200,7 +1212,7 @@ pub fn parse_text_body<R: BufRead>(
                                     }
                                 }
                                 Ok(Event::End(inner))
-                                    if inner.name().as_ref() == b"a:highlight" =>
+                                    if inner.name().as_ref().as_bytes() == b"a:highlight" =>
                                 {
                                     break;
                                 }
@@ -1210,13 +1222,12 @@ pub fn parse_text_body<R: BufRead>(
                             inner_buf.clear();
                         }
                     }
-                }
                 _ => {}
             },
-            Ok(Event::Empty(e)) => match e.name().as_ref() {
+            Ok(Event::Empty(e)) => match e.name().as_ref().as_bytes() {
                 b"a:buChar" => {
                     for attr in e.attributes().flatten() {
-                        if attr.key.as_ref() == b"char" {
+                        if attr.key.as_ref().as_bytes() == b"char" {
                             current_para_bullet =
                                 Some(format!("{} ", utils::attr_value(&attr.value)));
                         }
@@ -1233,7 +1244,7 @@ pub fn parse_text_body<R: BufRead>(
                 }
                 b"a:normAutofit" => {
                     for attr in e.attributes().flatten() {
-                        if attr.key.as_ref() == b"fontScale" {
+                        if attr.key.as_ref().as_bytes() == b"fontScale" {
                             if let Ok(val) = utils::attr_value(&attr.value).parse::<f64>() {
                                 // 90000 = 90%. So divide by 100,000.
                                 current_font_scale = val / 100_000.0;
@@ -1241,14 +1252,12 @@ pub fn parse_text_body<R: BufRead>(
                         }
                     }
                 }
-                b"a:defRPr" => {
-                    if in_lvl1_ppr {
-                        for attr in e.attributes().flatten() {
-                            if attr.key.as_ref() == b"sz" {
-                                if let Ok(val) = utils::attr_value(&attr.value).parse::<f64>() {
-                                    // 100ths of a point
-                                    list_style_font_size = Some(val / 100.0);
-                                }
+                b"a:defRPr" if in_lvl1_ppr => {
+                    for attr in e.attributes().flatten() {
+                        if attr.key.as_ref().as_bytes() == b"sz" {
+                            if let Ok(val) = utils::attr_value(&attr.value).parse::<f64>() {
+                                // 100ths of a point
+                                list_style_font_size = Some(val / 100.0);
                             }
                         }
                     }
@@ -1257,13 +1266,18 @@ pub fn parse_text_body<R: BufRead>(
             },
             Ok(Event::Text(e)) => {
                 if in_run {
-                    if let Ok(text) = e.unescape() {
-                        current_run_text.push_str(&text);
+                    current_run_text.push_str(e.as_ref());
+                }
+            }
+            Ok(Event::GeneralRef(e)) => {
+                if in_run {
+                    if let Some(resolved) = utils::resolve_general_ref(&e) {
+                        current_run_text.push_str(&resolved);
                     }
                 }
             }
             Ok(Event::End(e)) => {
-                if e.name().as_ref() == b"a:p" {
+                if e.name().as_ref().as_bytes() == b"a:p" {
                     // End of paragraph, add newline
                     runs.push(TextRun {
                         text: "\n".to_string(),
@@ -1274,7 +1288,7 @@ pub fn parse_text_body<R: BufRead>(
                     // Reset auto-number for each paragraph (optional, depends on slide behavior)
                     // Comment out if you want continuous numbering across paragraphs
                     // auto_number_counter = 1;
-                } else if e.name().as_ref() == b"a:r" {
+                } else if e.name().as_ref().as_bytes() == b"a:r" {
                     in_run = false;
                     if !current_run_text.is_empty() {
                         // Set bullet on first run of paragraph
@@ -1290,11 +1304,11 @@ pub fn parse_text_body<R: BufRead>(
                         });
                         para_run_count += 1;
                     }
-                } else if e.name().as_ref() == b"a:lstStyle" {
+                } else if e.name().as_ref().as_bytes() == b"a:lstStyle" {
                     in_lst_style = false;
-                } else if e.name().as_ref() == b"a:lvl1pPr" {
+                } else if e.name().as_ref().as_bytes() == b"a:lvl1pPr" {
                     in_lvl1_ppr = false;
-                } else if e.name().as_ref() == end_tag {
+                } else if e.name().as_ref().as_bytes() == end_tag {
                     break;
                 }
             }
@@ -1409,10 +1423,10 @@ fn parse_group_transform(reader: &mut Reader<&[u8]>, buf: &mut Vec<u8>) -> Group
 
     loop {
         match reader.read_event_into(buf) {
-            Ok(Event::Start(e)) => match e.name().as_ref() {
+            Ok(Event::Start(e)) => match e.name().as_ref().as_bytes() {
                 b"a:off" | b"off" => {
                     for attr in e.attributes().flatten() {
-                        match attr.key.as_ref() {
+                        match attr.key.as_ref().as_bytes() {
                             b"x" => {
                                 if let Ok(val) = utils::attr_value(&attr.value).parse::<f64>() {
                                     transform.off_x = val / 12700.0;
@@ -1429,7 +1443,7 @@ fn parse_group_transform(reader: &mut Reader<&[u8]>, buf: &mut Vec<u8>) -> Group
                 }
                 b"a:ext" | b"ext" => {
                     for attr in e.attributes().flatten() {
-                        match attr.key.as_ref() {
+                        match attr.key.as_ref().as_bytes() {
                             b"cx" => {
                                 if let Ok(val) = utils::attr_value(&attr.value).parse::<f64>() {
                                     transform.ext_w = val / 12700.0;
@@ -1446,7 +1460,7 @@ fn parse_group_transform(reader: &mut Reader<&[u8]>, buf: &mut Vec<u8>) -> Group
                 }
                 b"a:chOff" | b"chOff" => {
                     for attr in e.attributes().flatten() {
-                        match attr.key.as_ref() {
+                        match attr.key.as_ref().as_bytes() {
                             b"x" => {
                                 if let Ok(val) = utils::attr_value(&attr.value).parse::<f64>() {
                                     transform.ch_off_x = val / 12700.0;
@@ -1463,7 +1477,7 @@ fn parse_group_transform(reader: &mut Reader<&[u8]>, buf: &mut Vec<u8>) -> Group
                 }
                 b"a:chExt" | b"chExt" => {
                     for attr in e.attributes().flatten() {
-                        match attr.key.as_ref() {
+                        match attr.key.as_ref().as_bytes() {
                             b"cx" => {
                                 if let Ok(val) = utils::attr_value(&attr.value).parse::<f64>() {
                                     transform.ch_ext_w = val / 12700.0;
@@ -1480,10 +1494,10 @@ fn parse_group_transform(reader: &mut Reader<&[u8]>, buf: &mut Vec<u8>) -> Group
                 }
                 _ => depth += 1,
             },
-            Ok(Event::Empty(e)) => match e.name().as_ref() {
+            Ok(Event::Empty(e)) => match e.name().as_ref().as_bytes() {
                 b"a:off" | b"off" => {
                     for attr in e.attributes().flatten() {
-                        match attr.key.as_ref() {
+                        match attr.key.as_ref().as_bytes() {
                             b"x" => {
                                 if let Ok(val) = utils::attr_value(&attr.value).parse::<f64>() {
                                     transform.off_x = val / 12700.0;
@@ -1500,7 +1514,7 @@ fn parse_group_transform(reader: &mut Reader<&[u8]>, buf: &mut Vec<u8>) -> Group
                 }
                 b"a:ext" | b"ext" => {
                     for attr in e.attributes().flatten() {
-                        match attr.key.as_ref() {
+                        match attr.key.as_ref().as_bytes() {
                             b"cx" => {
                                 if let Ok(val) = utils::attr_value(&attr.value).parse::<f64>() {
                                     transform.ext_w = val / 12700.0;
@@ -1517,7 +1531,7 @@ fn parse_group_transform(reader: &mut Reader<&[u8]>, buf: &mut Vec<u8>) -> Group
                 }
                 b"a:chOff" | b"chOff" => {
                     for attr in e.attributes().flatten() {
-                        match attr.key.as_ref() {
+                        match attr.key.as_ref().as_bytes() {
                             b"x" => {
                                 if let Ok(val) = utils::attr_value(&attr.value).parse::<f64>() {
                                     transform.ch_off_x = val / 12700.0;
@@ -1534,7 +1548,7 @@ fn parse_group_transform(reader: &mut Reader<&[u8]>, buf: &mut Vec<u8>) -> Group
                 }
                 b"a:chExt" | b"chExt" => {
                     for attr in e.attributes().flatten() {
-                        match attr.key.as_ref() {
+                        match attr.key.as_ref().as_bytes() {
                             b"cx" => {
                                 if let Ok(val) = utils::attr_value(&attr.value).parse::<f64>() {
                                     transform.ch_ext_w = val / 12700.0;
@@ -1580,14 +1594,14 @@ pub fn parse_group_shape<S: std::hash::BuildHasher>(
     // We can just loop until end of p:grpSp
     loop {
         match reader.read_event_into(buf) {
-            Ok(Event::Start(e)) => match e.name().as_ref() {
+            Ok(Event::Start(e)) => match e.name().as_ref().as_bytes() {
                 b"p:grpSpPr" => {
                     let mut inner_buf = Vec::new();
                     let mut depth = 1;
                     loop {
                         match reader.read_event_into(&mut inner_buf) {
                             Ok(Event::Start(e)) => {
-                                if e.name().as_ref() == b"a:xfrm" {
+                                if e.name().as_ref().as_bytes() == b"a:xfrm" {
                                     transform = parse_group_transform(reader, &mut Vec::new());
                                 } else {
                                     depth += 1;
@@ -1608,13 +1622,8 @@ pub fn parse_group_shape<S: std::hash::BuildHasher>(
                     if let Some((mut block, _)) =
                         parse_shape(reader, &mut Vec::new(), rels, theme, None)
                     {
-                        match &mut block {
-                            ContentBlock::Text(b) => b.bounds = transform.map_rect(b.bounds),
-                            ContentBlock::Image(b) => b.bounds = transform.map_rect(b.bounds),
-                            ContentBlock::Table(b) => b.bounds = transform.map_rect(b.bounds),
-                            ContentBlock::Vector(b) => b.bounds = transform.map_rect(b.bounds),
-                            ContentBlock::Container(b) => b.bounds = transform.map_rect(b.bounds),
-                        }
+                        let bounds = block.bounds_mut();
+                        *bounds = transform.map_rect(*bounds);
                         group_blocks.push(block);
                     }
                 }
@@ -1637,15 +1646,8 @@ pub fn parse_group_shape<S: std::hash::BuildHasher>(
                 b"p:grpSp" => {
                     if let Some(blocks) = parse_group_shape(reader, &mut Vec::new(), rels, theme) {
                         for mut block in blocks {
-                            match &mut block {
-                                ContentBlock::Text(b) => b.bounds = transform.map_rect(b.bounds),
-                                ContentBlock::Image(b) => b.bounds = transform.map_rect(b.bounds),
-                                ContentBlock::Table(b) => b.bounds = transform.map_rect(b.bounds),
-                                ContentBlock::Vector(b) => b.bounds = transform.map_rect(b.bounds),
-                                ContentBlock::Container(b) => {
-                                    b.bounds = transform.map_rect(b.bounds);
-                                }
-                            }
+                            let bounds = block.bounds_mut();
+                            *bounds = transform.map_rect(*bounds);
                             group_blocks.push(block);
                         }
                     }
@@ -1653,7 +1655,7 @@ pub fn parse_group_shape<S: std::hash::BuildHasher>(
                 _ => {}
             },
             Ok(Event::End(e)) => {
-                if e.name().as_ref() == b"p:grpSp" {
+                if e.name().as_ref().as_bytes() == b"p:grpSp" {
                     break;
                 }
             }
@@ -1694,14 +1696,14 @@ mod tests {
         "#;
 
         let mut reader = Reader::from_str(xml);
-        reader.trim_text(true);
+        reader.config_mut().trim_text(true);
         let mut buf = Vec::new();
         let rels = HashMap::new();
 
         // Advance to p:sp
         loop {
             match reader.read_event_into(&mut buf) {
-                Ok(Event::Start(ref e)) if e.name().as_ref() == b"p:sp" => break,
+                Ok(Event::Start(ref e)) if e.name().as_ref().as_bytes() == b"p:sp" => break,
                 Ok(Event::Eof) => panic!("p:sp not found"),
                 Err(e) => panic!("Error: {e:?}"),
                 _ => {}
@@ -1749,14 +1751,14 @@ mod tests {
         "#;
 
         let mut reader = Reader::from_str(xml);
-        reader.trim_text(true);
+        reader.config_mut().trim_text(true);
         let mut buf = Vec::new();
         let rels = HashMap::new();
 
         // Advance to p:grpSp
         loop {
             match reader.read_event_into(&mut buf) {
-                Ok(Event::Start(ref e)) if e.name().as_ref() == b"p:grpSp" => break,
+                Ok(Event::Start(ref e)) if e.name().as_ref().as_bytes() == b"p:grpSp" => break,
                 Ok(Event::Eof) => panic!("p:grpSp not found"),
                 _ => {}
             }

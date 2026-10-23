@@ -16,7 +16,7 @@ use prism_core::{
     metadata::Metadata,
     parser::{ParseContext, Parser, ParserFeature, ParserMetadata},
 };
-use std::io::{Cursor, Read};
+use std::io::Cursor;
 use tracing::{debug, warn};
 use zip::ZipArchive;
 
@@ -47,131 +47,135 @@ impl XlsxParser {
     }
 
     /// Parse shared strings table from `xl/sharedStrings.xml`
-    fn parse_shared_strings(archive: &mut ZipArchive<Cursor<&[u8]>>) -> Vec<String> {
+    fn parse_shared_strings(
+        archive: &mut ZipArchive<Cursor<&[u8]>>,
+        limit: usize,
+    ) -> Result<Vec<String>> {
         let mut strings = Vec::new();
         if let Ok(mut file) = archive.by_name("xl/sharedStrings.xml") {
             let mut xml = String::new();
-            if file.read_to_string(&mut xml).is_ok() {
-                let mut reader = quick_xml::Reader::from_str(&xml);
-                reader.trim_text(true);
-                let mut buf = Vec::new();
-                let mut current_string = String::new();
-                let mut in_si = false;
+            crate::limits::read_to_string_with_limit(&mut file, &mut xml, limit)?;
+            let mut reader = quick_xml::Reader::from_str(&xml);
+            reader.config_mut().trim_text(true);
+            let mut buf = Vec::new();
+            let mut current_string = String::new();
+            let mut in_si = false;
 
-                loop {
-                    match reader.read_event_into(&mut buf) {
-                        Ok(quick_xml::events::Event::Start(e)) => {
-                            if e.name().as_ref() == b"si" {
-                                in_si = true;
-                                current_string.clear();
-                            } else if e.name().as_ref() == b"t" && in_si {
-                                if let Ok(text) = reader.read_text(e.name()) {
+            loop {
+                match reader.read_event_into(&mut buf) {
+                    Ok(quick_xml::events::Event::Start(e)) => {
+                        if e.name().as_ref().as_bytes() == b"si" {
+                            in_si = true;
+                            current_string.clear();
+                        } else if e.name().as_ref().as_bytes() == b"t" && in_si {
+                            if let Ok(text) = reader.read_text(e.name()) {
+                                if let Ok(unescaped) = quick_xml::escape::unescape(&text) {
+                                    current_string.push_str(&unescaped);
+                                } else {
                                     current_string.push_str(&text);
                                 }
                             }
                         }
-                        Ok(quick_xml::events::Event::End(e)) => {
-                            if e.name().as_ref() == b"si" {
-                                strings.push(current_string.clone());
-                                in_si = false;
-                            }
-                        }
-                        Ok(quick_xml::events::Event::Eof) => break,
-                        _ => {}
                     }
-                    buf.clear();
+                    Ok(quick_xml::events::Event::End(e)) => {
+                        if e.name().as_ref().as_bytes() == b"si" {
+                            strings.push(current_string.clone());
+                            in_si = false;
+                        }
+                    }
+                    Ok(quick_xml::events::Event::Eof) => break,
+                    _ => {}
                 }
+                buf.clear();
             }
         }
-        strings
+        Ok(strings)
     }
 
     /// Parse `workbook.xml` to get sheets (name, target)
-    fn parse_workbook_sheets(archive: &mut ZipArchive<Cursor<&[u8]>>) -> Vec<(String, String)> {
+    fn parse_workbook_sheets(
+        archive: &mut ZipArchive<Cursor<&[u8]>>,
+        limit: usize,
+    ) -> Result<Vec<(String, String)>> {
         let mut sheets = Vec::new();
         if let Ok(mut file) = archive.by_name("xl/workbook.xml") {
             let mut xml = String::new();
-            if file.read_to_string(&mut xml).is_ok() {
-                let mut reader = quick_xml::Reader::from_str(&xml);
-                reader.trim_text(true);
-                let mut buf = Vec::new();
+            crate::limits::read_to_string_with_limit(&mut file, &mut xml, limit)?;
+            let mut reader = quick_xml::Reader::from_str(&xml);
+            reader.config_mut().trim_text(true);
+            let mut buf = Vec::new();
 
-                loop {
-                    match reader.read_event_into(&mut buf) {
-                        Ok(
-                            quick_xml::events::Event::Empty(e) | quick_xml::events::Event::Start(e),
-                        ) => {
-                            if e.name().as_ref() == b"sheet" {
-                                let mut name = String::new();
-                                let mut rid = String::new();
-                                for attr in e.attributes().flatten() {
-                                    match attr.key.as_ref() {
-                                        b"name" => {
-                                            name = crate::office::utils::attr_value(&attr.value);
-                                        }
-                                        b"r:id" => {
-                                            rid = crate::office::utils::attr_value(&attr.value);
-                                        }
-                                        _ => {}
+            loop {
+                match reader.read_event_into(&mut buf) {
+                    Ok(quick_xml::events::Event::Empty(e) | quick_xml::events::Event::Start(e)) => {
+                        if e.name().as_ref().as_bytes() == b"sheet" {
+                            let mut name = String::new();
+                            let mut rid = String::new();
+                            for attr in e.attributes().flatten() {
+                                match attr.key.as_ref().as_bytes() {
+                                    b"name" => {
+                                        name = crate::office::utils::attr_value(&attr.value);
                                     }
-                                }
-                                if !name.is_empty() && !rid.is_empty() {
-                                    sheets.push((name, rid));
+                                    b"r:id" => {
+                                        rid = crate::office::utils::attr_value(&attr.value);
+                                    }
+                                    _ => {}
                                 }
                             }
+                            if !name.is_empty() && !rid.is_empty() {
+                                sheets.push((name, rid));
+                            }
                         }
-                        Ok(quick_xml::events::Event::Eof) => break,
-                        _ => {}
                     }
-                    buf.clear();
+                    Ok(quick_xml::events::Event::Eof) => break,
+                    _ => {}
                 }
+                buf.clear();
             }
         }
-        sheets
+        Ok(sheets)
     }
 
     /// Parse workbook rels
     fn parse_workbook_rels(
         archive: &mut ZipArchive<Cursor<&[u8]>>,
-    ) -> std::collections::HashMap<String, String> {
+        limit: usize,
+    ) -> Result<std::collections::HashMap<String, String>> {
         let mut rels = std::collections::HashMap::new();
         if let Ok(mut file) = archive.by_name("xl/_rels/workbook.xml.rels") {
             let mut xml = String::new();
-            if file.read_to_string(&mut xml).is_ok() {
-                let mut reader = quick_xml::Reader::from_str(&xml);
-                reader.trim_text(true);
-                let mut buf = Vec::new();
+            crate::limits::read_to_string_with_limit(&mut file, &mut xml, limit)?;
+            let mut reader = quick_xml::Reader::from_str(&xml);
+            reader.config_mut().trim_text(true);
+            let mut buf = Vec::new();
 
-                loop {
-                    match reader.read_event_into(&mut buf) {
-                        Ok(
-                            quick_xml::events::Event::Empty(e) | quick_xml::events::Event::Start(e),
-                        ) => {
-                            if e.name().as_ref() == b"Relationship" {
-                                let mut id = String::new();
-                                let mut target = String::new();
-                                for attr in e.attributes().flatten() {
-                                    match attr.key.as_ref() {
-                                        b"Id" => id = crate::office::utils::attr_value(&attr.value),
-                                        b"Target" => {
-                                            target = crate::office::utils::attr_value(&attr.value);
-                                        }
-                                        _ => {}
+            loop {
+                match reader.read_event_into(&mut buf) {
+                    Ok(quick_xml::events::Event::Empty(e) | quick_xml::events::Event::Start(e)) => {
+                        if e.name().as_ref().as_bytes() == b"Relationship" {
+                            let mut id = String::new();
+                            let mut target = String::new();
+                            for attr in e.attributes().flatten() {
+                                match attr.key.as_ref().as_bytes() {
+                                    b"Id" => id = crate::office::utils::attr_value(&attr.value),
+                                    b"Target" => {
+                                        target = crate::office::utils::attr_value(&attr.value);
                                     }
-                                }
-                                if !id.is_empty() && !target.is_empty() {
-                                    rels.insert(id, target);
+                                    _ => {}
                                 }
                             }
+                            if !id.is_empty() && !target.is_empty() {
+                                rels.insert(id, target);
+                            }
                         }
-                        Ok(quick_xml::events::Event::Eof) => break,
-                        _ => {}
                     }
-                    buf.clear();
+                    Ok(quick_xml::events::Event::Eof) => break,
+                    _ => {}
                 }
+                buf.clear();
             }
         }
-        rels
+        Ok(rels)
     }
 
     /// Convert column letter to 0-based index (e.g. "A" -> 0, "Z" -> 25, "AA" -> 26)
@@ -204,7 +208,7 @@ impl XlsxParser {
         styles: Option<&ExcelStyles>,
     ) -> TableBlock {
         let mut reader = quick_xml::Reader::from_str(xml);
-        reader.trim_text(true);
+        reader.config_mut().trim_text(true);
         let mut buf = Vec::new();
 
         let mut rows: Vec<TableRow> = Vec::new();
@@ -219,7 +223,7 @@ impl XlsxParser {
         loop {
             match reader.read_event_into(&mut buf) {
                 Ok(quick_xml::events::Event::Start(e)) => {
-                    match e.name().as_ref() {
+                    match e.name().as_ref().as_bytes() {
                         b"row" => {
                             in_row = true;
                             current_cells = Vec::new();
@@ -231,7 +235,7 @@ impl XlsxParser {
                             let mut r_ref = String::new();
 
                             for attr in e.attributes().flatten() {
-                                match attr.key.as_ref() {
+                                match attr.key.as_ref().as_bytes() {
                                     b"s" => {
                                         s_idx = crate::office::utils::attr_value(&attr.value)
                                             .parse()
@@ -263,15 +267,21 @@ impl XlsxParser {
                             loop {
                                 match reader.read_event_into(&mut cell_buf) {
                                     Ok(quick_xml::events::Event::Start(v)) => {
-                                        if v.name().as_ref() == b"v" || v.name().as_ref() == b"is" {
+                                        let vname = v.name();
+                                        let vbytes = vname.as_ref().as_bytes();
+                                        if vbytes == b"v" || vbytes == b"is" {
                                             // v=value, is=inline string
-                                            if let Ok(text) = reader.read_text(v.name()) {
-                                                val = text.into_owned();
+                                            if let Ok(text) = reader.read_text(vname) {
+                                                val = quick_xml::escape::unescape(&text)
+                                                    .map_or_else(
+                                                        |_| text.as_ref().to_string(),
+                                                        std::borrow::Cow::into_owned,
+                                                    );
                                             }
                                         }
                                     }
                                     Ok(quick_xml::events::Event::End(ce))
-                                        if ce.name().as_ref() == b"c" =>
+                                        if ce.name().as_ref().as_bytes() == b"c" =>
                                     {
                                         break;
                                     }
@@ -327,9 +337,9 @@ impl XlsxParser {
                     }
                 }
                 Ok(quick_xml::events::Event::Empty(e)) => {
-                    if e.name().as_ref() == b"mergeCell" {
+                    if e.name().as_ref().as_bytes() == b"mergeCell" {
                         for attr in e.attributes().flatten() {
-                            if attr.key.as_ref() == b"ref" {
+                            if attr.key.as_ref().as_bytes() == b"ref" {
                                 let ref_val = crate::office::utils::attr_value(&attr.value);
                                 // Parse "A1:B2"
                                 if let Some((p1, p2)) = ref_val.split_once(':') {
@@ -352,12 +362,12 @@ impl XlsxParser {
                                 }
                             }
                         }
-                    } else if in_row && e.name().as_ref() == b"c" {
+                    } else if in_row && e.name().as_ref().as_bytes() == b"c" {
                         // Empty Cell <c ... />
                         let mut s_idx = 0;
                         let mut r_ref = String::new();
                         for attr in e.attributes().flatten() {
-                            match attr.key.as_ref() {
+                            match attr.key.as_ref().as_bytes() {
                                 b"s" => {
                                     s_idx = crate::office::utils::attr_value(&attr.value)
                                         .parse()
@@ -398,7 +408,7 @@ impl XlsxParser {
                     }
                 }
                 Ok(quick_xml::events::Event::End(e)) => {
-                    if e.name().as_ref() == b"row" {
+                    if e.name().as_ref().as_bytes() == b"row" {
                         if current_cells.len() > max_col {
                             max_col = current_cells.len();
                         }
@@ -504,23 +514,23 @@ impl Parser for XlsxParser {
             return Err(Error::ParseError("Invalid XLSX signature".to_string()));
         }
 
+        let limit = crate::limits::max_decompressed_bytes(&context);
         let reader = Cursor::new(data.as_ref());
         let mut archive =
             ZipArchive::new(reader).map_err(|e| Error::ParseError(format!("ZIP error: {e}")))?;
 
         // 1. Parse Shared Strings
-        let shared_strings = Self::parse_shared_strings(&mut archive);
+        let shared_strings = Self::parse_shared_strings(&mut archive, limit)?;
         debug!("Parsed {} shared strings", shared_strings.len());
 
         // 2. Parse Theme
         let mut theme: Option<Theme> = None;
         if let Ok(mut file) = archive.by_name("xl/theme/theme1.xml") {
             let mut xml = Vec::new();
-            if file.read_to_end(&mut xml).is_ok() {
-                if let Ok(t) = parse_theme(&xml) {
-                    theme = Some(t);
-                    debug!("Parsed theme with color scheme");
-                }
+            crate::limits::read_to_end_with_limit(&mut file, &mut xml, limit)?;
+            if let Ok(t) = parse_theme(&xml) {
+                theme = Some(t);
+                debug!("Parsed theme with color scheme");
             }
         }
 
@@ -528,22 +538,21 @@ impl Parser for XlsxParser {
         let mut styles: Option<ExcelStyles> = None;
         if let Ok(mut styles_file) = archive.by_name("xl/styles.xml") {
             let mut xml = String::new();
-            if styles_file.read_to_string(&mut xml).is_ok() {
-                if let Ok(parsed_styles) = ExcelStyles::from_xml(&xml, theme.as_ref()) {
-                    debug!(
-                        "Parsed {} fonts, {} fills, {} cellXfs",
-                        parsed_styles.fonts.len(),
-                        parsed_styles.fills.len(),
-                        parsed_styles.cell_xfs.len()
-                    );
-                    styles = Some(parsed_styles);
-                }
+            crate::limits::read_to_string_with_limit(&mut styles_file, &mut xml, limit)?;
+            if let Ok(parsed_styles) = ExcelStyles::from_xml(&xml, theme.as_ref()) {
+                debug!(
+                    "Parsed {} fonts, {} fills, {} cellXfs",
+                    parsed_styles.fonts.len(),
+                    parsed_styles.fills.len(),
+                    parsed_styles.cell_xfs.len()
+                );
+                styles = Some(parsed_styles);
             }
         }
 
         // 3. Parse Workbook & Rels to find sheets
-        let sheets = Self::parse_workbook_sheets(&mut archive);
-        let rels = Self::parse_workbook_rels(&mut archive);
+        let sheets = Self::parse_workbook_sheets(&mut archive, limit)?;
+        let rels = Self::parse_workbook_rels(&mut archive, limit)?;
 
         let mut pages = Vec::new();
 
@@ -564,22 +573,21 @@ impl Parser for XlsxParser {
 
                 if let Ok(mut sheet_file) = archive.by_name(&zip_path) {
                     let mut xml = String::new();
-                    if sheet_file.read_to_string(&mut xml).is_ok() {
-                        let table = Self::parse_sheet(&xml, &shared_strings, styles.as_ref());
-                        let page_meta = PageMetadata {
-                            label: Some(name.clone()),
-                            ..PageMetadata::default()
-                        };
+                    crate::limits::read_to_string_with_limit(&mut sheet_file, &mut xml, limit)?;
+                    let table = Self::parse_sheet(&xml, &shared_strings, styles.as_ref());
+                    let page_meta = PageMetadata {
+                        label: Some(name.clone()),
+                        ..PageMetadata::default()
+                    };
 
-                        #[allow(clippy::cast_possible_truncation)]
-                        pages.push(Page {
-                            number: (i + 1) as u32,
-                            dimensions: Dimensions::LETTER,
-                            content: vec![ContentBlock::Table(table)],
-                            metadata: page_meta,
-                            annotations: vec![],
-                        });
-                    }
+                    #[allow(clippy::cast_possible_truncation)]
+                    pages.push(Page {
+                        number: (i + 1) as u32,
+                        dimensions: Dimensions::LETTER,
+                        content: vec![ContentBlock::Table(table)],
+                        metadata: page_meta,
+                        annotations: vec![],
+                    });
                 } else {
                     warn!("Could not find sheet file in zip: {}", zip_path);
                 }

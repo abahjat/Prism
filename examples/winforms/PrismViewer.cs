@@ -1,62 +1,103 @@
 using System;
 using System.IO;
+using System.Text;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 using Microsoft.Web.WebView2.Core;
-using PrismClient; // Reference to your PrismNative static class
+using Prism.Native;
 
 namespace Prism.WinForms
 {
+    /// <summary>
+    /// Displays documents rendered by Prism in a locked-down WebView2.
+    /// </summary>
+    /// <remarks>
+    /// The rendered page is written to a private temporary folder and served
+    /// through a WebView2 virtual host. This avoids the 2 MB limit of
+    /// <c>NavigateToString</c>. The view cannot navigate anywhere else or open
+    /// new windows, and the folder is deleted when the control is disposed.
+    /// </remarks>
     public partial class PrismViewer : UserControl
     {
-        private Microsoft.Web.WebView2.WinForms.WebView2 webView;
+        private const string VirtualHost = "prism-viewer.local";
+        private const string PageName = "document.html";
+
+        private readonly Microsoft.Web.WebView2.WinForms.WebView2 webView;
+        private readonly string viewDirectory =
+            Path.Combine(Path.GetTempPath(), "PrismViewer", Guid.NewGuid().ToString("N"));
+        private readonly Task initialization;
 
         public PrismViewer()
         {
             InitializeComponent();
-            InitializeAsync();
+            webView = new Microsoft.Web.WebView2.WinForms.WebView2 { Dock = DockStyle.Fill };
+            Controls.Add(webView);
+            initialization = InitializeAsync();
         }
 
-        private async void InitializeAsync()
+        private async Task InitializeAsync()
         {
-            // Initialize WebView2
-            webView = new Microsoft.Web.WebView2.WinForms.WebView2();
-            webView.Dock = DockStyle.Fill;
-            this.Controls.Add(webView);
+            PrismLib.prism_init();
+            Directory.CreateDirectory(viewDirectory);
             await webView.EnsureCoreWebView2Async();
-            PrismNative.prism_init(); // Initialize Prism Library if not already done
+
+            var core = webView.CoreWebView2;
+            core.SetVirtualHostNameToFolderMapping(
+                VirtualHost, viewDirectory, CoreWebView2HostResourceAccessKind.Deny);
+            core.NavigationStarting += (_, e) =>
+            {
+                if (!e.Uri.StartsWith($"https://{VirtualHost}/", StringComparison.OrdinalIgnoreCase))
+                    e.Cancel = true;
+            };
+            core.NewWindowRequested += (_, e) => e.Handled = true;
+            core.Settings.AreDevToolsEnabled = false;
+            core.Settings.IsStatusBarEnabled = true; // shows neutralized link targets on hover
         }
 
-        public void LoadFile(string filePath)
+        public async Task LoadFileAsync(string filePath)
         {
             if (!File.Exists(filePath))
                 throw new FileNotFoundException("File not found", filePath);
 
+            await initialization;
+
+            byte[] data = File.ReadAllBytes(filePath);
+            string html;
             try
             {
-                byte[] data = File.ReadAllBytes(filePath);
-                
-                // Call Prism to convert to HTML
-                IntPtr htmlPtr = PrismNative.prism_convert_to_html(data, (UIntPtr)data.Length);
-                string html = PrismNative.PtrToStringAndFree(htmlPtr);
-
-                if (string.IsNullOrEmpty(html))
-                {
-                    // Fallback to preview if conversion failed
-                    IntPtr previewPtr = PrismNative.prism_preview_file(data, (UIntPtr)data.Length);
-                    string preview = PrismNative.PtrToStringAndFree(previewPtr);
-                    html = $"<html><body><h2>Conversion Failed</h2><pre>{System.Web.HttpUtility.HtmlEncode(preview)}</pre></body></html>";
-                }
-
-                // Render HTML in WebView2
-                if (webView != null && webView.CoreWebView2 != null)
-                {
-                    webView.NavigateToString(html);
-                }
+                html = PrismLib.ConvertToHtml(data, Path.GetFileName(filePath));
             }
-            catch (Exception ex)
+            catch (PrismException ex)
             {
-                MessageBox.Show($"Error loading file: {ex.Message}", "Prism Viewer Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                // Fall back to a text or hex preview
+                string preview = PrismLib.PtrToStringAndFree(
+                    PrismLib.prism_preview_file(data, (UIntPtr)data.Length)) ?? string.Empty;
+                html = "<!DOCTYPE html><html><head><meta charset=\"utf-8\">" +
+                       "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; style-src 'unsafe-inline'\">" +
+                       "</head><body><h2>Conversion failed</h2>" +
+                       $"<p>{System.Net.WebUtility.HtmlEncode(ex.Message)}</p>" +
+                       $"<pre>{System.Net.WebUtility.HtmlEncode(preview)}</pre></body></html>";
             }
+
+            File.WriteAllText(Path.Combine(viewDirectory, PageName), html, new UTF8Encoding(false));
+            webView.CoreWebView2.Navigate($"https://{VirtualHost}/{PageName}");
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                webView.Dispose();
+                try
+                {
+                    Directory.Delete(viewDirectory, recursive: true);
+                }
+                catch (IOException)
+                {
+                    // Still in use; the OS temp cleanup will remove it
+                }
+            }
+            base.Dispose(disposing);
         }
 
         private void InitializeComponent()

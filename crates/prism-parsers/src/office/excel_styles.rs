@@ -91,7 +91,7 @@ impl ExcelStyles {
     #[allow(clippy::too_many_lines)]
     pub fn from_xml(xml: &str, theme: Option<&Theme>) -> Result<Self> {
         let mut reader = Reader::from_str(xml);
-        reader.trim_text(true);
+        reader.config_mut().trim_text(true);
 
         let mut fonts = Vec::new();
         let mut fills = Vec::new();
@@ -106,7 +106,7 @@ impl ExcelStyles {
 
         loop {
             match reader.read_event_into(&mut buf) {
-                Ok(Event::Start(e)) => match e.name().as_ref() {
+                Ok(Event::Start(e)) => match e.name().as_ref().as_bytes() {
                     b"fonts" => in_fonts = true,
                     b"fills" => in_fills = true,
                     b"cellXfs" => in_cell_xfs = true,
@@ -121,7 +121,7 @@ impl ExcelStyles {
                     b"xf" if in_cell_xfs => {
                         let mut xf = CellXf::default();
                         for attr in e.attributes().flatten() {
-                            match attr.key.as_ref() {
+                            match attr.key.as_ref().as_bytes() {
                                 b"fontId" => {
                                     xf.font_id =
                                         utils::attr_value(&attr.value).parse().unwrap_or(0);
@@ -145,7 +145,7 @@ impl ExcelStyles {
                         loop {
                             match reader.read_event_into(&mut xf_buf) {
                                 Ok(Event::Empty(ref sub_e)) => {
-                                    if sub_e.name().as_ref() == b"alignment" {
+                                    if sub_e.name().as_ref().as_bytes() == b"alignment" {
                                         if let Some(h) = utils::attr_value_opt(sub_e, b"horizontal")
                                         {
                                             xf.align_h = Some(h);
@@ -155,7 +155,9 @@ impl ExcelStyles {
                                         }
                                     }
                                 }
-                                Ok(Event::End(ref sub_e)) if sub_e.name().as_ref() == b"xf" => {
+                                Ok(Event::End(ref sub_e))
+                                    if sub_e.name().as_ref().as_bytes() == b"xf" =>
+                                {
                                     break;
                                 }
                                 Ok(Event::Eof) => break,
@@ -168,10 +170,10 @@ impl ExcelStyles {
                     _ => {}
                 },
                 Ok(Event::Empty(e)) => {
-                    if e.name().as_ref() == b"xf" && in_cell_xfs {
+                    if e.name().as_ref().as_bytes() == b"xf" && in_cell_xfs {
                         let mut xf = CellXf::default();
                         for attr in e.attributes().flatten() {
-                            match attr.key.as_ref() {
+                            match attr.key.as_ref().as_bytes() {
                                 b"fontId" => {
                                     xf.font_id =
                                         utils::attr_value(&attr.value).parse().unwrap_or(0);
@@ -194,7 +196,7 @@ impl ExcelStyles {
                         cell_xfs.push(xf);
                     }
                 }
-                Ok(Event::End(e)) => match e.name().as_ref() {
+                Ok(Event::End(e)) => match e.name().as_ref().as_bytes() {
                     b"fonts" => in_fonts = false,
                     b"fills" => in_fills = false,
                     b"cellXfs" => in_cell_xfs = false,
@@ -263,7 +265,7 @@ fn parse_font(reader: &mut Reader<&[u8]>, theme: Option<&Theme>) -> Result<Excel
     loop {
         match reader.read_event_into(&mut buf) {
             Ok(Event::Empty(ref sub_e)) => {
-                match sub_e.name().as_ref() {
+                match sub_e.name().as_ref().as_bytes() {
                     b"sz" => {
                         if let Some(val) = utils::attr_value_opt(sub_e, b"val") {
                             if let Ok(s) = val.parse::<f64>() {
@@ -282,7 +284,7 @@ fn parse_font(reader: &mut Reader<&[u8]>, theme: Option<&Theme>) -> Result<Excel
                         let mut tint: Option<f64> = None;
 
                         for attr in sub_e.attributes().flatten() {
-                            match attr.key.as_ref() {
+                            match attr.key.as_ref().as_bytes() {
                                 b"rgb" => rgb = Some(utils::attr_value(&attr.value)),
                                 b"theme" => {
                                     if let Ok(v) = utils::attr_value(&attr.value).parse::<i64>() {
@@ -325,7 +327,7 @@ fn parse_font(reader: &mut Reader<&[u8]>, theme: Option<&Theme>) -> Result<Excel
                     _ => {}
                 }
             }
-            Ok(Event::End(ref sub_e)) if sub_e.name().as_ref() == b"font" => break,
+            Ok(Event::End(ref sub_e)) if sub_e.name().as_ref().as_bytes() == b"font" => break,
             Ok(Event::Eof) => break,
             Err(e) => return Err(Error::ParseError(format!("XML error in font: {e}"))),
             _ => {}
@@ -342,26 +344,27 @@ fn parse_fill(reader: &mut Reader<&[u8]>, theme: Option<&Theme>) -> Result<Excel
     loop {
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(ref sub_e)) => {
-                if sub_e.name().as_ref() == b"patternFill" {
+                if sub_e.name().as_ref().as_bytes() == b"patternFill" {
                     if let Some(pt) = utils::attr_value_opt(sub_e, b"patternType") {
                         fill.pattern_type = pt;
                     }
                 }
             }
             Ok(Event::Empty(ref sub_e)) => {
-                if sub_e.name().as_ref() == b"patternFill" {
+                let tag = sub_e.name();
+                let tag_bytes = tag.as_ref().as_bytes();
+                if tag_bytes == b"patternFill" {
                     if let Some(pt) = utils::attr_value_opt(sub_e, b"patternType") {
                         fill.pattern_type = pt;
                     }
-                } else if sub_e.name().as_ref() == b"fgColor" || sub_e.name().as_ref() == b"bgColor"
-                {
-                    let is_fg = sub_e.name().as_ref() == b"fgColor";
+                } else if tag_bytes == b"fgColor" || tag_bytes == b"bgColor" {
+                    let is_fg = tag_bytes == b"fgColor";
                     let mut rgb: Option<String> = None;
                     let mut theme_idx: Option<i64> = None;
                     let mut tint: Option<f64> = None;
 
                     for attr in sub_e.attributes().flatten() {
-                        match attr.key.as_ref() {
+                        match attr.key.as_ref().as_bytes() {
                             b"rgb" => rgb = Some(utils::attr_value(&attr.value)),
                             b"theme" => {
                                 if let Ok(v) = utils::attr_value(&attr.value).parse::<i64>() {
@@ -400,7 +403,7 @@ fn parse_fill(reader: &mut Reader<&[u8]>, theme: Option<&Theme>) -> Result<Excel
                     }
                 }
             }
-            Ok(Event::End(ref sub_e)) if sub_e.name().as_ref() == b"fill" => break,
+            Ok(Event::End(ref sub_e)) if sub_e.name().as_ref().as_bytes() == b"fill" => break,
             Ok(Event::Eof) => break,
             Err(e) => return Err(Error::ParseError(format!("XML error in fill: {e}"))),
             _ => {}

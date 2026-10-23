@@ -46,6 +46,7 @@
 #![allow(clippy::module_name_repetitions)]
 
 pub mod html;
+pub mod sanitize;
 // pub mod pdf;
 // pub mod image;
 // pub mod svg;

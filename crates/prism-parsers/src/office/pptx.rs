@@ -15,7 +15,7 @@ use prism_core::{
 use quick_xml::Reader;
 use quick_xml::events::Event;
 use std::collections::HashMap;
-use std::io::{Cursor, Read};
+use std::io::Cursor;
 use tracing::{debug, info};
 use zip::ZipArchive;
 
@@ -79,7 +79,7 @@ impl PptxParser {
     /// Parse presentation.xml to get slide IDs and dimensions
     fn parse_presentation_xml(xml: &str) -> Result<(Vec<String>, Dimensions)> {
         let mut reader = Reader::from_str(xml);
-        reader.trim_text(true);
+        reader.config_mut().trim_text(true);
         let mut buf = Vec::new();
         let mut slide_rids = Vec::new();
         let mut dimensions = Dimensions::new(960.0, 540.0); // Default 16:9
@@ -87,10 +87,10 @@ impl PptxParser {
         loop {
             match reader.read_event_into(&mut buf) {
                 Ok(Event::Start(e) | Event::Empty(e)) => {
-                    match e.name().as_ref() {
+                    match e.name().as_ref().as_bytes() {
                         b"p:sldId" => {
                             for attr in e.attributes().flatten() {
-                                if attr.key.as_ref() == b"r:id" {
+                                if attr.key.as_ref().as_bytes() == b"r:id" {
                                     slide_rids.push(utils::attr_value(&attr.value));
                                 }
                             }
@@ -100,7 +100,7 @@ impl PptxParser {
                             let mut height = 6_858_000.0;
 
                             for attr in e.attributes().flatten() {
-                                match attr.key.as_ref() {
+                                match attr.key.as_ref().as_bytes() {
                                     b"cx" => {
                                         if let Ok(val) =
                                             utils::attr_value(&attr.value).parse::<f64>()
@@ -150,7 +150,7 @@ impl PptxParser {
             let clean_path = rels_path.replace('\\', "/");
             if let Ok(mut file) = archive.by_name(&clean_path) {
                 let mut xml = String::new();
-                if file.read_to_string(&mut xml).is_ok() {
+                if crate::limits::read_to_string_bounded(&mut file, &mut xml).is_ok() {
                     if let Ok(parsed) = Relationships::from_xml(&xml) {
                         for rel in parsed.map.values() {
                             rels.insert(rel.id.clone(), rel.target.clone());
@@ -173,7 +173,7 @@ impl PptxParser {
         let mut xml = String::new();
         let clean_name = entry_name.replace('\\', "/");
         if let Ok(mut file) = archive.by_name(&clean_name) {
-            if file.read_to_string(&mut xml).is_err() {
+            if crate::limits::read_to_string_bounded(&mut file, &mut xml).is_err() {
                 return None;
             }
         } else {
@@ -181,14 +181,14 @@ impl PptxParser {
         }
 
         let mut reader = Reader::from_str(&xml);
-        reader.trim_text(true);
+        reader.config_mut().trim_text(true);
         let mut buf = Vec::new();
 
         // Search for p:bg
         loop {
             match reader.read_event_into(&mut buf) {
                 Ok(Event::Start(e)) => {
-                    if e.name().as_ref() == b"p:bg" {
+                    if e.name().as_ref().as_bytes() == b"p:bg" {
                         // Found background, parse it
                         // Note: parse_background expects valid relationships for THIS file
                         // The `rels` passed in must be for `entry_name`.
@@ -199,7 +199,7 @@ impl PptxParser {
                             Dimensions::new(0.0, 0.0), // Dims don't matter for bg extraction usually
                             theme,
                         );
-                    } else if e.name().as_ref() == b"p:spTree" {
+                    } else if e.name().as_ref().as_bytes() == b"p:spTree" {
                         // Background must be before spTree in valid PPTX?
                         // Actually p:bg is usually first child of p:cSld
                     }
@@ -226,7 +226,7 @@ impl PptxParser {
         let mut xml = String::new();
         let clean_name = entry_name.replace('\\', "/");
         if let Ok(mut file) = archive.by_name(&clean_name) {
-            if file.read_to_string(&mut xml).is_err() {
+            if crate::limits::read_to_string_bounded(&mut file, &mut xml).is_err() {
                 return (placeholders, static_content);
             }
         } else {
@@ -234,12 +234,12 @@ impl PptxParser {
         }
 
         let mut reader = Reader::from_str(&xml);
-        reader.trim_text(true);
+        reader.config_mut().trim_text(true);
         let mut buf = Vec::new();
 
         loop {
             match reader.read_event_into(&mut buf) {
-                Ok(Event::Start(e)) => match e.name().as_ref() {
+                Ok(Event::Start(e)) => match e.name().as_ref().as_bytes() {
                     b"p:sp" => {
                         if let Some((block, idx_opt)) = crate::office::shapes::parse_shape(
                             &mut reader,
@@ -301,7 +301,7 @@ impl PptxParser {
         let mut xml = String::new();
         let clean_path = master_path.replace('\\', "/");
         if let Ok(mut file) = archive.by_name(&clean_path) {
-            if file.read_to_string(&mut xml).is_err() {
+            if crate::limits::read_to_string_bounded(&mut file, &mut xml).is_err() {
                 return styles;
             }
         } else {
@@ -309,7 +309,7 @@ impl PptxParser {
         }
 
         let mut reader = Reader::from_str(&xml);
-        reader.trim_text(true);
+        reader.config_mut().trim_text(true);
         let mut buf = Vec::new();
         let mut in_title_style = false;
         let mut in_body_style = false;
@@ -318,13 +318,13 @@ impl PptxParser {
             match reader.read_event_into(&mut buf) {
                 Ok(Event::Start(ref e)) => {
                     let name = e.name();
-                    match name.as_ref() {
+                    match name.as_ref().as_bytes() {
                         b"p:titleStyle" => in_title_style = true,
                         b"p:bodyStyle" => in_body_style = true,
                         b"a:defRPr" => {
                             // Extract font size from sz attribute (in hundredths of a point)
                             for attr in e.attributes().flatten() {
-                                if attr.key.as_ref() == b"sz" {
+                                if attr.key.as_ref().as_bytes() == b"sz" {
                                     if let Ok(sz) = utils::attr_value(&attr.value).parse::<f64>() {
                                         let font_size = sz / 100.0;
                                         if in_title_style && styles.title_font_size.is_none() {
@@ -342,11 +342,11 @@ impl PptxParser {
                 }
                 Ok(Event::Empty(ref e)) => {
                     let name = e.name();
-                    let name_ref = name.as_ref();
+                    let name_ref = name.as_ref().as_bytes();
                     // Look for a:srgbClr or a:schemeClr inside a:solidFill within defRPr
                     if name_ref == b"a:srgbClr" {
                         for attr in e.attributes().flatten() {
-                            if attr.key.as_ref() == b"val" {
+                            if attr.key.as_ref().as_bytes() == b"val" {
                                 let color = format!("#{}", utils::attr_value(&attr.value));
                                 if in_title_style && styles.title_color.is_none() {
                                     styles.title_color = Some(color.clone());
@@ -359,7 +359,7 @@ impl PptxParser {
                     } else if name_ref == b"a:defRPr" {
                         // Extract font size from sz attribute (in hundredths of a point)
                         for attr in e.attributes().flatten() {
-                            if attr.key.as_ref() == b"sz" {
+                            if attr.key.as_ref().as_bytes() == b"sz" {
                                 if let Ok(sz) = utils::attr_value(&attr.value).parse::<f64>() {
                                     let font_size = sz / 100.0; // Convert from hundredths to points
                                     if in_title_style && styles.title_font_size.is_none() {
@@ -375,7 +375,7 @@ impl PptxParser {
                 }
                 Ok(Event::End(ref e)) => {
                     let name = e.name();
-                    match name.as_ref() {
+                    match name.as_ref().as_bytes() {
                         b"p:titleStyle" => in_title_style = false,
                         b"p:bodyStyle" => in_body_style = false,
                         b"p:txStyles" => break, // Done with text styles
@@ -432,6 +432,7 @@ impl Parser for PptxParser {
             context.size, context.filename
         );
 
+        let limit = crate::limits::max_decompressed_bytes(&context);
         // Open PPTX as ZIP archive
         let cursor = Cursor::new(data.as_ref());
         let mut archive = ZipArchive::new(cursor)
@@ -441,9 +442,7 @@ impl Parser for PptxParser {
         let mut rels_map: HashMap<String, String> = HashMap::new();
         if let Ok(mut rels_file) = archive.by_name("ppt/_rels/presentation.xml.rels") {
             let mut xml = String::new();
-            rels_file
-                .read_to_string(&mut xml)
-                .map_err(|e| Error::ParseError(format!("Failed to read relationship XML: {e}")))?;
+            crate::limits::read_to_string_with_limit(&mut rels_file, &mut xml, limit)?;
 
             if let Ok(rels) = Relationships::from_xml(&xml) {
                 // Determine target using rId
@@ -474,9 +473,7 @@ impl Parser for PptxParser {
         let (slide_rids, dimensions) =
             if let Ok(mut presentation_file) = archive.by_name("ppt/presentation.xml") {
                 let mut xml = String::new();
-                presentation_file.read_to_string(&mut xml).map_err(|e| {
-                    Error::ParseError(format!("Failed to read presentation.xml: {e}"))
-                })?;
+                crate::limits::read_to_string_with_limit(&mut presentation_file, &mut xml, limit)?;
                 Self::parse_presentation_xml(&xml)?
             } else {
                 return Err(Error::ParseError(
@@ -501,9 +498,7 @@ impl Parser for PptxParser {
 
         if let Ok(mut rels_file) = archive.by_name("ppt/_rels/presentation.xml.rels") {
             let mut xml = String::new();
-            rels_file
-                .read_to_string(&mut xml)
-                .map_err(|e| Error::ParseError(format!("Failed to read relationship XML: {e}")))?;
+            crate::limits::read_to_string_with_limit(&mut rels_file, &mut xml, limit)?;
             let rels = Relationships::from_xml(&xml)?;
 
             for rid in &slide_rids {
@@ -528,7 +523,9 @@ impl Parser for PptxParser {
             let clean_name = entry_name.replace('\\', "/");
             if let Ok(mut theme_file) = archive.by_name(&clean_name) {
                 let mut theme_xml = Vec::new();
-                if theme_file.read_to_end(&mut theme_xml).is_ok() {
+                if crate::limits::read_to_end_with_limit(&mut theme_file, &mut theme_xml, limit)
+                    .is_ok()
+                {
                     if let Ok(parsed_theme) = crate::office::theme::parse_theme(&theme_xml) {
                         debug!("Parsed theme: {}", parsed_theme.name);
                         theme_name = Some(parsed_theme.name.clone());
@@ -559,9 +556,7 @@ impl Parser for PptxParser {
                 let clean_name = entry_name.replace('\\', "/");
 
                 if let Ok(mut file) = archive.by_name(&clean_name) {
-                    file.read_to_string(&mut slide_xml).map_err(|e| {
-                        Error::ParseError(format!("Failed to read slide XML {clean_name}: {e}"))
-                    })?;
+                    crate::limits::read_to_string_with_limit(&mut file, &mut slide_xml, limit)?;
                 } else {
                     debug!("Could not find slide file: {}", clean_name);
                     continue;
@@ -578,7 +573,13 @@ impl Parser for PptxParser {
 
                         if let Ok(mut rels_file) = archive.by_name(&rels_path) {
                             let mut xml = String::new();
-                            if rels_file.read_to_string(&mut xml).is_ok() {
+                            if crate::limits::read_to_string_with_limit(
+                                &mut rels_file,
+                                &mut xml,
+                                limit,
+                            )
+                            .is_ok()
+                            {
                                 if let Ok(rels) = Relationships::from_xml(&xml) {
                                     for rel in rels.map.values() {
                                         slide_rels.insert(rel.id.clone(), rel.target.clone());
@@ -626,7 +627,13 @@ impl Parser for PptxParser {
                                 let clean_path = resolved_path.replace('\\', "/");
                                 if let Ok(mut img_file) = archive.by_name(&clean_path) {
                                     let mut img_data = Vec::new();
-                                    if img_file.read_to_end(&mut img_data).is_ok() {
+                                    if crate::limits::read_to_end_with_limit(
+                                        &mut img_file,
+                                        &mut img_data,
+                                        limit,
+                                    )
+                                    .is_ok()
+                                    {
                                         // Determine mime type
                                         let path_for_ext = std::path::Path::new(&clean_path);
                                         let mime_type = if path_for_ext

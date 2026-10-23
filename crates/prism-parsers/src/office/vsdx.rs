@@ -18,7 +18,7 @@ use prism_core::{
 };
 use quick_xml::Reader;
 use quick_xml::events::Event;
-use std::io::{Cursor, Read};
+use std::io::Cursor;
 use tracing::{debug, warn};
 use zip::ZipArchive;
 
@@ -55,7 +55,7 @@ impl VsdxParser {
             // Check for Content_Types with visio MIME type
             if let Ok(mut f) = archive.by_name("[Content_Types].xml") {
                 let mut content = String::new();
-                if f.read_to_string(&mut content).is_ok()
+                if crate::limits::read_to_string_with_limit(&mut f, &mut content, 64 * 1024).is_ok()
                     && content.contains("application/vnd.ms-visio")
                 {
                     return true;
@@ -87,6 +87,7 @@ impl Parser for VsdxParser {
     async fn parse(&self, data: Bytes, context: ParseContext) -> Result<Document> {
         debug!("Parsing VSDX file: {:?}", context.filename);
 
+        let limit = crate::limits::max_decompressed_bytes(&context);
         let cursor = Cursor::new(&data[..]);
         let mut archive = ZipArchive::new(cursor)
             .map_err(|e| Error::ParseError(format!("Failed to open VSDX as ZIP: {e}")))?;
@@ -116,7 +117,7 @@ impl Parser for VsdxParser {
 
             let mut page_xml = String::new();
             if let Ok(mut file) = archive.by_name(page_file) {
-                let _ = file.read_to_string(&mut page_xml);
+                crate::limits::read_to_string_with_limit(&mut file, &mut page_xml, limit)?;
             }
 
             if page_xml.is_empty() {
@@ -208,9 +209,8 @@ impl Parser for VsdxParser {
 
         if let Ok(mut core_file) = archive.by_name("docProps/core.xml") {
             let mut core_xml = String::new();
-            if core_file.read_to_string(&mut core_xml).is_ok() {
-                extract_vsdx_metadata(&core_xml, &mut metadata);
-            }
+            crate::limits::read_to_string_with_limit(&mut core_file, &mut core_xml, limit)?;
+            extract_vsdx_metadata(&core_xml, &mut metadata);
         }
 
         metadata.add_custom("format", "Microsoft Visio");
@@ -244,7 +244,7 @@ impl Parser for VsdxParser {
 fn extract_text_from_visio_xml(xml: &str) -> Vec<String> {
     let mut texts = Vec::new();
     let mut reader = Reader::from_str(xml);
-    reader.trim_text(true);
+    reader.config_mut().trim_text(true);
 
     let mut in_text = false;
     let mut in_value = false;
@@ -254,7 +254,7 @@ fn extract_text_from_visio_xml(xml: &str) -> Vec<String> {
         match reader.read_event() {
             Ok(Event::Start(e)) => {
                 let local_name = e.name().local_name();
-                let local = local_name.as_ref();
+                let local = local_name.as_ref().as_bytes();
                 // Look for Text elements in Visio XML
                 if local == b"Text" || local == b"t" {
                     in_text = true;
@@ -268,17 +268,22 @@ fn extract_text_from_visio_xml(xml: &str) -> Vec<String> {
             }
             Ok(Event::Text(e)) => {
                 if in_text || in_value {
-                    if let Ok(text) = e.unescape() {
-                        let text = text.trim();
-                        if !text.is_empty() {
-                            current_text.push_str(text);
-                        }
+                    let text = e.trim();
+                    if !text.is_empty() {
+                        current_text.push_str(text);
+                    }
+                }
+            }
+            Ok(Event::GeneralRef(e)) => {
+                if in_text || in_value {
+                    if let Some(resolved) = crate::office::utils::resolve_general_ref(&e) {
+                        current_text.push_str(&resolved);
                     }
                 }
             }
             Ok(Event::End(e)) => {
                 let local_name = e.name().local_name();
-                let local = local_name.as_ref();
+                let local = local_name.as_ref().as_bytes();
                 if local == b"Text" || local == b"t" {
                     if !current_text.is_empty() {
                         texts.push(current_text.clone());
@@ -303,7 +308,7 @@ fn extract_text_from_visio_xml(xml: &str) -> Vec<String> {
 /// Extract metadata from docProps/core.xml
 fn extract_vsdx_metadata(xml: &str, metadata: &mut Metadata) {
     let mut reader = Reader::from_str(xml);
-    reader.trim_text(true);
+    reader.config_mut().trim_text(true);
 
     let mut current_element = String::new();
 
@@ -311,20 +316,18 @@ fn extract_vsdx_metadata(xml: &str, metadata: &mut Metadata) {
         match reader.read_event() {
             Ok(Event::Start(e)) => {
                 let name = e.name();
-                current_element = String::from_utf8_lossy(name.local_name().as_ref()).to_string();
+                current_element = name.local_name().as_ref().to_string();
             }
             Ok(Event::Text(e)) => {
-                if let Ok(text) = e.unescape() {
-                    let text = text.trim();
-                    if !text.is_empty() {
-                        match current_element.as_str() {
-                            "title" => metadata.title = Some(text.to_string()),
-                            "creator" => metadata.author = Some(text.to_string()),
-                            "subject" | "description" => {
-                                metadata.subject = Some(text.to_string());
-                            }
-                            _ => {}
+                let text = e.trim();
+                if !text.is_empty() {
+                    match current_element.as_str() {
+                        "title" => metadata.title = Some(text.to_string()),
+                        "creator" => metadata.author = Some(text.to_string()),
+                        "subject" | "description" => {
+                            metadata.subject = Some(text.to_string());
                         }
+                        _ => {}
                     }
                 }
             }
