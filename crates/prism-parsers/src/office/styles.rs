@@ -66,24 +66,24 @@ impl Styles {
         let mut resolved = self.default_text_style.clone();
 
         // Apply named style if present
-        if let Some(id) = style_id {
-            if let Some(style) = self.styles.get(id) {
-                // Merge style properties
-                if style.text_style.bold {
-                    resolved.bold = true;
-                }
-                if style.text_style.italic {
-                    resolved.italic = true;
-                }
-                if let Some(ref color) = style.text_style.color {
-                    resolved.color = Some(color.clone());
-                }
-                if let Some(sz) = style.text_style.font_size {
-                    resolved.font_size = Some(sz);
-                }
-                if let Some(ref font) = style.text_style.font_family {
-                    resolved.font_family = Some(font.clone());
-                }
+        if let Some(id) = style_id
+            && let Some(style) = self.styles.get(id)
+        {
+            // Merge style properties
+            if style.text_style.bold {
+                resolved.bold = true;
+            }
+            if style.text_style.italic {
+                resolved.italic = true;
+            }
+            if let Some(ref color) = style.text_style.color {
+                resolved.color = Some(color.clone());
+            }
+            if let Some(sz) = style.text_style.font_size {
+                resolved.font_size = Some(sz);
+            }
+            if let Some(ref font) = style.text_style.font_family {
+                resolved.font_family = Some(font.clone());
             }
         }
 
@@ -203,34 +203,32 @@ impl Styles {
                                     }
                                 }
 
-                                if let Some(t) = theme {
-                                    if let Some(c) = utils::resolve_word_color(
+                                if let Some(t) = theme
+                                    && let Some(c) = utils::resolve_word_color(
                                         val.as_deref(),
                                         theme_color.as_deref(),
                                         tint,
                                         shade,
                                         t,
-                                    ) {
-                                        style.text_style.color = Some(c);
-                                    }
+                                    )
+                                {
+                                    style.text_style.color = Some(c);
                                 }
                                 // Fallback
-                                if style.text_style.color.is_none() {
-                                    if let Some(v) = val {
-                                        if v != "auto" {
-                                            style.text_style.color = Some(format!("#{v}"));
-                                        }
-                                    }
+                                if style.text_style.color.is_none()
+                                    && let Some(v) = val
+                                    && v != "auto"
+                                {
+                                    style.text_style.color = Some(format!("#{v}"));
                                 }
                             }
                             b"w:sz" => {
                                 for attr in e.attributes().flatten() {
-                                    if attr.key.as_ref().as_bytes() == b"w:val" {
-                                        if let Ok(val) =
+                                    if attr.key.as_ref().as_bytes() == b"w:val"
+                                        && let Ok(val) =
                                             utils::attr_value(&attr.value).parse::<f64>()
-                                        {
-                                            style.text_style.font_size = Some(val / 2.0);
-                                        }
+                                    {
+                                        style.text_style.font_size = Some(val / 2.0);
                                     }
                                 }
                             }
@@ -264,10 +262,10 @@ impl Styles {
                     }
                 }
                 Ok(Event::End(e)) => {
-                    if e.name().as_ref().as_bytes() == b"w:style" {
-                        if let Some(style) = current_style.take() {
-                            styles.insert(style.id.clone(), style);
-                        }
+                    if e.name().as_ref().as_bytes() == b"w:style"
+                        && let Some(style) = current_style.take()
+                    {
+                        styles.insert(style.id.clone(), style);
                     }
                 }
                 Ok(Event::Eof) => break,

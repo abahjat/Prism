@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- `prism-layout`: new native Rust positioned layout core (`LayoutDocument`, `LayoutPage`, `Item`, `GlyphRun`, `PositionedGlyph`, `Cluster`, `Decorations`, `SourceRef`, `LayoutOptions`, `FontStore`, `ImageStore`, `FontReport`).
+- `prism_layout::udm`: fixed-layout converter for PPTX slides (text boxes, shapes, linear gradients, tables, images) and flow-layout paginator for DOCX and TXT documents (section margins `<w:pgMar>`, paragraph shaping, list indentation, table pagination).
+- `layout_document` returns `Error::UnsupportedFormat` for documents whose content is embedded HTML or SVG (email, MHT, HTML, EPUB, Markdown, SVG, XPS, DXF) instead of laying out blank pages; `HtmlRenderer` and the WinForms sample fall back to the sanitized HTML path for them.
+- `prism_layout::pdf_input`: pure-Rust PDF page interpreter (`hayro-interpret` + `hayro-syntax`) producing positioned `LayoutDocument` pages (`interpret_pdf_bytes`, `interpret_pdf_pages`).
+- Bundled SIL OFL-1.1 metric-compatible font suite (`Carlito`, `Caladea`, `Liberation Sans/Serif/Mono`, `Noto Sans/Serif` in `assets/fonts/`), `THIRD_PARTY_NOTICES.md`, data-driven Office/PDF font substitution table, and `.odttf` GUID font deobfuscation (`deobfuscate_odttf`).
+- Reading-order text extraction (`LayoutPage::text`), character bounding boxes (`LayoutPage::char_boxes`), and document search (`LayoutDocument::find` with case, diacritic, and whole-word options).
+- Rich-text paragraph shaping and line breaking (`TextLayoutEngine`) built on `parley`, `fontique` (hermetic collection), `harfrust`, and `skrifa`.
+- `prism_render::svg`: deterministic SVG page renderer (`<defs>` normalized glyph outlines + `<use>` placement) and interactive offline HTML viewer (`prism-viewer.js` / `viewer/src/prism-viewer.ts`) with virtualized pages, zoom, rotation, thumbnails, selectable text layer, and search-hit highlighting.
+- `prism_render::raster`: pure-Rust CPU page rasterizer (`tiny-skia`), deterministic PNG encoder (`render_page_rgba`, `render_page_png`), and multi-page TIFF exporter (`export_document_tiff`).
+- `prism_render::pdf`: pure-Rust searchable PDF 1.7 exporter (`krilla`, `export_document_pdf`).
+- Page-on-demand C ABI (`prism_document_open`, `prism_document_page_count`, `prism_document_page_size`, `prism_document_render_page`, `prism_document_page_text`, `prism_document_search`, `prism_document_export`, `prism_document_font_report`, `prism_buffer_free`, `prism_document_close`), C header `bindings/c/prism.h`, and managed `PrismDocument : IDisposable` wrapper in `Prism.Native`.
+- Visual fidelity harness (`crates/prism-tests/tests/fidelity.rs`, `fidelity-baseline.json`, `scripts/make-references.ps1`), performance latency budget tests (`crates/prism-tests/tests/performance_budgets.rs`), and fuzz targets (`layout_doc`, `pdf_interpret`).
+- Architecture Decision Records (`docs/adr/0001-text-layout-and-fonts.md`, `0002-page-model-and-output-backends.md`, `0003-pdf-input-interpretation.md`) and architecture guide (`docs/architecture/layout.md`).
 - `ContentBlock::Embedded` (HTML, generated HTML, SVG, PDF) with separate extractable text, replacing the `__PDF_DATA__` / `__HTML_RAW__` / `__SVG_RAW__` marker strings.
 - `prism_core::text::html_to_text` for indexing markup-based formats.
 - HTML sanitizer for untrusted markup (`prism_render::sanitize`, ammonia): scripts, handlers, frames, forms, meta refresh and remote resources are removed, and links are neutralized. Untrusted SVG is displayed via `<img>`.

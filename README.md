@@ -55,7 +55,7 @@ Prism is a document processing SDK built in Rust for viewing, converting and ext
 
 ### Prerequisites
 
-- Rust 1.85 or later (Edition 2024)
+- Rust 1.88 or later (Edition 2024)
 - Cargo (comes with Rust)
 
 ### Building from Source

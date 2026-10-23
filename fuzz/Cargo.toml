@@ -13,6 +13,7 @@ libfuzzer-sys = "0.4"
 bytes = "1.5"
 tokio = { version = "1.35", features = ["rt"] }
 prism-core = { path = "../crates/prism-core" }
+prism-layout = { path = "../crates/prism-layout" }
 prism-parsers = { path = "../crates/prism-parsers" }
 prism-render = { path = "../crates/prism-render" }
 
@@ -26,6 +27,20 @@ bench = false
 [[bin]]
 name = "sanitize_html"
 path = "fuzz_targets/sanitize_html.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "layout_doc"
+path = "fuzz_targets/layout_doc.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "pdf_interpret"
+path = "fuzz_targets/pdf_interpret.rs"
 test = false
 doc = false
 bench = false

@@ -70,6 +70,20 @@ jobs:
         working-directory: fuzz
         run: cargo fuzz run sanitize_html -- -max_total_time=120
 
+      - name: Seed layout and PDF corpora
+        run: |
+          mkdir -p fuzz/corpus/layout_doc fuzz/corpus/pdf_interpret
+          cp test-files/* fuzz/corpus/layout_doc/ || true
+          cp test-files/*.pdf fuzz/corpus/pdf_interpret/ || true
+
+      - name: Fuzz layout (3 minutes)
+        working-directory: fuzz
+        run: cargo fuzz run layout_doc -- -max_total_time=180 -rss_limit_mb=2048 -timeout=20
+
+      - name: Fuzz PDF interpretation (3 minutes)
+        working-directory: fuzz
+        run: cargo fuzz run pdf_interpret -- -max_total_time=180 -rss_limit_mb=2048 -timeout=20
+
       - name: Upload crashes
         if: failure()
         uses: actions/upload-artifact@v4

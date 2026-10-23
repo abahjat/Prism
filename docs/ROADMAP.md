@@ -49,7 +49,7 @@ engine**.
 - [x] Removed the ImageMagick shell-out (`image/converter.rs`); pure-Rust
       decoders only.
 
-## Phase 1 – Native layout core (`prism-layout`), 2–4 months
+## Phase 1 – Native layout core (`prism-layout`) (complete)
 
 A single **positioned page model** that every paged format lays out into, and
 every output is produced from:
@@ -61,18 +61,23 @@ Parsers ──► Flow/fixed model ──► prism-layout ──► LayoutPage[]
                                                                   └─► text with character boxes (search hits, redaction)
 ```
 
-- Page model: glyph runs (font, size, glyph ids, positions, source text and
-  cluster mapping), vector paths, images, links, annotation anchors.
-- Fonts: discovery and fallback (`fontique`/`fontdb`), shaping (`harfrust` or
-  `rustybuzz`), parsing (`skrifa`). Bundle metric-compatible open fonts
-  (Carlito, Caladea, Liberation, Noto) and use fonts embedded in the document.
-- Paragraph layout: `parley` (line breaking, bidi, rich text).
-- Rasterization: `vello_cpu` or `tiny-skia`. PDF writing: `krilla`.
-- PDF input: `hayro` (pure-Rust PDF renderer) replaces pdf.js, so PDFs go
-  through the same page model and search/redaction code.
-- Viewer component: offline web component with virtualized pages, text layer,
-  search-hit highlighting, thumbnails, zoom/rotate. Page-on-demand C ABI:
-  `open → page_count → render_page(n, dpi) → page_text(n)`.
+- [x] Page model: glyph runs (font, size, glyph ids, positions, source text and
+      cluster mapping), vector paths, images, links, annotation anchors.
+- [x] Fonts: discovery and fallback (`fontique`), shaping (`harfrust`),
+      parsing (`skrifa`). Bundle metric-compatible open fonts
+      (Carlito, Caladea, Liberation, Noto) and use fonts embedded in the document
+      (including DOCX `.odttf` deobfuscation and PDF embedded fonts).
+- [x] Paragraph layout: `parley` (line breaking, bidi, rich text) plus flow
+      pagination for paragraphs, lists, images and tables.
+- [x] Rasterization: `tiny-skia` (deterministic PNG and multi-page TIFF). PDF writing: `krilla`.
+- [x] PDF input: `hayro` (pure-Rust PDF interpreter) converts PDF pages directly
+      into `LayoutDocument`, so PDFs share the same page model, text extraction,
+      character boxes and search code.
+- [x] Viewer component: offline TypeScript/JS viewer (`prism-viewer.js`) with
+      virtualized pages, selectable text layer, search-hit highlighting,
+      thumbnails, zoom/rotate. Page-on-demand C ABI (`bindings/c/prism.h`,
+      `PrismDocument` in `Prism.Native`):
+      `open → page_count → render_page(n, dpi) → page_text(n) → search → export`.
 
 ## Phase 2 – Word (DOCX, then DOC), 4–8 months
 

@@ -134,21 +134,22 @@ pub fn resolve_word_color(
     theme: &Theme,
 ) -> Option<String> {
     // 1. Direct hex value?
-    if let Some(v) = val {
-        if v != "auto" && !v.is_empty() {
-            // Usually "FF0000" or "AABBCC"
-            return Some(format!("#{v}"));
-        }
+    if let Some(v) = val
+        && v != "auto"
+        && !v.is_empty()
+    {
+        // Usually "FF0000" or "AABBCC"
+        return Some(format!("#{v}"));
     }
 
     // 2. Theme color?
-    if let Some(tc) = theme_color {
-        if let Some(hex) = theme.resolve_color(tc) {
-            if let Some(t) = tint {
-                return Some(apply_tint(&hex, t));
-            }
-            return Some(format!("#{hex}"));
+    if let Some(tc) = theme_color
+        && let Some(hex) = theme.resolve_color(tc)
+    {
+        if let Some(t) = tint {
+            return Some(apply_tint(&hex, t));
         }
+        return Some(format!("#{hex}"));
     }
 
     None

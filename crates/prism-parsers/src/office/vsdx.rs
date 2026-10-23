@@ -275,10 +275,10 @@ fn extract_text_from_visio_xml(xml: &str) -> Vec<String> {
                 }
             }
             Ok(Event::GeneralRef(e)) => {
-                if in_text || in_value {
-                    if let Some(resolved) = crate::office::utils::resolve_general_ref(&e) {
-                        current_text.push_str(&resolved);
-                    }
+                if (in_text || in_value)
+                    && let Some(resolved) = crate::office::utils::resolve_general_ref(&e)
+                {
+                    current_text.push_str(&resolved);
                 }
             }
             Ok(Event::End(e)) => {

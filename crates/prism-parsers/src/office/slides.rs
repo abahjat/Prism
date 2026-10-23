@@ -39,10 +39,10 @@ impl SlideParser {
                             dimensions,
                             theme,
                         ) {
-                            if let ContentBlock::Image(ref mut img) = block {
-                                if let Some(target) = rels.get(&img.resource_id) {
-                                    img.resource_id = target.clone();
-                                }
+                            if let ContentBlock::Image(ref mut img) = block
+                                && let Some(target) = rels.get(&img.resource_id)
+                            {
+                                img.resource_id = target.clone();
                             }
                             content.insert(0, block);
                         }
@@ -62,10 +62,10 @@ impl SlideParser {
                         if let Some(mut block) =
                             shapes::parse_picture(&mut reader, &mut Vec::new(), rels)
                         {
-                            if let ContentBlock::Image(ref mut img) = block {
-                                if let Some(target) = rels.get(&img.resource_id) {
-                                    img.resource_id = target.clone();
-                                }
+                            if let ContentBlock::Image(ref mut img) = block
+                                && let Some(target) = rels.get(&img.resource_id)
+                            {
+                                img.resource_id = target.clone();
                             }
                             content.push(block);
                         }
@@ -100,6 +100,7 @@ impl SlideParser {
             metadata: PageMetadata {
                 label: Some(format!("Slide {slide_num}")),
                 rotation: 0,
+                margins: None,
             },
         }
     }

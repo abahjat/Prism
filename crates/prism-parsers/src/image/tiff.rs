@@ -103,7 +103,7 @@ impl Parser for TiffParser {
                     if data.len() == pixel_count * 3 {
                         // RGB data - convert to RGBA
                         let mut rgba_data = Vec::with_capacity(pixel_count * 4);
-                        for chunk in data.chunks_exact(3) {
+                        for chunk in data.as_chunks::<3>().0 {
                             rgba_data.push(chunk[0]); // R
                             rgba_data.push(chunk[1]); // G
                             rgba_data.push(chunk[2]); // B

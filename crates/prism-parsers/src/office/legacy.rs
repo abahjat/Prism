@@ -212,6 +212,7 @@ impl Parser for DocParser {
             metadata: PageMetadata {
                 label: None,
                 rotation: 0,
+                margins: None,
             },
         };
 
@@ -349,6 +350,7 @@ impl Parser for XlsParser {
                             metadata: PageMetadata {
                                 label: Some(name.clone()),
                                 rotation: 0,
+                                margins: None,
                             },
                         };
 
@@ -365,6 +367,7 @@ impl Parser for XlsParser {
                         metadata: PageMetadata {
                             label: None,
                             rotation: 0,
+                            margins: None,
                         },
                     });
                 }
@@ -522,6 +525,7 @@ impl Parser for PptParser {
             metadata: PageMetadata {
                 label: Some("Slide 1".to_string()),
                 rotation: 0,
+                margins: None,
             },
         };
 
@@ -608,18 +612,18 @@ impl MppParser {
                 let name = entry.name().to_string();
                 // Re-open to read
                 let cursor = Cursor::new(data);
-                if let Ok(mut comp) = CompoundFile::open(cursor) {
-                    if let Ok(mut stream) = comp.open_stream(entry.path()) {
-                        use std::io::Read;
-                        let mut buffer = Vec::new();
-                        if stream.read_to_end(&mut buffer).is_ok() && !buffer.is_empty() {
-                            let text = extract_printable_text(&buffer);
-                            if text.len() > 20 && !text.trim().is_empty() {
-                                info_parts.push(format!("\n--- {name} ---"));
-                                // Limit text per stream
-                                let truncated: String = text.chars().take(500).collect();
-                                info_parts.push(truncated);
-                            }
+                if let Ok(mut comp) = CompoundFile::open(cursor)
+                    && let Ok(mut stream) = comp.open_stream(entry.path())
+                {
+                    use std::io::Read;
+                    let mut buffer = Vec::new();
+                    if stream.read_to_end(&mut buffer).is_ok() && !buffer.is_empty() {
+                        let text = extract_printable_text(&buffer);
+                        if text.len() > 20 && !text.trim().is_empty() {
+                            info_parts.push(format!("\n--- {name} ---"));
+                            // Limit text per stream
+                            let truncated: String = text.chars().take(500).collect();
+                            info_parts.push(truncated);
                         }
                     }
                 }

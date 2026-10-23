@@ -230,17 +230,16 @@ impl Parser for EmlParser {
         if let Some(subject) = message.subject() {
             metadata.title = Some(subject.to_string());
         }
-        if let Some(from) = message.from() {
-            if let Some(addr) = from.first() {
-                if let Some(name) = &addr.name {
-                    metadata.author = Some(name.to_string());
-                }
-            }
+        if let Some(from) = message.from()
+            && let Some(addr) = from.first()
+            && let Some(name) = &addr.name
+        {
+            metadata.author = Some(name.to_string());
         }
-        if let Some(date) = message.date() {
-            if let Some(dt) = DateTime::from_timestamp(date.to_timestamp(), 0) {
-                metadata.created = Some(dt);
-            }
+        if let Some(date) = message.date()
+            && let Some(dt) = DateTime::from_timestamp(date.to_timestamp(), 0)
+        {
+            metadata.created = Some(dt);
         }
         metadata.add_custom("format", "EML");
         metadata.add_custom(

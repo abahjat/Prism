@@ -10,10 +10,16 @@ publish = false
 
 [dependencies]
 prism-core = { workspace = true }
+prism-layout = { workspace = true }
 prism-parsers = { workspace = true }
+prism-render = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 walkdir = "2.4"
 anyhow = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 bytes = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+base64 = "0.22"
+image = { version = "0.25", default-features = false, features = ["png"] }

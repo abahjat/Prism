@@ -50,6 +50,7 @@ pub struct HtmlRenderer {
 
 /// Configuration for HTML rendering
 #[derive(Debug, Clone)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct HtmlConfig {
     /// Whether to embed resources (images, fonts) or link externally
     pub embed_resources: bool,
@@ -62,6 +63,9 @@ pub struct HtmlConfig {
 
     /// Custom CSS to inject
     pub custom_css: Option<String>,
+
+    /// Whether to render paged documents via the `prism-layout` SVG + selectable-text viewer
+    pub use_layout_viewer: bool,
 }
 
 impl Default for HtmlConfig {
@@ -71,6 +75,7 @@ impl Default for HtmlConfig {
             include_styles: true,
             responsive: true,
             custom_css: None,
+            use_layout_viewer: false,
         }
     }
 }
@@ -301,23 +306,20 @@ impl HtmlRenderer {
                 && (img_block.bounds.height - height).abs() < 0.1
                 && img_block.bounds.x.abs() < 0.1
                 && img_block.bounds.y.abs() < 0.1
-            {
-                if let Some(img_resource) = document
+                && let Some(img_resource) = document
                     .resources
                     .images
                     .iter()
                     .find(|img| img.id == img_block.resource_id)
-                {
-                    if let Some(ref data) = img_resource.data {
-                        let base64_data = general_purpose::STANDARD.encode(data);
-                        // Assumes mime_type is available on ImageResource
-                        background_style = format!(
-                            "background-image: url('data:{};base64,{}'); background-size: cover; background-position: center;",
-                            img_resource.mime_type, base64_data
-                        );
-                        skip_first_block = true;
-                    }
-                }
+                && let Some(ref data) = img_resource.data
+            {
+                let base64_data = general_purpose::STANDARD.encode(data);
+                // Assumes mime_type is available on ImageResource
+                background_style = format!(
+                    "background-image: url('data:{};base64,{}'); background-size: cover; background-position: center;",
+                    img_resource.mime_type, base64_data
+                );
+                skip_first_block = true;
             }
         }
 
@@ -734,6 +736,27 @@ impl Renderer for HtmlRenderer {
             .title
             .as_deref()
             .unwrap_or("Untitled Document");
+
+        // When `use_layout_viewer` is enabled, lay out into `LayoutDocument` and emit the SVG +
+        // selectable-text viewer. Documents the layout engine can't position yet (embedded HTML,
+        // generated HTML or SVG, PDFs hayro can't interpret) fall through to the HTML path below.
+        if self.config.use_layout_viewer {
+            let layout_opts = prism_layout::LayoutOptions::default();
+            match prism_layout::layout_document(document, &layout_opts) {
+                Ok(layout_doc) => {
+                    let viewer_opts = crate::svg::SvgViewerOptions {
+                        title: Some(title.to_string()),
+                        white_background: true,
+                        layout_options: layout_opts,
+                    };
+                    let html = crate::svg::render_document_viewer_html(&layout_doc, &viewer_opts)?;
+                    return Ok(Bytes::from(html));
+                }
+                Err(prism_core::Error::UnsupportedFormat(_) | prism_core::Error::ParseError(_)) => {
+                }
+                Err(err) => return Err(err),
+            }
+        }
 
         let viewport_meta = if self.config.responsive {
             r#"<meta name="viewport" content="width=device-width, initial-scale=1.0">"#

@@ -95,14 +95,13 @@ impl Parser for XpsParser {
         let fdseq_path = {
             let mut found = None;
             for i in 0..zip.len() {
-                if let Ok(file) = zip.by_index(i) {
-                    if std::path::Path::new(file.name())
+                if let Ok(file) = zip.by_index(i)
+                    && std::path::Path::new(file.name())
                         .extension()
                         .is_some_and(|ext| ext.eq_ignore_ascii_case("fdseq"))
-                    {
-                        found = Some(file.name().to_string());
-                        break;
-                    }
+                {
+                    found = Some(file.name().to_string());
+                    break;
                 }
             }
             found.ok_or_else(|| Error::ParseError("No .fdseq file found".to_string()))?
@@ -118,10 +117,10 @@ impl Parser for XpsParser {
         loop {
             match reader.read_event() {
                 Ok(Event::Start(e) | Event::Empty(e)) => {
-                    if e.name().as_ref().as_bytes() == b"DocumentReference" {
-                        if let Some(source) = Self::get_attr(&e, b"Source") {
-                            doc_refs.push(source);
-                        }
+                    if e.name().as_ref().as_bytes() == b"DocumentReference"
+                        && let Some(source) = Self::get_attr(&e, b"Source")
+                    {
+                        doc_refs.push(source);
                     }
                 }
                 Ok(Event::Eof) => break,
@@ -169,18 +168,18 @@ impl Parser for XpsParser {
             loop {
                 match reader.read_event() {
                     Ok(Event::Start(e) | Event::Empty(e)) => {
-                        if e.name().as_ref().as_bytes() == b"PageContent" {
-                            if let Some(source) = Self::get_attr(&e, b"Source") {
-                                // Resolve page path
-                                let page_path = if source.starts_with('/') {
-                                    source.trim_start_matches('/').to_string()
-                                } else if doc_base.is_empty() {
-                                    source
-                                } else {
-                                    format!("{doc_base}/{source}")
-                                };
-                                page_refs.push(page_path);
-                            }
+                        if e.name().as_ref().as_bytes() == b"PageContent"
+                            && let Some(source) = Self::get_attr(&e, b"Source")
+                        {
+                            // Resolve page path
+                            let page_path = if source.starts_with('/') {
+                                source.trim_start_matches('/').to_string()
+                            } else if doc_base.is_empty() {
+                                source
+                            } else {
+                                format!("{doc_base}/{source}")
+                            };
+                            page_refs.push(page_path);
                         }
                     }
                     Ok(Event::Eof) | Err(_) => break, // Ignore errors in doc parsing to continue
@@ -238,15 +237,15 @@ impl Parser for XpsParser {
                     Ok(Event::Start(e) | Event::Empty(e)) => {
                         match e.name().as_ref().as_bytes() {
                             b"FixedPage" => {
-                                if let Some(w) = Self::get_attr(&e, b"Width") {
-                                    if let Ok(val) = w.parse::<f64>() {
-                                        width = val;
-                                    }
+                                if let Some(w) = Self::get_attr(&e, b"Width")
+                                    && let Ok(val) = w.parse::<f64>()
+                                {
+                                    width = val;
                                 }
-                                if let Some(h) = Self::get_attr(&e, b"Height") {
-                                    if let Ok(val) = h.parse::<f64>() {
-                                        height = val;
-                                    }
+                                if let Some(h) = Self::get_attr(&e, b"Height")
+                                    && let Ok(val) = h.parse::<f64>()
+                                {
+                                    height = val;
                                 }
                             }
                             b"Path" => {

@@ -226,14 +226,13 @@ fn is_odf_zip(data: &[u8], expected_mimetype: &str) -> bool {
 
     // Try to read the mimetype file from the ZIP
     let cursor = Cursor::new(data);
-    if let Ok(mut archive) = ZipArchive::new(cursor) {
-        if let Ok(mut mimetype_file) = archive.by_name("mimetype") {
-            let mut mimetype = String::new();
-            if crate::limits::read_to_string_with_limit(&mut mimetype_file, &mut mimetype, 1024)
-                .is_ok()
-            {
-                return mimetype.trim() == expected_mimetype;
-            }
+    if let Ok(mut archive) = ZipArchive::new(cursor)
+        && let Ok(mut mimetype_file) = archive.by_name("mimetype")
+    {
+        let mut mimetype = String::new();
+        if crate::limits::read_to_string_with_limit(&mut mimetype_file, &mut mimetype, 1024).is_ok()
+        {
+            return mimetype.trim() == expected_mimetype;
         }
     }
     false
@@ -813,23 +812,22 @@ fn parse_presentation_content(
                                         current_page_content.push(ContentBlock::Text(bg_rect));
                                     }
 
-                                    if let Some(img_name) = &style.page_background_image {
-                                        if let Some(href) = fill_images.get(img_name) {
-                                            let image_block = ImageBlock {
-                                                resource_id: href.clone(),
-                                                bounds: Rect::new(0.0, 0.0, 960.0, 540.0),
-                                                alt_text: None,
-                                                format: None,
-                                                original_size: None,
-                                                style: ShapeStyle {
-                                                    z_index: Some(-1),
-                                                    ..ShapeStyle::default()
-                                                },
-                                                rotation: 0.0,
-                                            };
-                                            current_page_content
-                                                .push(ContentBlock::Image(image_block));
-                                        }
+                                    if let Some(img_name) = &style.page_background_image
+                                        && let Some(href) = fill_images.get(img_name)
+                                    {
+                                        let image_block = ImageBlock {
+                                            resource_id: href.clone(),
+                                            bounds: Rect::new(0.0, 0.0, 960.0, 540.0),
+                                            alt_text: None,
+                                            format: None,
+                                            original_size: None,
+                                            style: ShapeStyle {
+                                                z_index: Some(-1),
+                                                ..ShapeStyle::default()
+                                            },
+                                            rotation: 0.0,
+                                        };
+                                        current_page_content.push(ContentBlock::Image(image_block));
                                     }
                                 }
                             }
@@ -979,10 +977,10 @@ fn parse_presentation_content(
                             let mut valign = None;
                             if let Some(style) = styles.get(&current_frame_style_name) {
                                 valign = style.vertical_alignment;
-                                if let Some(color) = &style.fill_color {
-                                    if color != "none" {
-                                        block.style.fill_color = Some(color.clone());
-                                    }
+                                if let Some(color) = &style.fill_color
+                                    && color != "none"
+                                {
+                                    block.style.fill_color = Some(color.clone());
                                 }
                                 if let Some(color) = &style.stroke_color {
                                     block.style.stroke_color = Some(color.clone());
@@ -1260,10 +1258,10 @@ fn extract_text_from_odf_xml(xml: &str) -> Result<String> {
                 }
             }
             Ok(Event::GeneralRef(e)) => {
-                if in_text_element {
-                    if let Some(resolved) = crate::office::utils::resolve_general_ref(&e) {
-                        text.push_str(&resolved);
-                    }
+                if in_text_element
+                    && let Some(resolved) = crate::office::utils::resolve_general_ref(&e)
+                {
+                    text.push_str(&resolved);
                 }
             }
             Ok(Event::Eof) => break,
@@ -1341,10 +1339,8 @@ fn extract_tables_from_ods_xml(xml: &str) -> Result<Vec<(String, Vec<Vec<String>
                 }
             }
             Ok(Event::GeneralRef(e)) => {
-                if in_cell {
-                    if let Some(resolved) = crate::office::utils::resolve_general_ref(&e) {
-                        current_cell_text.push_str(&resolved);
-                    }
+                if in_cell && let Some(resolved) = crate::office::utils::resolve_general_ref(&e) {
+                    current_cell_text.push_str(&resolved);
                 }
             }
             Ok(Event::Eof) => break,

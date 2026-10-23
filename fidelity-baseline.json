@@ -1,0 +1,41 @@
+{
+  "version": "0.5.0-phase1",
+  "dpi": 96.0,
+  "entries": {
+    "pptx_testWithColors.pptx": {
+      "min_pages": 1,
+      "min_roundtrip_ssim": 0.90,
+      "min_reference_ssim": 0.55
+    },
+    "testOptionalHyphen.pptx": {
+      "min_pages": 1,
+      "min_roundtrip_ssim": 0.92,
+      "min_reference_ssim": 0.60
+    },
+    "testOptionalHyphen.docx": {
+      "min_pages": 1,
+      "min_roundtrip_ssim": 0.92,
+      "min_reference_ssim": 0.60
+    },
+    "testInlineImage.docx": {
+      "min_pages": 1,
+      "min_roundtrip_ssim": 0.90,
+      "min_reference_ssim": 0.55
+    },
+    "testComment.pdf": {
+      "min_pages": 1,
+      "min_roundtrip_ssim": 0.92,
+      "min_reference_ssim": 0.85
+    },
+    "sample.txt": {
+      "min_pages": 1,
+      "min_roundtrip_ssim": 0.95,
+      "min_reference_ssim": 0.70
+    },
+    "testTXTNonASCIIUTF8.txt": {
+      "min_pages": 1,
+      "min_roundtrip_ssim": 0.95,
+      "min_reference_ssim": 0.70
+    }
+  }
+}

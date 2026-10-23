@@ -892,6 +892,46 @@ pub enum AnnotationType {
     },
 }
 
+/// Page margins in points (`1 pt = 1/72 in`).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct PageMargins {
+    /// Top margin in points.
+    pub top: f64,
+    /// Right margin in points.
+    pub right: f64,
+    /// Bottom margin in points.
+    pub bottom: f64,
+    /// Left margin in points.
+    pub left: f64,
+}
+
+impl PageMargins {
+    /// Standard 1-inch (`72 pt`) margins on all sides.
+    pub const ONE_INCH: Self = Self {
+        top: 72.0,
+        right: 72.0,
+        bottom: 72.0,
+        left: 72.0,
+    };
+
+    /// Construct [`PageMargins`] in points.
+    #[must_use]
+    pub const fn new(top: f64, right: f64, bottom: f64, left: f64) -> Self {
+        Self {
+            top,
+            right,
+            bottom,
+            left,
+        }
+    }
+}
+
+impl Default for PageMargins {
+    fn default() -> Self {
+        Self::ONE_INCH
+    }
+}
+
 /// Page-specific metadata
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PageMetadata {
@@ -900,6 +940,10 @@ pub struct PageMetadata {
 
     /// Rotation in degrees (0, 90, 180, 270)
     pub rotation: i32,
+
+    /// Page margins in points (populated by flow-layout parsers such as DOCX `w:pgMar`).
+    #[serde(default)]
+    pub margins: Option<PageMargins>,
 }
 
 /// Document stylesheet containing style definitions
@@ -1162,5 +1206,15 @@ mod tests {
         assert!(rect.contains(Point::new(10.0, 10.0)));
         assert!(!rect.contains(Point::new(5.0, 30.0)));
         assert!(!rect.contains(Point::new(50.0, 100.0)));
+    }
+
+    #[test]
+    fn test_page_margins() {
+        let mut page = Page::new(1, Dimensions::LETTER);
+        assert!(page.metadata.margins.is_none());
+        let margins = PageMargins::new(36.0, 54.0, 36.0, 54.0);
+        page.metadata.margins = Some(margins);
+        assert_eq!(page.metadata.margins, Some(margins));
+        assert_eq!(PageMargins::default(), PageMargins::ONE_INCH);
     }
 }
