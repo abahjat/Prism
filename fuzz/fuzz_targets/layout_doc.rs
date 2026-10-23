@@ -41,6 +41,7 @@ fuzz_target!(|data: &[u8]| {
             max_decompressed_stream_bytes: 4 * 1024 * 1024,
             max_recursion_depth: 12,
             allow_system_fonts: false,
+            ..LayoutOptions::default()
         };
         if let Ok(layout_doc) = layout_document(&doc, &opts)
             && let Some(first) = layout_doc.pages.first()

@@ -16,6 +16,7 @@ prism-core = { path = "../crates/prism-core" }
 prism-layout = { path = "../crates/prism-layout" }
 prism-parsers = { path = "../crates/prism-parsers" }
 prism-render = { path = "../crates/prism-render" }
+prism-word = { path = "../crates/prism-word" }
 
 [[bin]]
 name = "parse_any"
@@ -41,6 +42,27 @@ bench = false
 [[bin]]
 name = "pdf_interpret"
 path = "fuzz_targets/pdf_interpret.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "word_docx"
+path = "fuzz_targets/word_docx.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "word_doc"
+path = "fuzz_targets/word_doc.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "word_layout"
+path = "fuzz_targets/word_layout.rs"
 test = false
 doc = false
 bench = false

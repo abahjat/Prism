@@ -45,6 +45,8 @@ export interface PrismHostBridge {
   getPageSize?: (pageIndex: number) => Promise<{ widthPt: number; heightPt: number }> | { widthPt: number; heightPt: number };
   renderPageFragment?: (pageIndex: number) => Promise<string> | string;
   searchDocument?: (query: string, caseSensitive: boolean, wholeWord: boolean) => Promise<SearchHit[]> | SearchHit[];
+  /** Re-lay out the document in a `PRISM_MARKUP_*` mode; pages are then fetched again. */
+  setMarkupMode?: (mode: number) => Promise<void> | void;
 }
 
 declare global {
@@ -282,6 +284,26 @@ export class PrismViewerController {
       this.rotationDeg = (this.rotationDeg + 270) % 360;
       this.applyZoomAndRotation();
     });
+
+    // Changing the mode needs a native host that re-lays out the document; a static export
+    // keeps the mode it was rendered with, so the selector stays hidden there.
+    const markupSelect = this.root.querySelector<HTMLSelectElement>("#prism-markup-select");
+    const setMarkupMode = window.PrismHost?.setMarkupMode;
+    if (markupSelect && setMarkupMode) {
+      markupSelect.hidden = false;
+      markupSelect.addEventListener("change", async () => {
+        const mode = parseInt(markupSelect.value, 10) || 0;
+        await setMarkupMode(mode);
+        this.root.setAttribute("data-markup-mode", String(mode));
+        this.pageDescriptors.forEach((d) => {
+          d.htmlFragment = undefined;
+        });
+        for (const idx of Array.from(this.mountedPages)) {
+          this.mountedPages.delete(idx);
+          await this.mountPage(idx);
+        }
+      });
+    }
 
     this.root.querySelector("#prism-btn-thumbs")?.addEventListener("click", () => {
       if (this.thumbsSidebar) {

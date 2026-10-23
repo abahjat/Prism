@@ -16,6 +16,20 @@ use std::ops::Range;
 /// Canonical units-per-em used for normalized glyph outlines in `<defs>` and caches.
 pub const NORMALIZED_UPEM: f32 = 1000.0;
 
+/// Tracked-changes and review markup display mode for Word documents.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum MarkupMode {
+    /// Show insertions underlined, deletions struck through, change bars, and comment balloons (default for forensic review).
+    #[default]
+    AllMarkup,
+    /// Show final accepted text flow with margin change bars and comment balloons.
+    SimpleMarkup,
+    /// Show final accepted text without revision marks, hidden text, or comment balloons.
+    NoMarkup,
+    /// Show original pre-revision text (insertions hidden, deletions shown as normal text).
+    Original,
+}
+
 /// Resource limits and configuration options for layout and interpretation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LayoutOptions {
@@ -33,6 +47,10 @@ pub struct LayoutOptions {
     ///
     /// Defaults to `false` for forensic determinism across machines.
     pub allow_system_fonts: bool,
+    /// Tracked-changes and comment review markup mode.
+    pub markup_mode: MarkupMode,
+    /// Whether hidden text (`w:vanish` / `w:specVanish`) is rendered with a dotted underline (`true`) or omitted (`false`).
+    pub show_hidden_text: bool,
 }
 
 impl Default for LayoutOptions {
@@ -44,6 +62,8 @@ impl Default for LayoutOptions {
             max_decompressed_stream_bytes: 64 * 1024 * 1024, // 64 MiB
             max_recursion_depth: 32,
             allow_system_fonts: false,
+            markup_mode: MarkupMode::AllMarkup,
+            show_hidden_text: true,
         }
     }
 }

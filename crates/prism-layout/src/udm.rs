@@ -740,15 +740,10 @@ fn layout_flow_text_block(
         let line_groups = group_runs_by_line(shaped.runs, shaped.height);
         let para_x = paginator.content_left() + left_indent;
 
-        for (line_idx, (line_top_offset, line_h, line_runs)) in line_groups.into_iter().enumerate()
-        {
+        // The text engine already offsets the first line by `first_line_indent`.
+        for (line_top_offset, line_h, line_runs) in line_groups {
             paginator.ensure_space(line_h)?;
-            let first_line_dx = if line_idx == 0 {
-                first_line_indent
-            } else {
-                0.0
-            };
-            let dx = para_x + first_line_dx;
+            let dx = para_x;
             let dy = paginator.cursor_y - line_top_offset;
             for mut run in line_runs {
                 run.source.page = paginator.current_page.index;

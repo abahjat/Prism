@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- `prism-word`: complete Phase 2 Word layout and legacy binary `.doc` engine:
+  - Rich format-independent Word document model (`WordDocument`, `WordStyleSheet`, `WordNumbering`, `WordTheme`, `WordSettings`, `WordSection`, `WordParagraph`, `WordRun`, `WordTable`, `WordDrawing`, `WordField`, `WordStory`, `WordComment`, `ForensicFacts`), style inheritance and toggle-property XOR evaluation (`prism_word::inheritance`), full WordprocessingML `.docx` reader (`prism_word::docx`), and UDM conversion (`prism_word::udm`).
+  - Stateful numbering/list engine (`prism_word::numbering`) supporting multi-level `%1.%2.` templates, `startOverride`, `lvlRestart`, `isLgl`, and Symbol/Wingdings/Webdings PUA bullet mapping.
+  - Native two-pass Word layout engine (`prism_word::layout::layout_word_document`) with multi-section and multi-column flow, mirror margins + gutter, headers/footers with section inheritance, footnotes/endnotes, `PAGE`/`NUMPAGES`/`SECTIONPAGES` resolution, custom tab stops + leaders, paragraph borders (`between` merging) + shading, `keepNext`/`keepLines`/widow-orphan control, tables (`AutoFit` + `gridSpan` + `vMerge` + `tblLook` conditional styles + ECMA-376 §17.4.26 border conflict resolution + repeating header rows), floating DrawingML/VML objects with wrap exclusion zones, and tracked-changes `MarkupMode` (`AllMarkup`, `SimpleMarkup`, `NoMarkup`, `Original`) with margin change bars and comment balloons.
+  - Pure-Rust WMF/EMF vector metafile interpreter (`prism_word::emf`).
+  - Pure-Rust legacy binary `.doc` (`[MS-DOC]`) reader (`prism_word::doc`) parsing `FIB`, `Clx`/`PlcPcd` piece tables (8-bit `CP-1252` and 16-bit `UTF-16LE`), `PlcfBteChpx`/`PlcfBtePapx` FKP pages and `grpprl` SPRMs, inline fields, and tables into `WordDocument`.
+  - C ABI `prism_document_set_markup_mode` and `prism_document_forensic_facts`, viewer markup-mode selector (`#prism-markup-select`), fuzz targets (`word_docx`, `word_doc`, `word_layout`), ADRs `0004`–`0006`, `docs/architecture/word.md`, and `docs/word-compat.md`.
 - `prism-layout`: new native Rust positioned layout core (`LayoutDocument`, `LayoutPage`, `Item`, `GlyphRun`, `PositionedGlyph`, `Cluster`, `Decorations`, `SourceRef`, `LayoutOptions`, `FontStore`, `ImageStore`, `FontReport`).
 - `prism_layout::udm`: fixed-layout converter for PPTX slides (text boxes, shapes, linear gradients, tables, images) and flow-layout paginator for DOCX and TXT documents (section margins `<w:pgMar>`, paragraph shaping, list indentation, table pagination).
 - `layout_document` returns `Error::UnsupportedFormat` for documents whose content is embedded HTML or SVG (email, MHT, HTML, EPUB, Markdown, SVG, XPS, DXF) instead of laying out blank pages; `HtmlRenderer` and the WinForms sample fall back to the sanitized HTML path for them.
@@ -37,11 +44,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - quick-xml 0.31 → 0.42 across all XML parsers (RUSTSEC-2026-0194, RUSTSEC-2026-0195). Entity references are resolved from the new `GeneralRef` events, and attribute values are now unescaped.
 - `sevenz-rust` replaced by `sevenz-rust2` (RUSTSEC-2026-0245, RUSTSEC-2026-0246).
 - calamine 0.25 → 0.37, bzip2 0.5 → 0.6.
+- tokio 1.48 → 1.54 (RUSTSEC `AsyncFd` I/O-safety advisory).
 - Decompression bombs are rejected with `Error::MemoryLimitExceeded` instead of exhausting memory.
 - Sanitized `<style>` blocks can no longer carry markup: their text is written back with every `<` as the CSS escape `\3c ` (found by the `sanitize_html` fuzz target), and remote `url(...)` and `@import` are stripped as for inline styles.
 - Remaining advisories (zip extraction APIs that are not used; unmaintained transitive crates) are listed with reasons in `deny.toml`.
 
 ### Fixed
+- Text engine: a first-line indent is applied once, by `parley`, so the first line also breaks at the narrower width; it was added twice on the DOCX layout path and could run past the right margin.
+- Text engine: paragraphs with more than 65,535 runs no longer panic in `parley` (adjacent spans are merged above 8,192).
 - Extracted text of PDF, HTML, email, EPUB, Markdown, SVG, DXF and XPS documents no longer contains base64 or markup.
 - DOCX: explicit off values (`<w:b w:val="0"/>`, `<w:u w:val="none"/>`) no longer turn formatting on. Self-closing `w:sz`, `w:rFonts` and theme `w:color` are now applied. Field codes (`w:instrText`) are no longer shown as text. Tracked insertions and deletions are marked (underline / strikethrough). Tabs and line breaks are kept. Page size comes from the section. Image MIME type, pixel size, extent and alt text are read.
 - Bindings no longer create a runtime and parser registry per call, no longer panic on interior NUL bytes, and reject null buffers safely.

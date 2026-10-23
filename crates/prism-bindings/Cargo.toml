@@ -15,6 +15,7 @@ prism-core = { workspace = true }
 prism-layout = { workspace = true }
 prism-parsers = { workspace = true }
 prism-render = { workspace = true }
+prism-word = { workspace = true }
 libc = "0.2"
 bytes = "1.0"
 tokio = { version = "1.35", features = ["rt", "macros"] }

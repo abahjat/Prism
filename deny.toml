@@ -63,6 +63,10 @@ crate = "prism-layout"
 
 [[licenses.exceptions]]
 allow = ["AGPL-3.0-only"]
+crate = "prism-word"
+
+[[licenses.exceptions]]
+allow = ["AGPL-3.0-only"]
 crate = "prism-parsers"
 
 [[licenses.exceptions]]

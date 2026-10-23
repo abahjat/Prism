@@ -19,7 +19,7 @@ pub mod text_ops;
 pub mod udm;
 
 pub use engine::{
-    LineSpacing, ParagraphSpec, ScriptPosition, ShapedParagraph, SpanSpec, TextAlign,
+    LineSpacing, ParagraphSpec, ScriptPosition, ShapedLine, ShapedParagraph, SpanSpec, TextAlign,
     TextLayoutEngine,
 };
 pub use fonts::{
@@ -30,9 +30,9 @@ pub use model::{
     Affine, AnchorItem, ClipPath, Cluster, Decorations, FillPaint, FillRule, FontEntry, FontId,
     FontReport, FontResolutionEntry, FontSourceKind, FontStore, GlyphRun, GradientStop, GroupItem,
     ImageEntry, ImageId, ImageItem, ImageStore, Item, LayoutDocument, LayoutOptions, LayoutPage,
-    LineCap, LineDecoration, LineJoin, LinearGradient, LinkItem, NORMALIZED_UPEM, PathCommand,
-    PathItem, Point, PositionedGlyph, RadialGradient, Rect, Rgba, Size, SourceRef, StrokeStyle,
-    normalize_zero,
+    LineCap, LineDecoration, LineJoin, LinearGradient, LinkItem, MarkupMode, NORMALIZED_UPEM,
+    PathCommand, PathItem, Point, PositionedGlyph, RadialGradient, Rect, Rgba, Size, SourceRef,
+    StrokeStyle, normalize_zero,
 };
 pub use pdf_input::{interpret_pdf_bytes, interpret_pdf_pages};
 pub use text_ops::{CharBox, SearchHit, SearchOptions};

@@ -170,6 +170,23 @@ impl Parser for DocParser {
             context.size, context.filename
         );
 
+        let max_bytes = crate::limits::max_decompressed_bytes(&context);
+        match prism_word::parse_doc(&data, max_bytes) {
+            Ok(word_doc) => {
+                let mut document = prism_word::word_to_udm(&word_doc, "DOC");
+                if document.metadata.title.is_none() {
+                    document.metadata.title.clone_from(&context.filename);
+                }
+                document.metadata.add_custom("legacy_format", true);
+                info!("Successfully parsed DOC file via prism-word [MS-DOC] reader");
+                return Ok(document);
+            }
+            Err(e @ Error::Encrypted(_)) => return Err(e),
+            Err(e) => {
+                warn!("prism-word [MS-DOC] parser fell back to heuristic extraction: {e}");
+            }
+        }
+
         // Choose extraction method based on file format
         let text_parts = if Self::is_word2_file(&data) {
             info!("Detected Word 2.0/6.0 format, using legacy extraction");

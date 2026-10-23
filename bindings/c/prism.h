@@ -50,6 +50,15 @@ typedef struct PrismDocument PrismDocument;
 /** Search flag bit 2: match whole words only. */
 #define PRISM_SEARCH_WHOLE_WORD           (1u << 2)
 
+/** Tracked-changes markup mode: show insertions, deletions, change bars, and comments (`AllMarkup`). */
+#define PRISM_MARKUP_ALL                  0u
+/** Tracked-changes markup mode: final text with left-margin change bars (`SimpleMarkup`). */
+#define PRISM_MARKUP_SIMPLE               1u
+/** Tracked-changes markup mode: final text as if all revisions were accepted (`NoMarkup`). */
+#define PRISM_MARKUP_NONE                 2u
+/** Tracked-changes markup mode: original text as if all revisions were rejected (`Original`). */
+#define PRISM_MARKUP_ORIGINAL             3u
+
 /** Initialize logging (optional). Honors the `RUST_LOG` environment variable. */
 void prism_init(void);
 
@@ -156,6 +165,18 @@ int32_t prism_document_export(
  * Release the returned string with `prism_free_string()`.
  */
 char* prism_document_font_report(const PrismDocument* doc);
+
+/**
+ * Set the tracked-changes markup mode (`PRISM_MARKUP_*`) and re-layout if `doc` is a Word document.
+ * Returns 0 on success, -1 on error.
+ */
+int32_t prism_document_set_markup_mode(PrismDocument* doc, uint32_t mode);
+
+/**
+ * Return the per-document Word forensic facts (macros, external links, revisions, comments) as JSON.
+ * Release the returned string with `prism_free_string()`.
+ */
+char* prism_document_forensic_facts(const PrismDocument* doc);
 
 #ifdef __cplusplus
 }

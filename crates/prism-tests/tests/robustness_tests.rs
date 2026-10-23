@@ -103,7 +103,24 @@ fn parse_isolated(
                 max_decompressed_stream_bytes: 16 * 1024 * 1024,
                 max_recursion_depth: 16,
                 allow_system_fonts: false,
+                ..LayoutOptions::default()
             };
+            if prism_word::is_docx_zip(&data)
+                && let Ok(word_doc) =
+                    prism_word::parse_docx(&data, None, layout_opts.max_decompressed_stream_bytes)
+                && let Ok(layout_doc) = prism_word::layout_word_document(&word_doc, &layout_opts)
+                && let Some(first) = layout_doc.pages.first()
+            {
+                let _ = render_page_svg(first, &layout_doc.fonts, &layout_doc.images, &layout_opts);
+            }
+            if prism_word::is_doc_bytes(&data)
+                && let Ok(word_doc) =
+                    prism_word::parse_doc(&data, layout_opts.max_decompressed_stream_bytes)
+                && let Ok(layout_doc) = prism_word::layout_word_document(&word_doc, &layout_opts)
+                && let Some(first) = layout_doc.pages.first()
+            {
+                let _ = render_page_svg(first, &layout_doc.fonts, &layout_doc.images, &layout_opts);
+            }
             if data.starts_with(b"%PDF-")
                 && let Ok(pdf_doc) = interpret_pdf_bytes(&data, &layout_opts)
                 && let Some(first) = pdf_doc.pages.first()
