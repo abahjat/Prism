@@ -32,6 +32,8 @@ Thumbs.db
 # Dotnet
 **/bin/
 **/obj/
+# ...but not Rust binary sources
+!crates/*/src/bin/
 .vs/
 
 # Scripts
