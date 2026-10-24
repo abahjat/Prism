@@ -2992,7 +2992,7 @@ dependencies = [
  "prism-core",
  "serde",
  "serde_json",
- "skrifa 0.44.0",
+ "skrifa 0.46.2",
 ]
 
 [[package]]
