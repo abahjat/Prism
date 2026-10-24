@@ -18,18 +18,15 @@
 
 use prism_core::ENGINE_VERSION;
 use prism_core::error::{Error, Result};
-use prism_core::format::detect_format;
 use prism_core::hash::{md5_hex, sha1_hex, sha256_hex};
 use prism_core::metadata::Metadata;
-use prism_core::parser::{ParseContext, ParseOptions};
 use prism_core::review::SourceRef;
 use prism_layout::{
     Affine, ClipPath, Cluster, Decorations, FillRule, FontId, FontSourceKind, FontStore, GlyphRun,
     GroupItem, Item, LayoutDocument, LayoutOptions, LayoutPage, LineCap, LineJoin, PathCommand,
-    PathItem, Point, PositionedGlyph, Rgba, Size, StrokeStyle, interpret_pdf_bytes,
-    layout_document,
+    PathItem, Point, PositionedGlyph, Rgba, Size, StrokeStyle,
 };
-use prism_parsers::registry::ParserRegistry;
+use prism_parsers::pipeline::{open_and_layout, open_and_layout_page_range};
 use prism_render::pdf::{PdfExportOptions, export_document_pdf};
 use prism_render::raster::{RasterImage, RasterOptions, render_page_png, render_page_rgba};
 use prism_review::{
@@ -1142,6 +1139,128 @@ pub fn run_production(
     Ok(manifest)
 }
 
+/// Stream a document's produced pages in bounded `batch_size` windows, invoking `on_page`
+/// with `(zero_based_page_index, formatted_bates, encoded_image_bytes)` and dropping each
+/// batch's `LayoutPage` and raster buffer before advancing to the next batch.
+///
+/// This images the document as stored: it applies no annotation redactions and writes no
+/// manifest or load files, so documents with approved redactions go through
+/// [`run_production`]. Each batch parses the document again, trading time for the memory of
+/// holding every page; an endorsement that uses `{page_count}` costs one extra full layout to
+/// learn the total.
+///
+/// Returns the total number of pages streamed.
+///
+/// # Errors
+///
+/// Returns an [`Error`] if format detection, layout, rasterization, or `on_page` fails.
+pub fn export_pages_streaming<F>(
+    data: &[u8],
+    filename: Option<&str>,
+    options: &ProductionOptions,
+    batch_size: usize,
+    mut on_page: F,
+) -> Result<usize>
+where
+    F: FnMut(usize, String, Vec<u8>) -> Result<()>,
+{
+    let step = batch_size.max(1);
+    let layout_opts = LayoutOptions::default();
+    let raster_opts = RasterOptions {
+        dpi: options.dpi,
+        ..RasterOptions::default()
+    };
+    let mut start = 0usize;
+    let mut total_streamed = 0usize;
+
+    let e = &options.endorsements;
+    let uses_page_count = [
+        &e.header_left,
+        &e.header_center,
+        &e.header_right,
+        &e.footer_left,
+        &e.footer_center,
+        &e.footer_right,
+    ]
+    .into_iter()
+    .flatten()
+    .any(|t| t.contains("{page_count}"));
+    let total_pages = if uses_page_count {
+        Some(
+            open_and_layout(data, filename, &layout_opts)?
+                .layout
+                .pages
+                .len(),
+        )
+    } else {
+        None
+    };
+
+    loop {
+        let end = start.saturating_add(step);
+        let mut opened = open_and_layout_page_range(data, filename, &layout_opts, start..end)?;
+        if opened.layout.pages.is_empty() {
+            break;
+        }
+        let batch_len = opened.layout.pages.len();
+        let endorse_font_id = opened.layout.fonts.register_ttf(
+            "Liberation Sans",
+            400,
+            false,
+            FontSourceKind::Bundled,
+            BUNDLED_SANS_REGULAR.to_vec(),
+            0,
+        );
+
+        for (i, page) in opened.layout.pages.iter().enumerate() {
+            let global_idx = start + i;
+            #[allow(clippy::cast_possible_truncation)]
+            let bates_num = options.bates.start_number + (global_idx as u64);
+            let page_bates = options.bates.format_bates(bates_num);
+            let tokens = EndorsementTokens {
+                bates: &page_bates,
+                doc_id: filename.unwrap_or("STREAM"),
+                page: global_idx + 1,
+                page_count: total_pages.unwrap_or(global_idx + 1),
+                confidentiality: "",
+                date: &options.production_date,
+            };
+            let endorsed = apply_endorsements_to_page(
+                page,
+                &options.endorsements,
+                &tokens,
+                &opened.layout.fonts,
+                endorse_font_id,
+            );
+            let img_bytes = if options.image_format == ProductionImageFormat::SinglePagePng {
+                render_page_png(
+                    &endorsed,
+                    &opened.layout.fonts,
+                    &opened.layout.images,
+                    &raster_opts,
+                )?
+            } else {
+                let raster = render_page_rgba(
+                    &endorsed,
+                    &opened.layout.fonts,
+                    &opened.layout.images,
+                    &raster_opts,
+                )?;
+                encode_single_page_production_tiff(&raster)?
+            };
+            on_page(global_idx, page_bates, img_bytes)?;
+            total_streamed += 1;
+        }
+
+        if batch_len < step {
+            break;
+        }
+        start = end;
+    }
+
+    Ok(total_streamed)
+}
+
 fn build_manifest(
     options: &ProductionOptions,
     options_sha: &str,
@@ -1623,81 +1742,8 @@ fn parse_and_layout_document(
     filename: Option<&str>,
     options: &LayoutOptions,
 ) -> Result<(LayoutDocument, Metadata)> {
-    if bytes.starts_with(b"%PDF-")
-        && let Ok(layout) = interpret_pdf_bytes(bytes, options)
-    {
-        return Ok((layout, Metadata::default()));
-    }
-
-    if prism_word::is_docx_zip(bytes)
-        && let Ok(word_doc) =
-            prism_word::parse_docx(bytes, filename, options.max_decompressed_stream_bytes)
-    {
-        let layout = prism_word::layout_word_document(&word_doc, options)?;
-        let meta = Metadata {
-            title: word_doc.title,
-            author: word_doc.author,
-            ..Metadata::default()
-        };
-        return Ok((layout, meta));
-    }
-
-    if prism_word::is_doc_bytes(bytes)
-        && let Ok(word_doc) = prism_word::parse_doc(bytes, options.max_decompressed_stream_bytes)
-    {
-        let layout = prism_word::layout_word_document(&word_doc, options)?;
-        let meta = Metadata {
-            title: word_doc.title,
-            author: word_doc.author,
-            ..Metadata::default()
-        };
-        return Ok((layout, meta));
-    }
-
-    if prism_ppt::is_pptx_zip(bytes)
-        && let Ok(ppt_doc) = prism_ppt::parse_pptx(bytes, options.max_decompressed_stream_bytes)
-    {
-        let layout = prism_ppt::layout_presentation(&ppt_doc, options)?;
-        let meta = Metadata {
-            title: ppt_doc.title,
-            author: ppt_doc.author,
-            ..Metadata::default()
-        };
-        return Ok((layout, meta));
-    }
-
-    if prism_ppt::is_ppt_bytes(bytes)
-        && let Ok(ppt_doc) = prism_ppt::parse_ppt(bytes, options.max_decompressed_stream_bytes)
-        && !ppt_doc.slides.is_empty()
-    {
-        let layout = prism_ppt::layout_presentation(&ppt_doc, options)?;
-        let meta = Metadata {
-            title: ppt_doc.title,
-            author: ppt_doc.author,
-            ..Metadata::default()
-        };
-        return Ok((layout, meta));
-    }
-
-    let detection = detect_format(bytes, filename)
-        .ok_or_else(|| Error::UnsupportedFormat("Unrecognized document format".to_string()))?;
-    let registry = ParserRegistry::with_default_parsers();
-    let parser = registry.get_parser(&detection.format).ok_or_else(|| {
-        Error::UnsupportedFormat(format!("No parser for {}", detection.format.name))
-    })?;
-    let ctx = ParseContext {
-        format: detection.format,
-        filename: filename.map(str::to_string),
-        size: bytes.len(),
-        options: ParseOptions::default(),
-    };
-    let rt = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .map_err(|e| Error::Internal(format!("Runtime init error: {e}")))?;
-    let doc = rt.block_on(parser.parse(bytes::Bytes::copy_from_slice(bytes), ctx))?;
-    let layout = layout_document(&doc, options)?;
-    Ok((layout, doc.metadata))
+    let opened = open_and_layout(bytes, filename, options)?;
+    Ok((opened.layout, opened.metadata))
 }
 
 #[derive(Clone, Copy)]

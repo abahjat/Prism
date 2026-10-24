@@ -584,40 +584,147 @@ pub fn build_preset_geometry_paths(
         | "actionButtonSound"
         | "actionButtonMovie" => rect_commands(x, y, w, h),
 
-        "roundRect"
-        | "flowChartAlternateProcess"
-        | "round1Rect"
-        | "round2SameRect"
-        | "round2DiagRect" => {
+        "roundRect" | "flowChartAlternateProcess" => {
             let ratio = (adj("adj", 16_667.0) / 100_000.0).clamp(0.0, 0.5);
             let r = ss * ratio;
             round_rect_commands(x, y, w, h, r)
         }
+        "round1Rect" => {
+            let r = (ss * (adj("adj", 16_667.0) / 100_000.0).clamp(0.0, 0.5)).min(ss * 0.5);
+            corner_rect_commands(x, y, w, h, [0.0, r, 0.0, 0.0], [false; 4])
+        }
+        "round2SameRect" => {
+            let r1 = (ss * (adj("adj1", 16_667.0) / 100_000.0).clamp(0.0, 0.5)).min(ss * 0.5);
+            let r2 = (ss * (adj("adj2", 0.0) / 100_000.0).clamp(0.0, 0.5)).min(ss * 0.5);
+            corner_rect_commands(x, y, w, h, [r1, r1, r2, r2], [false; 4])
+        }
+        "round2DiagRect" => {
+            let r1 = (ss * (adj("adj1", 16_667.0) / 100_000.0).clamp(0.0, 0.5)).min(ss * 0.5);
+            let r2 = (ss * (adj("adj2", 0.0) / 100_000.0).clamp(0.0, 0.5)).min(ss * 0.5);
+            corner_rect_commands(x, y, w, h, [r1, r2, r1, r2], [false; 4])
+        }
         "flowChartTerminator" => round_rect_commands(x, y, w, h, ss * 0.48),
 
-        "snip1Rect"
-        | "snip2SameRect"
-        | "snip2DiagRect"
-        | "snipRoundRect"
-        | "flowChartPunchedCard" => {
+        "snip1Rect" | "flowChartPunchedCard" => {
             let s = ss * (adj("adj", 16_667.0) / 100_000.0).clamp(0.05, 0.45);
-            polygon_commands(&[
-                (x + s, y),
-                (x + w - s, y),
-                (x + w, y + s),
-                (x + w, y + h),
-                (x, y + h),
-                (x, y + s),
-            ])
+            if preset == "flowChartPunchedCard" {
+                corner_rect_commands(x, y, w, h, [s, 0.0, 0.0, 0.0], [true, false, false, false])
+            } else {
+                corner_rect_commands(x, y, w, h, [0.0, s, 0.0, 0.0], [false, true, false, false])
+            }
         }
-        "ellipse" | "flowChartConnector" | "flowChartSummingJunction" | "flowChartOr" => {
-            ellipse_commands(cx, cy, w * 0.5, h * 0.5)
+        "snip2SameRect" => {
+            let s1 = ss * (adj("adj1", 16_667.0) / 100_000.0).clamp(0.05, 0.45);
+            let s2 = ss * (adj("adj2", 0.0) / 100_000.0).clamp(0.0, 0.45);
+            corner_rect_commands(x, y, w, h, [s1, s1, s2, s2], [true; 4])
         }
-        "donut" | "noSmoking" => {
+        "snip2DiagRect" => {
+            let s1 = ss * (adj("adj1", 0.0) / 100_000.0).clamp(0.0, 0.45);
+            let s2 = ss * (adj("adj2", 16_667.0) / 100_000.0).clamp(0.05, 0.45);
+            corner_rect_commands(x, y, w, h, [s1, s2, s1, s2], [true; 4])
+        }
+        "snipRoundRect" => {
+            let r = ss * (adj("adj1", 16_667.0) / 100_000.0).clamp(0.05, 0.45);
+            let s = ss * (adj("adj2", 16_667.0) / 100_000.0).clamp(0.05, 0.45);
+            corner_rect_commands(x, y, w, h, [r, s, 0.0, 0.0], [false, true, false, false])
+        }
+        "ellipse" | "flowChartConnector" => ellipse_commands(cx, cy, w * 0.5, h * 0.5),
+        "flowChartSummingJunction" => {
+            let mut cmds = ellipse_commands(cx, cy, w * 0.5, h * 0.5);
+            let dx = w * 0.5 * std::f32::consts::FRAC_1_SQRT_2;
+            let dy = h * 0.5 * std::f32::consts::FRAC_1_SQRT_2;
+            cmds.push(PathCommand::MoveTo(Point::new(cx - dx, cy - dy)));
+            cmds.push(PathCommand::LineTo(Point::new(cx + dx, cy + dy)));
+            cmds.push(PathCommand::MoveTo(Point::new(cx + dx, cy - dy)));
+            cmds.push(PathCommand::LineTo(Point::new(cx - dx, cy + dy)));
+            cmds
+        }
+        "flowChartOr" => {
+            let mut cmds = ellipse_commands(cx, cy, w * 0.5, h * 0.5);
+            cmds.push(PathCommand::MoveTo(Point::new(cx, y)));
+            cmds.push(PathCommand::LineTo(Point::new(cx, y + h)));
+            cmds.push(PathCommand::MoveTo(Point::new(x, cy)));
+            cmds.push(PathCommand::LineTo(Point::new(x + w, cy)));
+            cmds
+        }
+        "donut" => {
             let mut cmds = ellipse_commands(cx, cy, w * 0.5, h * 0.5);
             let ratio = 0.5 - (adj("adj", 25_000.0) / 100_000.0).clamp(0.05, 0.45);
             cmds.extend(ellipse_commands(cx, cy, w * ratio, h * ratio));
             cmds
+        }
+        "noSmoking" => {
+            let mut cmds = ellipse_commands(cx, cy, w * 0.5, h * 0.5);
+            let ratio = 0.5 - (adj("adj", 18_750.0) / 100_000.0).clamp(0.05, 0.45);
+            cmds.extend(ellipse_commands(cx, cy, w * ratio, h * ratio));
+            let d = ss * 0.32;
+            cmds.push(PathCommand::MoveTo(Point::new(cx - d, cy - d)));
+            cmds.push(PathCommand::LineTo(Point::new(cx + d, cy + d)));
+            cmds
+        }
+        "pie" | "pieWedge" | "chord" | "arc" | "blockArc" => {
+            let st_deg = (adj("adj1", 0.0) / 60_000.0).rem_euclid(360.0);
+            let end_deg = (adj("adj2", 16_200_000.0) / 60_000.0).rem_euclid(360.0);
+            let sweep = (end_deg - st_deg).rem_euclid(360.0).max(30.0);
+            let rx = w * 0.5;
+            let ry = h * 0.5;
+            let mut cmds = Vec::new();
+            let st_rad = st_deg.to_radians();
+            let start_pt = Point::new(cx + rx * st_rad.cos(), cy + ry * st_rad.sin());
+            if preset == "pie" || preset == "pieWedge" {
+                cmds.push(PathCommand::MoveTo(Point::new(cx, cy)));
+                cmds.push(PathCommand::LineTo(start_pt));
+            } else {
+                cmds.push(PathCommand::MoveTo(start_pt));
+            }
+            let mut cur = start_pt;
+            append_arc_segments(&mut cmds, &mut cur, rx, ry, st_deg, sweep);
+            if preset == "blockArc" {
+                let inner_ratio = (adj("adj3", 25_000.0) / 100_000.0).clamp(0.15, 0.45);
+                let irx = w * inner_ratio;
+                let iry = h * inner_ratio;
+                let end_rad = (st_deg + sweep).to_radians();
+                let inner_start = Point::new(cx + irx * end_rad.cos(), cy + iry * end_rad.sin());
+                cmds.push(PathCommand::LineTo(inner_start));
+                cur = inner_start;
+                append_arc_segments(&mut cmds, &mut cur, irx, iry, st_deg + sweep, -sweep);
+                cmds.push(PathCommand::Close);
+            } else if preset != "arc" {
+                cmds.push(PathCommand::Close);
+            }
+            cmds
+        }
+        "plaque" => {
+            let r = ss * (adj("adj", 16_667.0) / 100_000.0).clamp(0.05, 0.45);
+            polygon_commands(&[
+                (x + r, y),
+                (x + w - r, y),
+                (x + w, y + r),
+                (x + w, y + h - r),
+                (x + w - r, y + h),
+                (x + r, y + h),
+                (x, y + h - r),
+                (x, y + r),
+            ])
+        }
+        "teardrop" => {
+            let ry = h * 0.5;
+            vec![
+                PathCommand::MoveTo(Point::new(x + w, y)),
+                PathCommand::LineTo(Point::new(cx, y)),
+                PathCommand::CurveTo {
+                    ctrl1: Point::new(x, y),
+                    ctrl2: Point::new(x, y + h),
+                    to: Point::new(cx, y + h),
+                },
+                PathCommand::CurveTo {
+                    ctrl1: Point::new(x + w, y + h),
+                    ctrl2: Point::new(x + w, cy + ry * 0.5),
+                    to: Point::new(x + w, cy),
+                },
+                PathCommand::LineTo(Point::new(x + w, y)),
+                PathCommand::Close,
+            ]
         }
         "triangle" | "flowChartExtract" => {
             let apex_x = x + w * (adj("adj", 50_000.0) / 100_000.0).clamp(0.0, 1.0);
@@ -939,22 +1046,387 @@ pub fn build_preset_geometry_paths(
             }
             cmds
         }
-        "frame" | "bevel" | "flowChartPredefinedProcess" | "flowChartInternalStorage" => {
+        "frame" | "bevel" => {
             let mut cmds = rect_commands(x, y, w, h);
-            let inset = ss * 0.12;
-            cmds.extend(rect_commands(
-                x + inset,
-                y + inset,
-                (w - 2.0 * inset).max(2.0),
-                (h - 2.0 * inset).max(2.0),
+            let inset = ss * (adj("adj1", 12_500.0) / 100_000.0).clamp(0.05, 0.4);
+            let ix = x + inset;
+            let iy = y + inset;
+            let iw = (w - 2.0 * inset).max(2.0);
+            let ih = (h - 2.0 * inset).max(2.0);
+            cmds.extend(rect_commands(ix, iy, iw, ih));
+            if preset == "bevel" {
+                cmds.push(PathCommand::MoveTo(Point::new(x, y)));
+                cmds.push(PathCommand::LineTo(Point::new(ix, iy)));
+                cmds.push(PathCommand::MoveTo(Point::new(x + w, y)));
+                cmds.push(PathCommand::LineTo(Point::new(ix + iw, iy)));
+                cmds.push(PathCommand::MoveTo(Point::new(x + w, y + h)));
+                cmds.push(PathCommand::LineTo(Point::new(ix + iw, iy + ih)));
+                cmds.push(PathCommand::MoveTo(Point::new(x, y + h)));
+                cmds.push(PathCommand::LineTo(Point::new(ix, iy + ih)));
+            }
+            cmds
+        }
+        "flowChartPredefinedProcess" => {
+            let mut cmds = rect_commands(x, y, w, h);
+            let bar = w * 0.125;
+            cmds.push(PathCommand::MoveTo(Point::new(x + bar, y)));
+            cmds.push(PathCommand::LineTo(Point::new(x + bar, y + h)));
+            cmds.push(PathCommand::MoveTo(Point::new(x + w - bar, y)));
+            cmds.push(PathCommand::LineTo(Point::new(x + w - bar, y + h)));
+            cmds
+        }
+        "flowChartInternalStorage" => {
+            let mut cmds = rect_commands(x, y, w, h);
+            let bx = x + w * 0.15;
+            let by = y + h * 0.15;
+            cmds.push(PathCommand::MoveTo(Point::new(bx, y)));
+            cmds.push(PathCommand::LineTo(Point::new(bx, y + h)));
+            cmds.push(PathCommand::MoveTo(Point::new(x, by)));
+            cmds.push(PathCommand::LineTo(Point::new(x + w, by)));
+            cmds
+        }
+        "halfFrame" | "corner" => {
+            let t_w = ss * (adj("adj1", 33_333.0) / 100_000.0).clamp(0.1, 0.5);
+            let t_h = ss * (adj("adj2", 33_333.0) / 100_000.0).clamp(0.1, 0.5);
+            if preset == "halfFrame" {
+                polygon_commands(&[
+                    (x, y),
+                    (x + w, y),
+                    (x + w - t_w, y + t_h),
+                    (x + t_w, y + t_h),
+                    (x + t_w, y + h - t_h),
+                    (x, y + h),
+                ])
+            } else {
+                polygon_commands(&[
+                    (x, y),
+                    (x + t_w, y),
+                    (x + t_w, y + h - t_h),
+                    (x + w, y + h - t_h),
+                    (x + w, y + h),
+                    (x, y + h),
+                ])
+            }
+        }
+        "diagStripe" => {
+            let off = ss * (adj("adj", 50_000.0) / 100_000.0).clamp(0.1, 0.9);
+            polygon_commands(&[(x, y + off), (x + off, y), (x + w, y), (x, y + h)])
+        }
+        "cube" => {
+            let d = ss * (adj("adj", 25_000.0) / 100_000.0).clamp(0.1, 0.45);
+            let mut cmds = rect_commands(x, y + d, w - d, h - d);
+            cmds.extend(polygon_commands(&[
+                (x, y + d),
+                (x + d, y),
+                (x + w, y),
+                (x + w - d, y + d),
+            ]));
+            cmds.extend(polygon_commands(&[
+                (x + w - d, y + d),
+                (x + w, y),
+                (x + w, y + h - d),
+                (x + w - d, y + h),
+            ]));
+            cmds
+        }
+        "can" | "flowChartMagneticDisk" => {
+            let cap_ry = (h * (adj("adj", 25_000.0) / 100_000.0).clamp(0.08, 0.35)) * 0.5;
+            let mut cmds = ellipse_commands(cx, y + cap_ry, w * 0.5, cap_ry);
+            cmds.extend(polygon_commands(&[
+                (x, y + cap_ry),
+                (x + w, y + cap_ry),
+                (x + w, y + h - cap_ry),
+                (x, y + h - cap_ry),
+            ]));
+            cmds.extend(ellipse_commands(cx, y + h - cap_ry, w * 0.5, cap_ry));
+            cmds
+        }
+        "flowChartMagneticDrum" => {
+            let cap_rx = w * 0.15;
+            let mut cmds = rect_commands(x + cap_rx, y, w - 2.0 * cap_rx, h);
+            cmds.extend(ellipse_commands(x + w - cap_rx, cy, cap_rx, h * 0.5));
+            cmds.extend(ellipse_commands(x + cap_rx, cy, cap_rx, h * 0.5));
+            cmds
+        }
+        "flowChartMagneticTape" => {
+            let r = ss * 0.48;
+            let mut cmds = ellipse_commands(cx, y + r, r, r);
+            cmds.push(PathCommand::MoveTo(Point::new(cx, y + 2.0 * r)));
+            cmds.push(PathCommand::LineTo(Point::new(x + w, y + 2.0 * r)));
+            cmds
+        }
+        "flowChartOnlineStorage" => {
+            let dx = w * 0.16;
+            polygon_commands(&[
+                (x + dx, y),
+                (x + w, y),
+                (x + w - dx, cy),
+                (x + w, y + h),
+                (x + dx, y + h),
+                (x, cy),
+            ])
+        }
+        "flowChartOfflineStorage" => {
+            let mut cmds = polygon_commands(&[(x, y), (x + w, y), (cx, y + h)]);
+            let ly = y + h * 0.72;
+            cmds.push(PathCommand::MoveTo(Point::new(x + w * 0.36, ly)));
+            cmds.push(PathCommand::LineTo(Point::new(x + w * 0.64, ly)));
+            cmds
+        }
+        "flowChartDisplay" => polygon_commands(&[
+            (x, cy),
+            (x + w * 0.2, y),
+            (x + w * 0.82, y),
+            (x + w, cy),
+            (x + w * 0.82, y + h),
+            (x + w * 0.2, y + h),
+        ]),
+        "flowChartDelay" => {
+            let r = w * 0.45;
+            polygon_commands(&[
+                (x, y),
+                (x + w - r, y),
+                (x + w, cy),
+                (x + w - r, y + h),
+                (x, y + h),
+            ])
+        }
+        "sun" => {
+            let mut cmds = ellipse_commands(cx, cy, w * 0.26, h * 0.26);
+            cmds.extend(star_commands(cx, cy, w * 0.5, h * 0.5, 8, 0.65));
+            cmds
+        }
+        "moon" => {
+            let inset = w * (adj("adj", 50_000.0) / 100_000.0).clamp(0.2, 0.8);
+            vec![
+                PathCommand::MoveTo(Point::new(x + w, y)),
+                PathCommand::CurveTo {
+                    ctrl1: Point::new(x, y),
+                    ctrl2: Point::new(x, y + h),
+                    to: Point::new(x + w, y + h),
+                },
+                PathCommand::CurveTo {
+                    ctrl1: Point::new(x + inset, y + h * 0.75),
+                    ctrl2: Point::new(x + inset, y + h * 0.25),
+                    to: Point::new(x + w, y),
+                },
+                PathCommand::Close,
+            ]
+        }
+        "smileyFace" => {
+            let mut cmds = ellipse_commands(cx, cy, w * 0.5, h * 0.5);
+            cmds.extend(ellipse_commands(
+                cx - w * 0.17,
+                cy - h * 0.12,
+                w * 0.05,
+                h * 0.05,
+            ));
+            cmds.extend(ellipse_commands(
+                cx + w * 0.17,
+                cy - h * 0.12,
+                w * 0.05,
+                h * 0.05,
+            ));
+            let mouth_y = cy + h * 0.15;
+            let curve_offset = h * (adj("adj", 4_653.0) / 100_000.0).clamp(-0.15, 0.20);
+            cmds.push(PathCommand::MoveTo(Point::new(cx - w * 0.24, mouth_y)));
+            cmds.push(PathCommand::QuadTo {
+                ctrl: Point::new(cx, mouth_y + h * 0.14 + curve_offset),
+                to: Point::new(cx + w * 0.24, mouth_y),
+            });
+            cmds
+        }
+        "cloud" => vec![
+            PathCommand::MoveTo(Point::new(x + w * 0.2, y + h * 0.65)),
+            PathCommand::CurveTo {
+                ctrl1: Point::new(x + w * 0.02, y + h * 0.62),
+                ctrl2: Point::new(x + w * 0.04, y + h * 0.32),
+                to: Point::new(x + w * 0.22, y + h * 0.30),
+            },
+            PathCommand::CurveTo {
+                ctrl1: Point::new(x + w * 0.28, y + h * 0.06),
+                ctrl2: Point::new(x + w * 0.58, y + h * 0.04),
+                to: Point::new(x + w * 0.68, y + h * 0.24),
+            },
+            PathCommand::CurveTo {
+                ctrl1: Point::new(x + w * 0.92, y + h * 0.22),
+                ctrl2: Point::new(x + w * 0.98, y + h * 0.56),
+                to: Point::new(x + w * 0.82, y + h * 0.68),
+            },
+            PathCommand::CurveTo {
+                ctrl1: Point::new(x + w * 0.80, y + h * 0.92),
+                ctrl2: Point::new(x + w * 0.46, y + h * 0.94),
+                to: Point::new(x + w * 0.38, y + h * 0.80),
+            },
+            PathCommand::CurveTo {
+                ctrl1: Point::new(x + w * 0.24, y + h * 0.88),
+                ctrl2: Point::new(x + w * 0.14, y + h * 0.78),
+                to: Point::new(x + w * 0.2, y + h * 0.65),
+            },
+            PathCommand::Close,
+        ],
+        "ribbon" | "ribbon2" | "ellipseRibbon" | "ellipseRibbon2" | "leftRightRibbon" => {
+            let notch = w * 0.08;
+            let drop = h * 0.16;
+            polygon_commands(&[
+                (x, y + drop),
+                (x + w * 0.18, y + drop),
+                (x + w * 0.18, y),
+                (x + w * 0.82, y),
+                (x + w * 0.82, y + drop),
+                (x + w, y + drop),
+                (x + w - notch, cy + drop * 0.5),
+                (x + w, y + h),
+                (x + w * 0.82, y + h),
+                (x + w * 0.82, y + h - drop),
+                (x + w * 0.18, y + h - drop),
+                (x + w * 0.18, y + h),
+                (x, y + h),
+                (x + notch, cy + drop * 0.5),
+            ])
+        }
+        "verticalScroll" | "horizontalScroll" => {
+            let curl = ss * 0.12;
+            let mut cmds = round_rect_commands(x + curl * 0.5, y, w - curl, h, curl);
+            cmds.extend(ellipse_commands(x + curl, y + curl, curl * 0.5, curl * 0.5));
+            cmds.extend(ellipse_commands(
+                x + w - curl,
+                y + h - curl,
+                curl * 0.5,
+                curl * 0.5,
             ));
             cmds
         }
-        _ => {
-            // Remaining presets (clouds, ribbons, scrolls, arcs, cubes, cans, cylinders, plaques, tabs)
-            round_rect_commands(x, y, w, h, ss * 0.12)
+        "cornerTabs" | "squareTabs" | "plaqueTabs" => {
+            let tab = ss * 0.22;
+            let mut cmds = polygon_commands(&[(x, y), (x + tab, y), (x, y + tab)]);
+            cmds.extend(polygon_commands(&[
+                (x + w - tab, y),
+                (x + w, y),
+                (x + w, y + tab),
+            ]));
+            cmds.extend(polygon_commands(&[
+                (x + w, y + h - tab),
+                (x + w, y + h),
+                (x + w - tab, y + h),
+            ]));
+            cmds.extend(polygon_commands(&[
+                (x, y + h - tab),
+                (x + tab, y + h),
+                (x, y + h),
+            ]));
+            cmds
+        }
+        _ => round_rect_commands(x, y, w, h, ss * 0.12),
+    }
+}
+
+/// Return a [`CustomGeometry`] (`avLst`, `gdLst`, `pathLst`) representation for any of the
+/// 187 standard ECMA-376 preset shape names (`ST_ShapeType`).
+#[must_use]
+pub fn preset_geometry_definition(preset: &str) -> Option<CustomGeometry> {
+    if !is_known_preset_shape(preset) {
+        return None;
+    }
+    let sample_bounds = Rect::new(0.0, 0.0, 21_600.0, 21_600.0);
+    let cmds = build_preset_geometry_paths(preset, sample_bounds, &[]);
+    let mut custom_cmds = Vec::with_capacity(cmds.len());
+    for cmd in cmds {
+        match cmd {
+            PathCommand::MoveTo(p) => custom_cmds.push(CustomPathCmd::MoveTo {
+                x: format!("{:.0}", p.x),
+                y: format!("{:.0}", p.y),
+            }),
+            PathCommand::LineTo(p) => custom_cmds.push(CustomPathCmd::LineTo {
+                x: format!("{:.0}", p.x),
+                y: format!("{:.0}", p.y),
+            }),
+            PathCommand::QuadTo { ctrl, to } => custom_cmds.push(CustomPathCmd::QuadBezTo {
+                pt1: (format!("{:.0}", ctrl.x), format!("{:.0}", ctrl.y)),
+                pt2: (format!("{:.0}", to.x), format!("{:.0}", to.y)),
+            }),
+            PathCommand::CurveTo { ctrl1, ctrl2, to } => {
+                custom_cmds.push(CustomPathCmd::CubicBezTo {
+                    pt1: (format!("{:.0}", ctrl1.x), format!("{:.0}", ctrl1.y)),
+                    pt2: (format!("{:.0}", ctrl2.x), format!("{:.0}", ctrl2.y)),
+                    pt3: (format!("{:.0}", to.x), format!("{:.0}", to.y)),
+                });
+            }
+            PathCommand::Close => custom_cmds.push(CustomPathCmd::Close),
         }
     }
+    Some(CustomGeometry {
+        adjust_values: vec![GuideDef {
+            name: "adj".to_string(),
+            fmla: "val 16667".to_string(),
+        }],
+        guides: Vec::new(),
+        paths: vec![CustomPath {
+            width: 21_600,
+            height: 21_600,
+            commands: custom_cmds,
+        }],
+    })
+}
+
+#[allow(clippy::many_single_char_names, clippy::similar_names)]
+fn corner_rect_commands(
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    radii: [f32; 4],
+    snip: [bool; 4],
+) -> Vec<PathCommand> {
+    let [r_tl, r_tr, r_br, r_bl] = radii.map(|r| r.clamp(0.0, w.min(h) * 0.5));
+    let mut cmds = Vec::with_capacity(12);
+    cmds.push(PathCommand::MoveTo(Point::new(x + r_tl, y)));
+    cmds.push(PathCommand::LineTo(Point::new(x + w - r_tr, y)));
+    if r_tr > 0.5 {
+        if snip[1] {
+            cmds.push(PathCommand::LineTo(Point::new(x + w, y + r_tr)));
+        } else {
+            cmds.push(PathCommand::QuadTo {
+                ctrl: Point::new(x + w, y),
+                to: Point::new(x + w, y + r_tr),
+            });
+        }
+    }
+    cmds.push(PathCommand::LineTo(Point::new(x + w, y + h - r_br)));
+    if r_br > 0.5 {
+        if snip[2] {
+            cmds.push(PathCommand::LineTo(Point::new(x + w - r_br, y + h)));
+        } else {
+            cmds.push(PathCommand::QuadTo {
+                ctrl: Point::new(x + w, y + h),
+                to: Point::new(x + w - r_br, y + h),
+            });
+        }
+    }
+    cmds.push(PathCommand::LineTo(Point::new(x + r_bl, y + h)));
+    if r_bl > 0.5 {
+        if snip[3] {
+            cmds.push(PathCommand::LineTo(Point::new(x, y + h - r_bl)));
+        } else {
+            cmds.push(PathCommand::QuadTo {
+                ctrl: Point::new(x, y + h),
+                to: Point::new(x, y + h - r_bl),
+            });
+        }
+    }
+    cmds.push(PathCommand::LineTo(Point::new(x, y + r_tl)));
+    if r_tl > 0.5 {
+        if snip[0] {
+            cmds.push(PathCommand::LineTo(Point::new(x + r_tl, y)));
+        } else {
+            cmds.push(PathCommand::QuadTo {
+                ctrl: Point::new(x, y),
+                to: Point::new(x + r_tl, y),
+            });
+        }
+    }
+    cmds.push(PathCommand::Close);
+    cmds
 }
 
 fn rect_commands(x: f32, y: f32, w: f32, h: f32) -> Vec<PathCommand> {

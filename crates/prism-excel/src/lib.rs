@@ -26,8 +26,14 @@ pub use model::{
     parse_a1_cell_ref, parse_a1_range,
 };
 pub use udm::workbook_to_udm;
-pub use xls::{DEFAULT_MAX_XLS_STREAM_BYTES, decode_rk_number, is_xls_bytes, parse_xls};
-pub use xlsx::{DEFAULT_MAX_XLSX_ENTRY_BYTES, excel_chars_to_points, is_xlsx_zip, parse_xlsx};
+pub use xls::{
+    DEFAULT_MAX_XLS_STREAM_BYTES, decode_rk_number, decompile_biff8_rgce, is_xls_bytes, parse_xls,
+};
+pub use xlsx::{
+    DEFAULT_MAX_CELLS_PER_SHEET, DEFAULT_MAX_SHARED_STRINGS, DEFAULT_MAX_STYLES,
+    DEFAULT_MAX_XLSX_ENTRY_BYTES, ExcelParseLimits, LazySheetDescriptor, LazyWorkbook,
+    excel_chars_to_points, is_xlsx_zip, parse_xlsx, parse_xlsx_with_limits,
+};
 
 #[cfg(test)]
 #[allow(

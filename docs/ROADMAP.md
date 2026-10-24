@@ -79,7 +79,7 @@ Parsers ──► Flow/fixed model ──► prism-layout ──► LayoutPage[]
       `Prism.Native`):
       `open → page_count → render_page(n, dpi) → page_text(n) → search → export`.
 
-## Phase 2 – Word (DOCX, then DOC), 4–8 months
+## Phase 2 – Word (DOCX, then DOC)
 
 - [x] **M0 – Complete Word model & DOCX reader (`prism-word`).** Style inheritance
       (docDefaults → style chain → direct with `ToggleProp` XOR semantics),
@@ -106,7 +106,7 @@ Parsers ──► Flow/fixed model ──► prism-layout ──► LayoutPage[]
       `fidelity-baseline.json`, and Word latency budgets are not in place yet; the
       page-on-demand C ABI already opens DOCX/DOC through `prism-word`.
 
-## Phase 3 – PowerPoint and Excel, 3–6 months (in progress)
+## Phase 3 – PowerPoint and Excel (in progress)
 
 - [ ] **Shared DrawingML (`prism-drawingml`).** Done: theme colour scheme and
       colour transforms, fills and lines, custom geometry, the guide formula
@@ -139,7 +139,7 @@ Parsers ──► Flow/fixed model ──► prism-layout ──► LayoutPage[]
       are not in place yet; the page-on-demand C ABI already opens PPTX/PPT and
       XLSX/XLS through the new engines.
 
-## Phase 4 – Review and production features, 3–6 months (in progress)
+## Phase 4 – Review and production features (in progress)
 
 - [ ] **Hidden-content report** (`prism-core::review`, `prism-parsers::review`). Done:
       findings with severity, location and source references, and a per-provider coverage
@@ -153,9 +153,7 @@ Parsers ──► Flow/fixed model ──► prism-layout ──► LayoutPage[]
 - [ ] **Annotations and redaction** (`prism-review`). Done: external sidecar with a JSON
       schema, text anchors re-resolved across engine versions, proposed versus approved
       redactions, destructive removal of glyphs, image pixels, cells, formulas, comments and
-      metadata, and verification of every export. Pending: cutting vector paths that only
-      partly overlap a redaction (they stay under the box); verification by redacted area, so
-      redacting one occurrence of text that also appears elsewhere does not fail the export.
+      metadata, and verification of every export, including by redacted area (M6.5).
 - [ ] **Productions** (`prism-production`). Done: Bates numbering with family ranges,
       six-position endorsements, slip sheets, TIFF/PNG/PDF output, PDF/A-2b through krilla's
       validator, Concordance/Opticon/CSV load files, and a manifest rewritten after every
@@ -164,14 +162,102 @@ Parsers ──► Flow/fixed model ──► prism-layout ──► LayoutPage[]
 - [ ] **Process isolation** (`prism-sandbox`, `prism-worker`). Done: warm worker pool over
       a stdin/stdout protocol, per-job heap limit, wall-clock timeout, Windows Job Objects,
       Linux `no_new_privs`, no core dumps and an address-space backstop; `prism-cli` and
-      `prism-server` run documents through it. Pending: an OS-level network block; creating
-      workers suspended so they join their Job Object before running; the C ABI still parses
-      in the host process.
+      `prism-server` run documents through it, and the C ABI can open documents in a worker
+      session (M5.3). Pending: an OS-level network block; creating workers suspended so they
+      join their Job Object before running.
 - [x] **WASM sandboxing re-evaluated**: deferred in favour of process isolation (ADR 0012).
 - [ ] **Caching and versioned output**. Done: content-addressed cache keyed by input hash,
       engine version, options (including the filename) and artifact kind; `ENGINE_VERSION` in
       sidecars, manifests and cache keys. Pending: `LAYOUT_ALGORITHM_VERSION` is bumped by
       hand, and nothing checks that layout output changed only when it was bumped.
+
+## Phase 5 – Consolidation, email/HTML pagination and worker sessions (complete)
+
+- [x] **M5.1 – One pipeline, dead code removed.** `prism_parsers::pipeline` replaces the
+      three copies of the format dispatch in `prism-bindings`, `prism-sandbox` and
+      `prism-production`, backed by a single shared `ParserRegistry`. `PptxParser` and
+      `XlsxParser` delegate to `prism-ppt` and `prism-excel`, and the Phase 0 Office XML
+      modules (`shapes`, `slides`, `styles`, `tables`, `excel_styles`, `relationships`,
+      `theme`) are gone. PDF metadata comes from the information dictionary.
+- [x] **M5.2 – Paginated email and HTML.** `prism_layout::layout_document_paginated` turns
+      sanitized HTML bodies (paragraphs, headings, lists, tables, rules, data-URI images)
+      into flow layout, so EML, MSG, MBOX, HTML and MHT get positioned pages with character
+      boxes, redaction and Bates production. Malformed markup keeps its text: an unclosed
+      `<head>`, `<title>` or table does not hide what follows.
+- [x] **M5.3 – Worker sessions and sandboxed C ABI.** `SandboxManager::open_session` keeps
+      a parsed `LayoutDocument` inside one pinned `prism-worker` for page rendering, text and
+      search; `prism_document_open_sandboxed` exposes it in `bindings/c/prism.h`. Functions
+      that need the document in the host (export, annotations, reports, children) return an
+      error for a sandboxed handle.
+
+## Phase 6 – File sources, lazy sheets, page ranges and the canvas grid (in progress)
+
+- [ ] **M6.1 – `DocumentSource`.** Done: in-memory and file-backed sources in
+      `prism-core::source` with bounded-prefix format detection (plus the ZIP central
+      directory at the end of the file); `open_and_layout_path`, `OpenSessionFromPath`,
+      `prism_document_open_path` and `prism_document_open_path_sandboxed`. Pending: parsing
+      still reads the whole file into memory (capped at twice
+      `max_decompressed_stream_bytes`); true streaming needs `Read + Seek` parsers.
+- [x] **M6.2 – Lazy sheets and resource caps in `prism-excel`.** `LazyWorkbook` parses
+      workbook metadata, styles, theme and shared strings up front and each worksheet on
+      demand; `ExcelParseLimits` caps entry bytes, cells per sheet, shared strings and
+      styles.
+- [ ] **M6.3 – Page-range layout and streamed production images.** Done:
+      `layout_word_document_range`, `layout_document_paginated_range`,
+      `open_and_layout_page_range` and `export_pages_streaming`. Documents with page-count
+      fields take one full pass so "Page X of Y" stays correct. Pending: PowerPoint and Excel
+      lay out every page and then trim; `export_pages_streaming` parses again for each batch
+      and applies no redactions (redacted documents go through `run_production`).
+- [x] **M6.4 – Canvas spreadsheet grid.** High-DPI `<canvas>` grid mode in the viewer with
+      frozen panes, headers, comment and concealed-cell markers, and range selection.
+- [x] **M6.5 – Vector clipping and region verification.** Paths that cross a redaction are
+      cut: fills have the box subtracted as polygons, strokes are split at its edges.
+      Rectangle redactions remove only what lies inside their boxes (text-range redactions
+      also scrub their quoted text from the runs on their page), and `verify_redacted_regions`
+      re-reads the exported PDF and fails if any glyph other than the burned-in label lies
+      inside a box.
+
+## Phase 7 – PST/OST and short-message formats (in progress)
+
+- [ ] **M7.1 – Outlook `.pst` / `.ost` (`email::pst`).** Done: Unicode and ANSI headers,
+      node and block B-trees, `XBLOCK`/`XXBLOCK` data trees, subnode trees, heap-on-node
+      property contexts across blocks, large values stored in subnodes, permutation
+      (`NDB_CRYPT_PERMUTE`) decoding, folders, messages and attachments, synthesized `.eml`
+      children in the family tree, and a mailbox layout. Every B-tree page is visited once
+      and node data is capped, so hostile trees cannot loop or exhaust memory. Cyclic
+      encryption is reported as encrypted, not decoded. Pending: validation against a corpus
+      of real Outlook files (tests use a spec-built synthetic writer); compressed-RTF bodies
+      (flagged, not decoded); recipient tables; embedded-message attachments (listed without
+      contents).
+- [x] **M7.2 – Chat and short messages (`email::chat`).** RSMF (ZIP and RFC 5322 wrapper),
+      Slack and Teams JSON exports and WhatsApp text transcripts render as message timelines
+      with participants, reactions, attachments and `[EDITED]` / `[DELETED]` markers, and
+      report deletions and edits as findings. Chat exports are recognized by content only
+      when the file has no name or a `.txt` / `.json` name, so logs and JSON stay what they
+      are; Teams edits come from `lastEditedDateTime`, which reactions do not change.
+
+## Phase 8 – Office fidelity and legacy formats (in progress)
+
+- [ ] **M8.1 – Preset geometry and charts.** Done: every one of the 187 ECMA-376 preset
+      names produces geometry (`ALL_PRESET_SHAPES`, `preset_geometry_definition`), with
+      hand-written approximations for the newly covered shapes; charts gain scatter and
+      bubble X values, logarithmic axes, radar charts and a secondary value axis. Pending:
+      generating the shapes from `presetShapeDefinitions.xml` so their guides and handles
+      match Office exactly.
+- [ ] **M8.2 – Word and legacy binaries.** Done: line placement around `wp:wrapPolygon`
+      for tight and through wrapping (a line moves past the polygon only when it still fits);
+      `.doc` style sheet (`STSH`), lists (`PlfLst` / `PlfLfo`), footnotes numbered in
+      reference order, first-section headers and footers, and inline PNG/JPEG pictures; BIFF8
+      formula decompilation for common tokens and functions. A formula with any other token
+      shows as undecoded rather than as a partial expression, and encrypted `.xls` files
+      (including the `VelvetSweatshop` default) are reported as encrypted. Pending:
+      `compatibilityMode` spacing rules (parsed, not applied); 3-D, name and shared-formula
+      tokens; EMF/WMF pictures in `.doc`.
+- [ ] **M8.3 – Legacy and regional formats.** Done: Corel WordPerfect `.wpd` (WP6 text,
+      attributes and hidden-text groups), Hangul `.hwp` 5.x (OLE, compressed sections) and
+      `.hwpx` (OWPML XML), with detection, review findings and layout. HWP 3.x is reported
+      as unsupported. Pending: validation against real WordPerfect files; HWP tables,
+      pictures and `DocInfo` styles.
 
 ## Measuring fidelity
 

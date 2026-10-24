@@ -38,6 +38,7 @@ pub mod metadata;
 pub mod parser;
 pub mod render;
 pub mod review;
+pub mod source;
 pub mod text;
 pub mod tree;
 
@@ -53,6 +54,7 @@ pub use review::{
     Finding, FindingCategory, FindingKind, FormatCoverage, HiddenContentReport, Location,
     ReviewRect, Severity, SourceRef,
 };
+pub use source::{DEFAULT_DETECTION_PREFIX_BYTES, DocumentSource, SeekableReader};
 pub use tree::{ContainerLimits, ContainerNode, ContainerNodeStatus, FamilyTree};
 
 /// Prism SDK version

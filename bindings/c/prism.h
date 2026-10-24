@@ -102,6 +102,40 @@ char* prism_preview_file(const uint8_t* data, size_t len);
  */
 PrismDocument* prism_document_open(const uint8_t* data, size_t len, const char* filename);
 
+/**
+ * Open and lay out a document inside an isolated `prism-worker` sandbox session.
+ * Page count, page dimensions, page rendering, page text, and search execute inside
+ * the pinned worker process without re-transmitting or re-parsing the document bytes.
+ * Pass 0 for `max_memory_bytes` (default 256 MiB) or `timeout_ms` (default 30,000 ms).
+ * Free the returned handle with `prism_document_close()`.
+ */
+PrismDocument* prism_document_open_sandboxed(
+    const uint8_t* data,
+    size_t len,
+    const char* filename,
+    size_t max_memory_bytes,
+    uint64_t timeout_ms
+);
+
+/**
+ * Open and lay out a document directly from a UTF-8 filesystem `path` (`Read + Seek` streaming source).
+ * Returns a non-NULL `PrismDocument*` on success, or NULL on error (`prism_last_error()`).
+ * Free the returned handle with `prism_document_close()`.
+ */
+PrismDocument* prism_document_open_path(const char* path);
+
+/**
+ * Open and lay out a document directly from a UTF-8 filesystem `path` inside an isolated
+ * `prism-worker` sandbox session without copying the raw file bytes over the IPC pipe.
+ * Pass 0 for `max_memory_bytes` (default 256 MiB) or `timeout_ms` (default 30,000 ms).
+ * Free the returned handle with `prism_document_close()`.
+ */
+PrismDocument* prism_document_open_path_sandboxed(
+    const char* path,
+    size_t max_memory_bytes,
+    uint64_t timeout_ms
+);
+
 /** Close and free a `PrismDocument*`. Passing NULL is a safe no-op. */
 void prism_document_close(PrismDocument* doc);
 

@@ -36,4 +36,4 @@ pub use model::{
 };
 pub use pdf_input::{interpret_pdf_bytes, interpret_pdf_pages};
 pub use text_ops::{CharBox, SearchHit, SearchOptions};
-pub use udm::layout_document;
+pub use udm::{layout_document, layout_document_paginated, layout_document_paginated_range};

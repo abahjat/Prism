@@ -30,7 +30,7 @@ pub use cache::{ArtifactCache, CacheArtifactKind, CacheKey, FilesystemCache};
 pub use redaction::{
     RedactedExportFormat, RedactedExportResult, RedactionLog, RedactionLogEntry, apply_redactions,
     apply_workbook_redactions, cell_range_anchor, export_redacted_document,
-    has_approved_cell_redactions, scrub_metadata, verify_redacted_output,
+    has_approved_cell_redactions, scrub_metadata, verify_redacted_output, verify_redacted_regions,
 };
 pub use sidecar::{
     ANNOTATION_SIDECAR_SCHEMA_VERSION, AnchorResolutionStatus, Annotation, AnnotationAnchor,
@@ -397,6 +397,48 @@ mod tests {
         // The page's top quarter is the bottom ten pixel rows of the flipped image.
         assert_eq!(pixels.get_pixel(20, 35).0, [0, 0, 0, 255]);
         assert_eq!(pixels.get_pixel(20, 5).0, [250, 20, 20, 255]);
+    }
+
+    #[test]
+    fn region_verification_rejects_glyphs_whose_letters_match_the_label() {
+        // "trace" uses only letters found in "REDACTED"; it must still fail when it survives
+        // inside a box. Characters are 7pt wide from x = 72, so the word spans x 72..107.
+        let layout = build_sample_layout("trace", 120.0);
+        let pdf = prism_render::pdf::export_document_pdf(
+            &layout,
+            &prism_render::pdf::PdfExportOptions::default(),
+        )
+        .expect("pdf");
+        let entry = RedactionLogEntry {
+            annotation_id: "leak".to_string(),
+            reason_code: "PII".to_string(),
+            label: "REDACTED".to_string(),
+            target: RedactionTarget::PageRect,
+            page_index: 0,
+            rects_pt: vec![ReviewRect::new(70.0, 105.0, 40.0, 20.0)],
+            glyphs_removed: 0,
+            images_scrubbed: 0,
+        };
+        assert!(verify_redacted_regions(&pdf, Some("pdf"), &[entry]).is_err());
+
+        // The label itself, drawn inside its box, passes.
+        let labelled = build_sample_layout("REDACTED", 120.0);
+        let pdf = prism_render::pdf::export_document_pdf(
+            &labelled,
+            &prism_render::pdf::PdfExportOptions::default(),
+        )
+        .expect("pdf");
+        let entry = RedactionLogEntry {
+            annotation_id: "label".to_string(),
+            reason_code: "PII".to_string(),
+            label: "REDACTED".to_string(),
+            target: RedactionTarget::PageRect,
+            page_index: 0,
+            rects_pt: vec![ReviewRect::new(70.0, 105.0, 60.0, 20.0)],
+            glyphs_removed: 0,
+            images_scrubbed: 0,
+        };
+        verify_redacted_regions(&pdf, Some("pdf"), &[entry]).expect("label is allowed");
     }
 
     #[test]

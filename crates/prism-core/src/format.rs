@@ -983,6 +983,114 @@ impl Format {
             is_container: true,
         }
     }
+
+    /// Create a new Outlook Personal Storage Table (PST) format instance
+    #[must_use]
+    pub fn pst() -> Self {
+        Self {
+            mime_type: "application/vnd.ms-outlook-pst".to_string(),
+            extension: "pst".to_string(),
+            family: FormatFamily::Email,
+            name: "Outlook Personal Storage Table (PST)".to_string(),
+            is_container: true,
+        }
+    }
+
+    /// Create a new Outlook Offline Storage Table (OST) format instance
+    #[must_use]
+    pub fn ost() -> Self {
+        Self {
+            mime_type: "application/vnd.ms-outlook-ost".to_string(),
+            extension: "ost".to_string(),
+            family: FormatFamily::Email,
+            name: "Outlook Offline Storage Table (OST)".to_string(),
+            is_container: true,
+        }
+    }
+
+    /// Create a new Relativity Short Message Format (RSMF) instance
+    #[must_use]
+    pub fn rsmf() -> Self {
+        Self {
+            mime_type: "application/vnd.relativity.rsmf".to_string(),
+            extension: "rsmf".to_string(),
+            family: FormatFamily::Email,
+            name: "Relativity Short Message Format (RSMF)".to_string(),
+            is_container: true,
+        }
+    }
+
+    /// Create a new Slack chat export format instance
+    #[must_use]
+    pub fn slack_chat() -> Self {
+        Self {
+            mime_type: "application/vnd.slack.chat+json".to_string(),
+            extension: "slack".to_string(),
+            family: FormatFamily::Email,
+            name: "Slack Chat Export".to_string(),
+            is_container: false,
+        }
+    }
+
+    /// Create a new Microsoft Teams chat export format instance
+    #[must_use]
+    pub fn teams_chat() -> Self {
+        Self {
+            mime_type: "application/vnd.ms-teams.chat+json".to_string(),
+            extension: "teams".to_string(),
+            family: FormatFamily::Email,
+            name: "Microsoft Teams Chat Export".to_string(),
+            is_container: false,
+        }
+    }
+
+    /// Create a new `WhatsApp` chat transcript format instance
+    #[must_use]
+    pub fn whatsapp_chat() -> Self {
+        Self {
+            mime_type: "text/vnd.whatsapp".to_string(),
+            extension: "whatsapp".to_string(),
+            family: FormatFamily::Email,
+            name: "WhatsApp Chat Transcript".to_string(),
+            is_container: false,
+        }
+    }
+
+    /// Create a new Corel `WordPerfect` (`.wpd`) format instance
+    #[must_use]
+    pub fn wpd() -> Self {
+        Self {
+            mime_type: "application/vnd.wordperfect".to_string(),
+            extension: "wpd".to_string(),
+            family: FormatFamily::Legacy,
+            name: "Corel WordPerfect Document".to_string(),
+            is_container: false,
+        }
+    }
+
+    /// Create a new Korean Hangul Word Processor (`.hwp`) format instance
+    #[must_use]
+    pub fn hwp() -> Self {
+        Self {
+            mime_type: "application/x-hwp".to_string(),
+            extension: "hwp".to_string(),
+            family: FormatFamily::Office,
+            name: "Hangul Word Processor (HWP)".to_string(),
+            is_container: true,
+        }
+    }
+
+    /// Create a new Korean Hangul OWPML (`.hwpx`) format instance
+    #[must_use]
+    pub fn hwpx() -> Self {
+        Self {
+            mime_type: "application/hwp+zip".to_string(),
+            extension: "hwpx".to_string(),
+            family: FormatFamily::Office,
+            name: "Hangul OWPML Document (HWPX)".to_string(),
+            is_container: true,
+        }
+    }
 }
 
 /// Format families for categorization
@@ -1354,6 +1462,24 @@ static SIGNATURES: &[FormatSignature] = &[
         offset: 0,
         format: Format::psd,
     },
+    // Outlook PST / OST (!BDN)
+    FormatSignature {
+        bytes: &[0x21, 0x42, 0x44, 0x4E],
+        offset: 0,
+        format: Format::pst,
+    },
+    // Corel WordPerfect (.wpd)
+    FormatSignature {
+        bytes: &[0xFF, b'W', b'P', b'C'],
+        offset: 0,
+        format: Format::wpd,
+    },
+    // Hangul Word Processor v3.0 (.hwp)
+    FormatSignature {
+        bytes: b"HWP Document File",
+        offset: 0,
+        format: Format::hwp,
+    },
 ];
 
 /// Extension to format mapping
@@ -1476,6 +1602,18 @@ static EXTENSION_MAP: &[(&str, fn() -> Format)] = &[
     ("z", Format::unix_compress),
     ("ico", Format::ico),
     ("cur", Format::cur),
+    // Phase 7 formats
+    ("pst", Format::pst),
+    ("ost", Format::ost),
+    ("rsmf", Format::rsmf),
+    ("slack", Format::slack_chat),
+    ("teams", Format::teams_chat),
+    ("whatsapp", Format::whatsapp_chat),
+    // Phase 8 formats
+    ("wpd", Format::wpd),
+    ("wp", Format::wpd),
+    ("hwp", Format::hwp),
+    ("hwpx", Format::hwpx),
 ];
 
 /// Detect the format of a document from its content
@@ -1492,15 +1630,30 @@ static EXTENSION_MAP: &[(&str, fn() -> Format)] = &[
 pub fn detect_format(data: &[u8], filename: Option<&str>) -> Option<DetectionResult> {
     // Try magic bytes first (highest confidence)
     if let Some(result) = detect_by_magic(data) {
-        // If it's a ZIP, check if it's actually an Office document
+        // If it's a ZIP, check if it's actually an Office or RSMF document
         if result.format.mime_type == "application/zip"
-            && let Some(office_format) = detect_office_in_zip(data)
+            && let Some(office_format) = detect_office_in_zip_with_hint(data, filename)
         {
             return Some(DetectionResult {
                 format: office_format,
                 confidence: 0.95,
                 method: DetectionMethod::ContainerInspection,
             });
+        }
+        // Disambiguate PST vs OST when !BDN magic is matched
+        if result.format.mime_type == "application/vnd.ms-outlook-pst" {
+            let is_ost_ext = filename
+                .and_then(|f| f.rsplit('.').next())
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("ost"));
+            // wClientMagic at offset 8..10 is "SO" (0x4F53 LE = [0x53, 0x4F]) for OST
+            let is_ost_magic = data.len() >= 10 && data[8] == 0x53 && data[9] == 0x4F;
+            if is_ost_ext || is_ost_magic {
+                return Some(DetectionResult {
+                    format: Format::ost(),
+                    confidence: 0.99,
+                    method: DetectionMethod::MagicBytes,
+                });
+            }
         }
         // If it's OLE2/CFB, check if it's a legacy Office document
         if result.format.mime_type == "application/x-cfb"
@@ -1513,6 +1666,21 @@ pub fn detect_format(data: &[u8], filename: Option<&str>) -> Option<DetectionRes
             });
         }
         return Some(result);
+    }
+
+    // Chat exports have no magic and share `.txt` / `.json` names with ordinary files, so they
+    // are sniffed only when the name gives no other answer.
+    let ext = filename
+        .and_then(|f| f.rsplit_once('.'))
+        .map(|(_, e)| e.to_ascii_lowercase());
+    if matches!(ext.as_deref(), None | Some("txt" | "json"))
+        && let Some(chat_format) = detect_chat_or_rsmf_by_content(data)
+    {
+        return Some(DetectionResult {
+            format: chat_format,
+            confidence: 0.92,
+            method: DetectionMethod::ContentAnalysis,
+        });
     }
 
     // Try extension-based detection
@@ -1559,6 +1727,128 @@ fn detect_by_extension(filename: &str) -> Option<DetectionResult> {
     None
 }
 
+/// Check if a ZIP file is an RSMF container or an Office document
+fn detect_office_in_zip_with_hint(data: &[u8], filename: Option<&str>) -> Option<Format> {
+    // Relativity Short Message Format: a ZIP with `rsmf_manifest.json` at its root
+    let rsmf_manifest = b"rsmf_manifest.json";
+    if data
+        .windows(rsmf_manifest.len())
+        .any(|w| w == rsmf_manifest)
+    {
+        return Some(Format::rsmf());
+    }
+    if let Some(office) = detect_office_in_zip(data) {
+        return Some(office);
+    }
+    // A package missing `[Content_Types].xml` (damaged, or written by hand) is still taken
+    // as Office when its name says so and its main part is there.
+    let contains = |needle: &[u8]| data.windows(needle.len()).any(|w| w == needle);
+    let ext = filename
+        .and_then(|f| f.rsplit_once('.'))
+        .map(|(_, e)| e.to_ascii_lowercase());
+    match ext.as_deref() {
+        Some("docx" | "docm" | "dotx" | "dotm") if contains(b"word/document.xml") => {
+            Some(Format::docx())
+        }
+        Some("pptx" | "pptm" | "ppsx" | "potx")
+            if contains(b"ppt/presentation.xml") || contains(b"ppt/slides/") =>
+        {
+            Some(Format::pptx())
+        }
+        Some("xlsx" | "xlsm" | "xltx") if contains(b"xl/workbook.xml") => Some(Format::xlsx()),
+        _ => None,
+    }
+}
+
+/// Detect RSMF RFC 5322 wrapper or eDiscovery chat exports (Slack, Teams, `WhatsApp`) by content
+fn detect_chat_or_rsmf_by_content(data: &[u8]) -> Option<Format> {
+    let sample_len = data.len().min(16384);
+    let sample = std::str::from_utf8(&data[..sample_len]).ok()?;
+    let trimmed = sample.trim_start();
+
+    // RSMF RFC 5322 wrapper (`X-RSMF-*` headers) or a bare `rsmf_manifest.json`
+    let has_rsmf_header = sample
+        .lines()
+        .take(64)
+        .any(|l| l.starts_with("X-RSMF-Version:") || l.starts_with("X-RSMF-EventCount:"));
+    if has_rsmf_header
+        || (trimmed.starts_with('{')
+            && sample.contains("\"participants\"")
+            && sample.contains("\"conversations\"")
+            && sample.contains("\"events\""))
+    {
+        return Some(Format::rsmf());
+    }
+
+    // Slack JSON export: array or object with Slack message fields
+    if (trimmed.starts_with('[') || trimmed.starts_with('{'))
+        && (sample.contains("\"type\": \"message\"") || sample.contains("\"type\":\"message\""))
+        && (sample.contains("\"ts\":") || sample.contains("\"client_msg_id\":"))
+    {
+        return Some(Format::slack_chat());
+    }
+
+    // Microsoft Teams JSON export
+    if (trimmed.starts_with('[') || trimmed.starts_with('{'))
+        && ((sample.contains("\"messageType\"")
+            && sample.contains("\"from\"")
+            && sample.contains("\"body\""))
+            || (sample.contains("\"channelIdentity\"") && sample.contains("\"createdDateTime\"")))
+    {
+        return Some(Format::teams_chat());
+    }
+
+    // WhatsApp chat transcript: lines starting `[date, time] Name: ` or `date, time - Name: `.
+    // Continuation lines of multi-line messages do not match, so at least two lines must.
+    let mut whatsapp_lines = 0usize;
+    let mut first_line_matches = false;
+    for (idx, line) in trimmed
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .take(12)
+        .enumerate()
+    {
+        if is_whatsapp_timestamp_line(line) {
+            whatsapp_lines += 1;
+            if idx == 0 {
+                first_line_matches = true;
+            }
+        }
+    }
+    if first_line_matches && whatsapp_lines >= 2 {
+        return Some(Format::whatsapp_chat());
+    }
+
+    None
+}
+
+fn is_whatsapp_timestamp_line(line: &str) -> bool {
+    // Both export styles separate the date from the time with `, `, which log formats rarely do.
+    if let Some(rest) = line.strip_prefix('[')
+        && let Some((ts, after_bracket)) = rest.split_once("] ")
+        && ts.len() >= 10
+        && ts.chars().next().is_some_and(|c| c.is_ascii_digit())
+        && (ts.contains('-') || ts.contains('/') || ts.contains('.'))
+        && ts.contains(", ")
+        && ts.contains(':')
+        && after_bracket.contains(": ")
+    {
+        return true;
+    }
+    if let Some((date_time, after_dash)) = line.split_once(" - ")
+        && date_time.len() >= 10
+        && date_time.chars().next().is_some_and(|c| c.is_ascii_digit())
+        && (date_time.contains('/') || date_time.contains('-'))
+        && date_time.contains(',')
+        && date_time.contains(':')
+        && after_dash.contains(": ")
+    {
+        return true;
+    }
+    false
+}
+
 /// Check if a ZIP file is actually an Office document
 fn detect_office_in_zip(data: &[u8]) -> Option<Format> {
     // Check for ODF formats first - they have a "mimetype" file at the start
@@ -1598,38 +1888,52 @@ fn detect_office_in_zip(data: &[u8]) -> Option<Format> {
         return Some(Format::xps());
     }
 
-    // Simple check: look for "[Content_Types].xml" which is present in OOXML
-    // In a real implementation, you'd actually parse the ZIP
+    // Check for Korean Hangul OWPML (.hwpx)
+    let hwpx_sec = b"Contents/section0.xml";
+    let hwpx_hpf = b"Contents/content.hpf";
+    let hwpx_mime = b"mimetypeapplication/hwp+zip";
+    if data.windows(hwpx_sec.len()).any(|w| w == hwpx_sec)
+        || data.windows(hwpx_hpf.len()).any(|w| w == hwpx_hpf)
+        || data.windows(hwpx_mime.len()).any(|w| w == hwpx_mime)
+    {
+        return Some(Format::hwpx());
+    }
 
+    // OOXML part names are only trusted inside an OPC package (`[Content_Types].xml`), so a
+    // plain archive that happens to hold an unpacked `word/` folder stays an archive.
     let content_types = b"[Content_Types].xml";
-    if data
+    if !data
         .windows(content_types.len())
         .any(|w| w == content_types)
     {
-        // Check for specific OOXML document entry paths inside the ZIP container
-        let word_doc = b"word/document.xml";
-        let word_dir = b"word/";
-        let ppt_pres = b"ppt/presentation.xml";
-        let ppt_slides = b"ppt/slides/";
-        let xl_book = b"xl/workbook.xml";
-        let xl_sheets = b"xl/worksheets/";
+        return None;
+    }
+    let word_doc = b"word/document.xml";
+    let word_dir = b"word/";
+    let ppt_pres = b"ppt/presentation.xml";
+    let ppt_slides = b"ppt/slides/";
+    let xl_book = b"xl/workbook.xml";
+    let xl_sheets = b"xl/worksheets/";
+    let visio_doc = b"visio/document.xml";
 
-        if data.windows(word_doc.len()).any(|w| w == word_doc) {
-            return Some(Format::docx());
-        }
-        if data.windows(ppt_pres.len()).any(|w| w == ppt_pres)
-            || data.windows(ppt_slides.len()).any(|w| w == ppt_slides)
-        {
-            return Some(Format::pptx());
-        }
-        if data.windows(xl_book.len()).any(|w| w == xl_book)
-            || data.windows(xl_sheets.len()).any(|w| w == xl_sheets)
-        {
-            return Some(Format::xlsx());
-        }
-        if data.windows(word_dir.len()).any(|w| w == word_dir) {
-            return Some(Format::docx());
-        }
+    if data.windows(word_doc.len()).any(|w| w == word_doc) {
+        return Some(Format::docx());
+    }
+    if data.windows(ppt_pres.len()).any(|w| w == ppt_pres)
+        || data.windows(ppt_slides.len()).any(|w| w == ppt_slides)
+    {
+        return Some(Format::pptx());
+    }
+    if data.windows(xl_book.len()).any(|w| w == xl_book)
+        || data.windows(xl_sheets.len()).any(|w| w == xl_sheets)
+    {
+        return Some(Format::xlsx());
+    }
+    if data.windows(visio_doc.len()).any(|w| w == visio_doc) {
+        return Some(Format::vsdx());
+    }
+    if data.windows(word_dir.len()).any(|w| w == word_dir) {
+        return Some(Format::docx());
     }
 
     None
@@ -1718,6 +2022,21 @@ fn detect_office_in_ole(data: &[u8], filename: Option<&str>) -> Option<Format> {
         return Some(Format::mpp());
     }
 
+    // Korean Hangul (.hwp v5.0): "FileHeader" + "BodyText" / "HWP Summary Information"
+    let hwp_hdr_utf16 = b"F\0i\0l\0e\0H\0e\0a\0d\0e\0r";
+    let hwp_body_utf16 = b"B\0o\0d\0y\0T\0e\0x\0t";
+    let hwp_sig = b"HWP Document File";
+    if (data
+        .windows(hwp_hdr_utf16.len())
+        .any(|w| w == hwp_hdr_utf16)
+        && data
+            .windows(hwp_body_utf16.len())
+            .any(|w| w == hwp_body_utf16))
+        || data.windows(hwp_sig.len()).any(|w| w == hwp_sig)
+    {
+        return Some(Format::hwp());
+    }
+
     None
 }
 
@@ -1740,6 +2059,15 @@ pub fn format_by_mime(mime_type: &str) -> Option<Format> {
         "multipart/related" => Some(Format::mht()),
         "application/epub+zip" => Some(Format::epub()),
         "application/vnd.ms-xpsdocument" | "application/oxps" => Some(Format::xps()),
+        "application/vnd.ms-outlook-pst" => Some(Format::pst()),
+        "application/vnd.ms-outlook-ost" => Some(Format::ost()),
+        "application/vnd.relativity.rsmf" | "application/rsmf" => Some(Format::rsmf()),
+        "application/vnd.slack.chat+json" => Some(Format::slack_chat()),
+        "application/vnd.ms-teams.chat+json" => Some(Format::teams_chat()),
+        "text/vnd.whatsapp" => Some(Format::whatsapp_chat()),
+        "application/vnd.wordperfect" | "application/wordperfect" => Some(Format::wpd()),
+        "application/x-hwp" | "application/vnd.hancom.hwp" => Some(Format::hwp()),
+        "application/hwp+zip" | "application/vnd.hancom.hwpx" => Some(Format::hwpx()),
         _ => None,
     }
 }

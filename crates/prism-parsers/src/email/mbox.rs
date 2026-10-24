@@ -102,6 +102,32 @@ impl MboxParser {
             text_runs.push(Self::format_email_header("To", &to_str));
         }
 
+        // Extract Cc header
+        if let Some(cc) = message.cc() {
+            let cc_str = cc
+                .iter()
+                .map(|addr| {
+                    if let Some(name) = &addr.name {
+                        let email = addr
+                            .address
+                            .as_ref()
+                            .map(std::string::ToString::to_string)
+                            .unwrap_or_default();
+                        format!("{name} <{email}>")
+                    } else {
+                        addr.address
+                            .as_ref()
+                            .map(std::string::ToString::to_string)
+                            .unwrap_or_default()
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            if !cc_str.is_empty() {
+                text_runs.push(Self::format_email_header("Cc", &cc_str));
+            }
+        }
+
         // Extract Subject
         if let Some(subject) = message.subject() {
             text_runs.push(Self::format_email_header("Subject", subject));
@@ -119,7 +145,7 @@ impl MboxParser {
         let body_text = if let Some(text_body) = message.body_text(0) {
             text_body.to_string()
         } else if let Some(html_body) = message.body_html(0) {
-            html_body.to_string()
+            prism_core::text::html_to_text(&html_body)
         } else {
             String::from("[No message body]")
         };

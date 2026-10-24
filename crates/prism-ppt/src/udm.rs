@@ -14,6 +14,7 @@ use prism_drawingml::DrawingTheme;
 
 /// Convert a [`Presentation`] into a [`prism_core::document::Document`].
 #[must_use]
+#[allow(clippy::too_many_lines)]
 pub fn presentation_to_udm(pres: &Presentation, format_label: &str) -> Document {
     let slide_dims = Dimensions::new(
         f64::from(pres.slide_width_pt),
@@ -25,6 +26,52 @@ pub fn presentation_to_udm(pres: &Presentation, format_label: &str) -> Document 
     for slide in &pres.slides {
         let (layout, master, theme) = pres.resolve_slide_hierarchy(slide, &fallback_theme);
         let mut content = Vec::new();
+
+        let eff_bg = match &slide.background {
+            ShapeFill::Inherited => layout
+                .map(|l| &l.background)
+                .filter(|b| !matches!(b, ShapeFill::Inherited))
+                .or_else(|| {
+                    master
+                        .map(|m| &m.background)
+                        .filter(|b| !matches!(b, ShapeFill::Inherited))
+                }),
+            other => Some(other),
+        };
+        if let Some(bg_fill) = eff_bg {
+            let bg_bounds = Rect::new(0.0, 0.0, slide_dims.width, slide_dims.height);
+            match bg_fill {
+                ShapeFill::Solid(c) => {
+                    content.push(ContentBlock::Text(TextBlock {
+                        runs: Vec::new(),
+                        paragraph_style: None,
+                        bounds: bg_bounds,
+                        vertical_alignment: None,
+                        style: ShapeStyle {
+                            fill_color: Some(c.to_hex_rgb()),
+                            z_index: Some(-1),
+                            ..ShapeStyle::default()
+                        },
+                        rotation: 0.0,
+                    }));
+                }
+                ShapeFill::Picture { resource_id } => {
+                    content.push(ContentBlock::Image(ImageBlock {
+                        bounds: bg_bounds,
+                        resource_id: resource_id.clone(),
+                        alt_text: None,
+                        format: None,
+                        original_size: None,
+                        style: ShapeStyle {
+                            z_index: Some(-1),
+                            ..ShapeStyle::default()
+                        },
+                        rotation: 0.0,
+                    }));
+                }
+                _ => {}
+            }
+        }
 
         for shape in &slide.shapes {
             convert_shape_to_udm(pres, slide, shape, layout, master, theme, &mut content);
@@ -63,6 +110,15 @@ pub fn presentation_to_udm(pres: &Presentation, format_label: &str) -> Document 
     metadata.title.clone_from(&pres.title);
     metadata.author.clone_from(&pres.author);
     metadata.add_custom("format", format_label);
+    #[allow(clippy::cast_possible_wrap)]
+    metadata.add_custom("slide_count", pages.len() as i64);
+    if let Some(first_theme) = pres.themes.values().next() {
+        if !first_theme.name.is_empty() {
+            metadata.add_custom("theme_name", first_theme.name.clone());
+        }
+        metadata.add_custom("theme_font_major", first_theme.major_latin_font.clone());
+        metadata.add_custom("theme_font_minor", first_theme.minor_latin_font.clone());
+    }
 
     let mut document = Document::builder().metadata(metadata).build();
     document.pages = pages;
@@ -71,7 +127,7 @@ pub fn presentation_to_udm(pres: &Presentation, format_label: &str) -> Document 
     document
 }
 
-#[allow(clippy::only_used_in_recursion)]
+#[allow(clippy::only_used_in_recursion, clippy::too_many_lines)]
 fn convert_shape_to_udm(
     pres: &Presentation,
     slide: &Slide,
@@ -81,36 +137,76 @@ fn convert_shape_to_udm(
     theme: &DrawingTheme,
     out: &mut Vec<ContentBlock>,
 ) {
+    let (layout_ph, master_ph) = shape.placeholder.as_ref().map_or((None, None), |ph| {
+        Presentation::resolve_placeholder_chain(ph, layout, master)
+    });
+
+    let has_own_bounds = shape.width_pt > 0.0 && shape.height_pt > 0.0;
+    let (x_pt, y_pt, w_pt, h_pt) = if has_own_bounds {
+        (shape.x_pt, shape.y_pt, shape.width_pt, shape.height_pt)
+    } else if let Some(lph) = layout_ph.filter(|s| s.width_pt > 0.0 && s.height_pt > 0.0) {
+        (lph.x_pt, lph.y_pt, lph.width_pt, lph.height_pt)
+    } else if let Some(mph) = master_ph.filter(|s| s.width_pt > 0.0 && s.height_pt > 0.0) {
+        (mph.x_pt, mph.y_pt, mph.width_pt, mph.height_pt)
+    } else {
+        (shape.x_pt, shape.y_pt, shape.width_pt, shape.height_pt)
+    };
+
     let bounds = Rect::new(
-        f64::from(shape.x_pt),
-        f64::from(shape.y_pt),
-        f64::from(shape.width_pt.max(1.0)),
-        f64::from(shape.height_pt.max(1.0)),
+        f64::from(x_pt),
+        f64::from(y_pt),
+        f64::from(w_pt.max(1.0)),
+        f64::from(h_pt.max(1.0)),
     );
+
+    let eff_fill = match &shape.fill {
+        ShapeFill::Inherited => layout_ph
+            .map(|s| &s.fill)
+            .filter(|f| !matches!(f, ShapeFill::Inherited))
+            .or_else(|| {
+                master_ph
+                    .map(|s| &s.fill)
+                    .filter(|f| !matches!(f, ShapeFill::Inherited))
+            })
+            .unwrap_or(&shape.fill),
+        other => other,
+    };
+    let eff_stroke = shape
+        .stroke
+        .as_ref()
+        .or_else(|| layout_ph.and_then(|s| s.stroke.as_ref()))
+        .or_else(|| master_ph.and_then(|s| s.stroke.as_ref()));
+
     let shape_style = ShapeStyle {
-        fill_color: match shape.fill {
+        fill_color: match eff_fill {
             ShapeFill::Solid(c) => Some(c.to_hex_rgb()),
             _ => None,
         },
-        stroke_color: shape.stroke.as_ref().map(|s| s.color.to_hex_rgb()),
-        stroke_width: shape.stroke.as_ref().map(|s| f64::from(s.width_pt)),
+        stroke_color: eff_stroke.map(|s| s.color.to_hex_rgb()),
+        stroke_width: eff_stroke.map(|s| f64::from(s.width_pt)),
         ..ShapeStyle::default()
     };
 
     match &shape.kind {
         ShapeKind::AutoShape { text_body } => {
-            if let Some(tb) = text_body {
-                let runs = convert_text_body_runs(tb, slide.number, theme);
-                if !runs.is_empty() {
-                    out.push(ContentBlock::Text(TextBlock {
-                        runs,
-                        paragraph_style: None,
-                        bounds,
-                        vertical_alignment: None,
-                        style: shape_style,
-                        rotation: f64::from(shape.rotation_deg),
-                    }));
-                }
+            // Only the slide's own text: the text in layout and master placeholders is prompt
+            // text ("Click to add title"), which PowerPoint never shows on the slide.
+            let runs = text_body
+                .as_ref()
+                .map(|tb| convert_text_body_runs(tb, slide.number, theme))
+                .unwrap_or_default();
+            if !runs.is_empty()
+                || shape_style.fill_color.is_some()
+                || shape_style.stroke_color.is_some()
+            {
+                out.push(ContentBlock::Text(TextBlock {
+                    runs,
+                    paragraph_style: None,
+                    bounds,
+                    vertical_alignment: None,
+                    style: shape_style,
+                    rotation: f64::from(shape.rotation_deg),
+                }));
             }
         }
         ShapeKind::Picture { resource_id, .. } => {

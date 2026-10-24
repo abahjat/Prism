@@ -224,7 +224,9 @@ pub async fn render_page_handler(
 
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     let cache_kind = match render_format {
-        RenderOutputFormat::Svg => CacheArtifactKind::PageSvg { page_index },
+        RenderOutputFormat::Svg | RenderOutputFormat::ViewerFragment => {
+            CacheArtifactKind::PageSvg { page_index }
+        }
         RenderOutputFormat::Png => CacheArtifactKind::PagePng {
             page_index,
             dpi_milli: (query.dpi * 1000.0).round() as u32,
@@ -237,6 +239,7 @@ pub async fn render_page_handler(
         let content_type = match render_format {
             RenderOutputFormat::Svg => "image/svg+xml; charset=utf-8",
             RenderOutputFormat::Png => "image/png",
+            RenderOutputFormat::ViewerFragment => "text/html; charset=utf-8",
         };
         return Ok((
             StatusCode::OK,

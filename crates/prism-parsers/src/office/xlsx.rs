@@ -1,29 +1,20 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-//! XLSX (Excel) parser
+//! XLSX (Microsoft Excel) parser
 //!
-//! Parses `XLSX` (Office Open XML Spreadsheet) files into the Unified Document Model.
-//! Each worksheet becomes a Page containing a `TableBlock` with the cell grid.
+//! Parses XLSX files into the Unified Document Model via [`prism_excel`].
 
 use async_trait::async_trait;
 use bytes::Bytes;
 use prism_core::{
-    document::{
-        ContentBlock, Dimensions, Document, Page, PageMetadata, TableBlock, TableCell, TableRow,
-        TextBlock, TextRun, TextStyle,
-    },
-    error::{Error, Result},
+    document::Document,
+    error::Result,
     format::Format,
-    metadata::Metadata,
     parser::{ParseContext, Parser, ParserFeature, ParserMetadata},
 };
-use std::io::Cursor;
-use tracing::{debug, warn};
-use zip::ZipArchive;
+use prism_excel::{is_xlsx_zip, parse_xlsx, workbook_to_udm};
+use tracing::debug;
 
-use crate::office::excel_styles::ExcelStyles;
-use crate::office::theme::{Theme, parse_theme};
-
-/// XLSX (Excel) parser
+/// XLSX parser
 #[derive(Debug, Clone)]
 pub struct XlsxParser;
 
@@ -34,7 +25,7 @@ impl XlsxParser {
         Self
     }
 
-    /// Parse an XLSX/XLSM byte slice directly into a rich [`prism_excel::Workbook`].
+    /// Parse an XLSX byte slice directly into a [`prism_excel::Workbook`].
     ///
     /// # Errors
     /// Returns an error if the ZIP archive is malformed or exceeds memory limits.
@@ -44,457 +35,7 @@ impl XlsxParser {
         context: &ParseContext,
     ) -> Result<prism_excel::Workbook> {
         let limit = crate::limits::max_decompressed_bytes(context);
-        prism_excel::parse_xlsx(data, limit)
-    }
-
-    /// Check if data is an XLSX file by checking ZIP signature
-    #[must_use]
-    fn is_xlsx_zip(data: &[u8]) -> bool {
-        if data.len() < 4 {
-            return false;
-        }
-        data[0] == 0x50
-            && data[1] == 0x4B
-            && (data[2] == 0x03 || data[2] == 0x05)
-            && data[3] == 0x04
-    }
-
-    /// Parse shared strings table from `xl/sharedStrings.xml`
-    fn parse_shared_strings(
-        archive: &mut ZipArchive<Cursor<&[u8]>>,
-        limit: usize,
-    ) -> Result<Vec<String>> {
-        let mut strings = Vec::new();
-        if let Ok(mut file) = archive.by_name("xl/sharedStrings.xml") {
-            let mut xml = String::new();
-            crate::limits::read_to_string_with_limit(&mut file, &mut xml, limit)?;
-            let mut reader = quick_xml::Reader::from_str(&xml);
-            reader.config_mut().trim_text(true);
-            let mut buf = Vec::new();
-            let mut current_string = String::new();
-            let mut in_si = false;
-
-            loop {
-                match reader.read_event_into(&mut buf) {
-                    Ok(quick_xml::events::Event::Start(e)) => {
-                        if e.name().as_ref().as_bytes() == b"si" {
-                            in_si = true;
-                            current_string.clear();
-                        } else if e.name().as_ref().as_bytes() == b"t"
-                            && in_si
-                            && let Ok(text) = reader.read_text(e.name())
-                        {
-                            if let Ok(unescaped) = quick_xml::escape::unescape(&text) {
-                                current_string.push_str(&unescaped);
-                            } else {
-                                current_string.push_str(&text);
-                            }
-                        }
-                    }
-                    Ok(quick_xml::events::Event::End(e)) => {
-                        if e.name().as_ref().as_bytes() == b"si" {
-                            strings.push(current_string.clone());
-                            in_si = false;
-                        }
-                    }
-                    Ok(quick_xml::events::Event::Eof) => break,
-                    _ => {}
-                }
-                buf.clear();
-            }
-        }
-        Ok(strings)
-    }
-
-    /// Parse `workbook.xml` to get sheets (name, target)
-    fn parse_workbook_sheets(
-        archive: &mut ZipArchive<Cursor<&[u8]>>,
-        limit: usize,
-    ) -> Result<Vec<(String, String)>> {
-        let mut sheets = Vec::new();
-        if let Ok(mut file) = archive.by_name("xl/workbook.xml") {
-            let mut xml = String::new();
-            crate::limits::read_to_string_with_limit(&mut file, &mut xml, limit)?;
-            let mut reader = quick_xml::Reader::from_str(&xml);
-            reader.config_mut().trim_text(true);
-            let mut buf = Vec::new();
-
-            loop {
-                match reader.read_event_into(&mut buf) {
-                    Ok(quick_xml::events::Event::Empty(e) | quick_xml::events::Event::Start(e)) => {
-                        if e.name().as_ref().as_bytes() == b"sheet" {
-                            let mut name = String::new();
-                            let mut rid = String::new();
-                            for attr in e.attributes().flatten() {
-                                match attr.key.as_ref().as_bytes() {
-                                    b"name" => {
-                                        name = crate::office::utils::attr_value(&attr.value);
-                                    }
-                                    b"r:id" => {
-                                        rid = crate::office::utils::attr_value(&attr.value);
-                                    }
-                                    _ => {}
-                                }
-                            }
-                            if !name.is_empty() && !rid.is_empty() {
-                                sheets.push((name, rid));
-                            }
-                        }
-                    }
-                    Ok(quick_xml::events::Event::Eof) => break,
-                    _ => {}
-                }
-                buf.clear();
-            }
-        }
-        Ok(sheets)
-    }
-
-    /// Parse workbook rels
-    fn parse_workbook_rels(
-        archive: &mut ZipArchive<Cursor<&[u8]>>,
-        limit: usize,
-    ) -> Result<std::collections::HashMap<String, String>> {
-        let mut rels = std::collections::HashMap::new();
-        if let Ok(mut file) = archive.by_name("xl/_rels/workbook.xml.rels") {
-            let mut xml = String::new();
-            crate::limits::read_to_string_with_limit(&mut file, &mut xml, limit)?;
-            let mut reader = quick_xml::Reader::from_str(&xml);
-            reader.config_mut().trim_text(true);
-            let mut buf = Vec::new();
-
-            loop {
-                match reader.read_event_into(&mut buf) {
-                    Ok(quick_xml::events::Event::Empty(e) | quick_xml::events::Event::Start(e)) => {
-                        if e.name().as_ref().as_bytes() == b"Relationship" {
-                            let mut id = String::new();
-                            let mut target = String::new();
-                            for attr in e.attributes().flatten() {
-                                match attr.key.as_ref().as_bytes() {
-                                    b"Id" => id = crate::office::utils::attr_value(&attr.value),
-                                    b"Target" => {
-                                        target = crate::office::utils::attr_value(&attr.value);
-                                    }
-                                    _ => {}
-                                }
-                            }
-                            if !id.is_empty() && !target.is_empty() {
-                                rels.insert(id, target);
-                            }
-                        }
-                    }
-                    Ok(quick_xml::events::Event::Eof) => break,
-                    _ => {}
-                }
-                buf.clear();
-            }
-        }
-        Ok(rels)
-    }
-
-    /// Convert column letter to 0-based index (e.g. "A" -> 0, "Z" -> 25, "AA" -> 26)
-    fn col_index_from_ref(r: &str) -> usize {
-        let mut col_idx = 0;
-        for c in r.chars() {
-            if c.is_ascii_alphabetic() {
-                col_idx = col_idx * 26 + (c.to_ascii_uppercase() as usize - 'A' as usize + 1);
-            } else {
-                break;
-            }
-        }
-        if col_idx > 0 { col_idx - 1 } else { 0 }
-    }
-
-    /// Parse a single sheet XML content
-    fn parse_sheet(
-        xml: &str,
-        shared_strings: &[String],
-        styles: Option<&ExcelStyles>,
-    ) -> TableBlock {
-        Self::parse_sheet_clean(xml, shared_strings, styles)
-    }
-
-    /// Clean implementation of sheet parsing
-    #[allow(clippy::too_many_lines)]
-    fn parse_sheet_clean(
-        xml: &str,
-        shared_strings: &[String],
-        styles: Option<&ExcelStyles>,
-    ) -> TableBlock {
-        let mut reader = quick_xml::Reader::from_str(xml);
-        reader.config_mut().trim_text(true);
-        let mut buf = Vec::new();
-
-        let mut rows: Vec<TableRow> = Vec::new();
-        let mut max_col = 0;
-
-        let mut in_row = false;
-        let mut current_cells = Vec::new();
-
-        // (r1, c1, r2, c2) - 0-based
-        let mut merges: Vec<(usize, usize, usize, usize)> = Vec::new();
-
-        loop {
-            match reader.read_event_into(&mut buf) {
-                Ok(quick_xml::events::Event::Start(e)) => {
-                    match e.name().as_ref().as_bytes() {
-                        b"row" => {
-                            in_row = true;
-                            current_cells = Vec::new();
-                        }
-                        b"c" if in_row => {
-                            // Start of cell
-                            let mut s_idx = 0;
-                            let mut t_type = String::new();
-                            let mut r_ref = String::new();
-
-                            for attr in e.attributes().flatten() {
-                                match attr.key.as_ref().as_bytes() {
-                                    b"s" => {
-                                        s_idx = crate::office::utils::attr_value(&attr.value)
-                                            .parse()
-                                            .unwrap_or(0);
-                                    }
-                                    b"t" => t_type = crate::office::utils::attr_value(&attr.value),
-                                    b"r" => r_ref = crate::office::utils::attr_value(&attr.value),
-                                    _ => {}
-                                }
-                            }
-
-                            // Fill gaps
-                            if !r_ref.is_empty() {
-                                let col_idx = Self::col_index_from_ref(&r_ref);
-                                while current_cells.len() < col_idx {
-                                    current_cells.push(TableCell {
-                                        content: vec![],
-                                        col_span: 1,
-                                        row_span: 1,
-                                        background_color: None,
-                                        borders: None,
-                                    });
-                                }
-                            }
-
-                            // Parse value
-                            let mut val = String::new();
-                            let mut cell_buf = Vec::new();
-                            loop {
-                                match reader.read_event_into(&mut cell_buf) {
-                                    Ok(quick_xml::events::Event::Start(v)) => {
-                                        let vname = v.name();
-                                        let vbytes = vname.as_ref().as_bytes();
-                                        if vbytes == b"v" || vbytes == b"is" {
-                                            // v=value, is=inline string
-                                            if let Ok(text) = reader.read_text(vname) {
-                                                val = quick_xml::escape::unescape(&text)
-                                                    .map_or_else(
-                                                        |_| text.as_ref().to_string(),
-                                                        std::borrow::Cow::into_owned,
-                                                    );
-                                            }
-                                        }
-                                    }
-                                    Ok(quick_xml::events::Event::End(ce))
-                                        if ce.name().as_ref().as_bytes() == b"c" =>
-                                    {
-                                        break;
-                                    }
-                                    _ => {}
-                                }
-                                cell_buf.clear();
-                            }
-
-                            // Process Content
-                            // Resolve Value
-                            let display_text = if t_type == "s" {
-                                if let Ok(idx) = val.parse::<usize>() {
-                                    shared_strings.get(idx).cloned().unwrap_or_default()
-                                } else {
-                                    val
-                                }
-                            } else {
-                                val
-                            };
-
-                            // Resolve Style
-                            let (text_style, bg_color) = if let Some(styles) = styles {
-                                styles.get_style(s_idx)
-                            } else {
-                                (TextStyle::default(), None)
-                            };
-
-                            let mut run = TextRun::new(display_text);
-                            run.style = text_style;
-
-                            let content = if run.text.is_empty() {
-                                vec![]
-                            } else {
-                                vec![ContentBlock::Text(TextBlock {
-                                    bounds: prism_core::document::Rect::new(0.0, 0.0, 0.0, 0.0), // Bounds calculated during layout
-                                    runs: vec![run],
-                                    paragraph_style: None,
-                                    vertical_alignment: None,
-                                    style: prism_core::document::ShapeStyle::default(),
-                                    rotation: 0.0,
-                                })]
-                            };
-
-                            current_cells.push(TableCell {
-                                content,
-                                col_span: 1,
-                                row_span: 1,
-                                background_color: bg_color,
-                                borders: None,
-                            });
-                        }
-                        _ => {}
-                    }
-                }
-                Ok(quick_xml::events::Event::Empty(e)) => {
-                    if e.name().as_ref().as_bytes() == b"mergeCell" {
-                        for attr in e.attributes().flatten() {
-                            if attr.key.as_ref().as_bytes() == b"ref" {
-                                let ref_val = crate::office::utils::attr_value(&attr.value);
-                                // Parse "A1:B2"
-                                if let Some((p1, p2)) = ref_val.split_once(':') {
-                                    let c1 = Self::col_index_from_ref(p1);
-                                    let c2 = Self::col_index_from_ref(p2);
-
-                                    // Row index extraction
-                                    let parse_row = |s: &str| -> Option<usize> {
-                                        let digits: String =
-                                            s.chars().filter(char::is_ascii_digit).collect();
-                                        digits
-                                            .parse::<usize>()
-                                            .ok()
-                                            .map(|r| if r > 0 { r - 1 } else { 0 })
-                                    };
-
-                                    if let (Some(r1), Some(r2)) = (parse_row(p1), parse_row(p2)) {
-                                        merges.push((r1, c1, r2, c2));
-                                    }
-                                }
-                            }
-                        }
-                    } else if in_row && e.name().as_ref().as_bytes() == b"c" {
-                        // Empty Cell <c ... />
-                        let mut s_idx = 0;
-                        let mut r_ref = String::new();
-                        for attr in e.attributes().flatten() {
-                            match attr.key.as_ref().as_bytes() {
-                                b"s" => {
-                                    s_idx = crate::office::utils::attr_value(&attr.value)
-                                        .parse()
-                                        .unwrap_or(0);
-                                }
-                                b"r" => r_ref = crate::office::utils::attr_value(&attr.value),
-                                _ => {}
-                            }
-                        }
-
-                        // Fill gaps
-                        if !r_ref.is_empty() {
-                            let col_idx = Self::col_index_from_ref(&r_ref);
-                            while current_cells.len() < col_idx {
-                                current_cells.push(TableCell {
-                                    content: vec![],
-                                    col_span: 1,
-                                    row_span: 1,
-                                    background_color: None,
-                                    borders: None,
-                                });
-                            }
-                        }
-
-                        let (_, bg_color) = if let Some(styles) = styles {
-                            styles.get_style(s_idx)
-                        } else {
-                            (TextStyle::default(), None)
-                        };
-
-                        current_cells.push(TableCell {
-                            content: vec![],
-                            col_span: 1,
-                            row_span: 1,
-                            background_color: bg_color,
-                            borders: None,
-                        });
-                    }
-                }
-                Ok(quick_xml::events::Event::End(e)) => {
-                    if e.name().as_ref().as_bytes() == b"row" {
-                        if current_cells.len() > max_col {
-                            max_col = current_cells.len();
-                        }
-                        rows.push(TableRow {
-                            cells: current_cells.clone(), // Clone needed because we reuse
-                            height: None,
-                        });
-                        in_row = false;
-                    }
-                }
-                Ok(quick_xml::events::Event::Eof) => break,
-                _ => {}
-            }
-            buf.clear();
-        }
-
-        // Apply Merged Cells
-        let mut cells_to_remove: Vec<(usize, usize)> = Vec::new();
-
-        for (r1, c1, r2, c2) in merges {
-            // Validate bounds
-            if r1 >= rows.len() {
-                continue;
-            }
-
-            // Set spans on master cell
-            if c1 < rows[r1].cells.len() {
-                let rowspan = r2 - r1 + 1;
-                let colspan = c2 - c1 + 1;
-                rows[r1].cells[c1].row_span = rowspan;
-                rows[r1].cells[c1].col_span = colspan;
-            }
-
-            // Mark covered cells
-            for r in r1..=r2 {
-                for c in c1..=c2 {
-                    if r == r1 && c == c1 {
-                        continue;
-                    }
-                    cells_to_remove.push((r, c));
-                }
-            }
-        }
-
-        // Remove cells.
-        // We have (r, c) where c is the original index.
-        // Sorting removals: by row, then by col DESCENDING.
-        cells_to_remove.sort_by(|a, b| {
-            if a.0 == b.0 {
-                b.1.cmp(&a.1) // Descending column
-            } else {
-                a.0.cmp(&b.0)
-            }
-        });
-        cells_to_remove.dedup();
-
-        for (r, c) in cells_to_remove {
-            if let Some(row) = rows.get_mut(r)
-                && c < row.cells.len()
-            {
-                row.cells.remove(c);
-            }
-        }
-
-        TableBlock {
-            bounds: prism_core::document::Rect::default(),
-            rows,
-            column_count: max_col,
-            column_widths: Vec::new(),
-            style: prism_core::document::ShapeStyle::default(),
-            rotation: 0.0,
-        }
+        parse_xlsx(data, limit)
     }
 }
 
@@ -511,114 +52,13 @@ impl Parser for XlsxParser {
     }
 
     fn can_parse(&self, data: &[u8]) -> bool {
-        // XLSX is a ZIP file, so check ZIP signature
-        if !Self::is_xlsx_zip(data) {
-            return false;
-        }
-        true
+        is_xlsx_zip(data)
     }
 
     async fn parse(&self, data: Bytes, context: ParseContext) -> Result<Document> {
-        debug!(
-            "Parsing XLSX file, size: {} bytes, filename: {:?}",
-            context.size, context.filename
-        );
-
-        if !Self::is_xlsx_zip(&data) {
-            return Err(Error::ParseError("Invalid XLSX signature".to_string()));
-        }
-
-        let limit = crate::limits::max_decompressed_bytes(&context);
-        let reader = Cursor::new(data.as_ref());
-        let mut archive =
-            ZipArchive::new(reader).map_err(|e| Error::ParseError(format!("ZIP error: {e}")))?;
-
-        // 1. Parse Shared Strings
-        let shared_strings = Self::parse_shared_strings(&mut archive, limit)?;
-        debug!("Parsed {} shared strings", shared_strings.len());
-
-        // 2. Parse Theme
-        let mut theme: Option<Theme> = None;
-        if let Ok(mut file) = archive.by_name("xl/theme/theme1.xml") {
-            let mut xml = Vec::new();
-            crate::limits::read_to_end_with_limit(&mut file, &mut xml, limit)?;
-            if let Ok(t) = parse_theme(&xml) {
-                theme = Some(t);
-                debug!("Parsed theme with color scheme");
-            }
-        }
-
-        // 3. Parse Styles
-        let mut styles: Option<ExcelStyles> = None;
-        if let Ok(mut styles_file) = archive.by_name("xl/styles.xml") {
-            let mut xml = String::new();
-            crate::limits::read_to_string_with_limit(&mut styles_file, &mut xml, limit)?;
-            if let Ok(parsed_styles) = ExcelStyles::from_xml(&xml, theme.as_ref()) {
-                debug!(
-                    "Parsed {} fonts, {} fills, {} cellXfs",
-                    parsed_styles.fonts.len(),
-                    parsed_styles.fills.len(),
-                    parsed_styles.cell_xfs.len()
-                );
-                styles = Some(parsed_styles);
-            }
-        }
-
-        // 3. Parse Workbook & Rels to find sheets
-        let sheets = Self::parse_workbook_sheets(&mut archive, limit)?;
-        let rels = Self::parse_workbook_rels(&mut archive, limit)?;
-
-        let mut pages = Vec::new();
-
-        for (i, (name, rid)) in sheets.iter().enumerate() {
-            if let Some(target) = rels.get(rid) {
-                // Target is relative to xl/ usually, like "worksheets/sheet1.xml"
-                // but can be just "sheet1.xml" if target is relative to workbook.xml?
-                // Usually relation target is from xl/ directory context if workbook is in xl/.
-                // Let's assume standard structure: xl/worksheets/sheetN.xml
-                // We should handle path joining properly if possible, but for now simple concat.
-                let zip_path = if let Some(stripped) = target.strip_prefix('/') {
-                    stripped.to_string()
-                } else {
-                    format!("xl/{target}")
-                };
-
-                debug!("Processing sheet '{name}' at {zip_path}");
-
-                if let Ok(mut sheet_file) = archive.by_name(&zip_path) {
-                    let mut xml = String::new();
-                    crate::limits::read_to_string_with_limit(&mut sheet_file, &mut xml, limit)?;
-                    let table = Self::parse_sheet(&xml, &shared_strings, styles.as_ref());
-                    let page_meta = PageMetadata {
-                        label: Some(name.clone()),
-                        ..PageMetadata::default()
-                    };
-
-                    #[allow(clippy::cast_possible_truncation)]
-                    pages.push(Page {
-                        number: (i + 1) as u32,
-                        dimensions: Dimensions::LETTER,
-                        content: vec![ContentBlock::Table(table)],
-                        metadata: page_meta,
-                        annotations: vec![],
-                    });
-                } else {
-                    warn!("Could not find sheet file in zip: {}", zip_path);
-                }
-            }
-        }
-
-        let mut metadata = Metadata::default();
-        if let Some(ref f) = context.filename {
-            metadata.title = Some(f.clone());
-        }
-        #[allow(clippy::cast_possible_wrap)]
-        metadata.add_custom("excel_sheet_count", sheets.len() as i64);
-
-        let mut doc = Document::builder().metadata(metadata).build();
-        doc.pages = pages;
-
-        Ok(doc)
+        debug!("Parsing XLSX file: {:?}", context.filename);
+        let wb = self.parse_workbook(data.as_ref(), &context)?;
+        Ok(workbook_to_udm(&wb, "XLSX"))
     }
 
     fn metadata(&self) -> ParserMetadata {
@@ -627,8 +67,8 @@ impl Parser for XlsxParser {
             version: env!("CARGO_PKG_VERSION").to_string(),
             features: vec![
                 ParserFeature::TextExtraction,
-                ParserFeature::TableExtraction,
                 ParserFeature::MetadataExtraction,
+                ParserFeature::TableExtraction,
             ],
             requires_sandbox: false,
         }
@@ -638,142 +78,233 @@ impl Parser for XlsxParser {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use prism_core::document::ContentBlock;
+    use prism_core::parser::ParseOptions;
+    use std::io::{Cursor, Write};
+    use zip::write::FileOptions;
 
-    #[test]
-    fn test_is_xlsx_zip() {
-        let valid_zip = [0x50, 0x4B, 0x03, 0x04, 0x00, 0x00];
-        assert!(XlsxParser::is_xlsx_zip(&valid_zip));
-        let invalid = b"Not a ZIP file";
-        assert!(!XlsxParser::is_xlsx_zip(invalid));
+    /// Workbook relationships pointing `rId1` at the first worksheet part.
+    const WORKBOOK_RELS: &[u8] = br#"<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>"#;
+
+    fn build_xlsx_zip(files: &[(&str, &[u8])]) -> Bytes {
+        let mut buf = Cursor::new(Vec::new());
+        {
+            let mut zip = zip::ZipWriter::new(&mut buf);
+            let options = FileOptions::default();
+            for (name, content) in files {
+                zip.start_file(*name, options).unwrap();
+                zip.write_all(content).unwrap();
+            }
+            zip.finish().unwrap();
+        }
+        Bytes::from(buf.into_inner())
     }
 
-    #[test]
-    fn test_parse_sheet_logic() {
-        use crate::office::excel_styles::{CellXf, ExcelFill, ExcelFont};
+    #[tokio::test]
+    async fn test_parse_xlsx_basic_table() {
+        let workbook_xml = br#"<?xml version="1.0" encoding="UTF-8"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+          xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets>
+    <sheet name="Sales" sheetId="1" r:id="rId1"/>
+  </sheets>
+</workbook>"#;
 
-        let xml = r#"
-            <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-                <sheetData>
-                    <row r="1">
-                        <c r="A1" t="str"><v>Header</v></c>
-                        <c r="B1" t="s"><v>0</v></c>
-                    </row>
-                    <row r="2">
-                        <c r="A2" s="1"><v>123</v></c>
-                        <c r="B2" s="2"><v>456</v></c>
-                    </row>
-                </sheetData>
-            </worksheet>
-        "#;
+        let shared_strings_xml = br#"<?xml version="1.0" encoding="UTF-8"?>
+<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="3" uniqueCount="3">
+  <si><t>Product</t></si>
+  <si><t>Revenue</t></si>
+  <si><t>Widget</t></si>
+</sst>"#;
 
-        let shared_strings = vec!["SharedString".to_string()];
+        let sheet1_xml = br#"<?xml version="1.0" encoding="UTF-8"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>
+    <row r="1">
+      <c r="A1" t="s"><v>0</v></c>
+      <c r="B1" t="s"><v>1</v></c>
+    </row>
+    <row r="2">
+      <c r="A2" t="s"><v>2</v></c>
+      <c r="B2"><v>1250</v></c>
+    </row>
+  </sheetData>
+</worksheet>"#;
 
-        // Mock styles
-        let mut styles = ExcelStyles::default();
-        styles.cell_xfs.push(CellXf::default()); // Index 0 (Default)
+        let zip_bytes = build_xlsx_zip(&[
+            ("xl/workbook.xml", workbook_xml),
+            ("xl/_rels/workbook.xml.rels", WORKBOOK_RELS),
+            ("xl/sharedStrings.xml", shared_strings_xml),
+            ("xl/worksheets/sheet1.xml", sheet1_xml),
+        ]);
 
-        let xf1 = CellXf {
-            font_id: 0,
-            ..CellXf::default()
+        let parser = XlsxParser::new();
+        assert!(parser.can_parse(&zip_bytes));
+
+        let context = ParseContext {
+            format: Format::xlsx(),
+            filename: Some("sales.xlsx".to_string()),
+            size: zip_bytes.len(),
+            options: ParseOptions::default(),
         };
-        styles.cell_xfs.push(xf1); // Index 1
-        styles.fonts.push(ExcelFont {
-            name: "Arial".to_string(),
-            size: 12.0,
-            color: Some("#FF0000".to_string()),
-            ..ExcelFont::default()
-        });
 
-        let xf2 = CellXf {
-            fill_id: 0,
-            ..CellXf::default()
+        let doc = parser.parse(zip_bytes, context).await.unwrap();
+        assert_eq!(doc.page_count(), 1);
+        assert_eq!(doc.pages[0].metadata.label.as_deref(), Some("Sales"));
+
+        let ContentBlock::Table(table) = &doc.pages[0].content[0] else {
+            panic!("Expected TableBlock on sheet page");
         };
-        styles.cell_xfs.push(xf2); // Index 2
-        styles.fills.push(ExcelFill {
-            pattern_type: "solid".to_string(),
-            fg_color: Some("#00FF00".to_string()),
-            ..ExcelFill::default()
-        });
-
-        let table = XlsxParser::parse_sheet_clean(xml, &shared_strings, Some(&styles));
+        assert_eq!(table.column_count, 2);
         assert_eq!(table.rows.len(), 2);
 
-        // Check Row 1
-        // A1: Inline String "Header"
-        assert_eq!(table.rows[0].cells[0].content.len(), 1);
-        if let ContentBlock::Text(ref tb) = table.rows[0].cells[0].content[0] {
-            assert_eq!(tb.runs[0].text, "Header");
-        } else {
-            panic!("Expected TextBlock in A1");
-        }
+        let extracted = doc.extract_text();
+        assert!(extracted.contains("Product"));
+        assert!(extracted.contains("Revenue"));
+        assert!(extracted.contains("Widget"));
+        assert!(extracted.contains("1250"));
+    }
 
-        // B1: Shared String "SharedString" (index 0)
-        if let ContentBlock::Text(ref tb) = table.rows[0].cells[1].content[0] {
-            assert_eq!(tb.runs[0].text, "SharedString");
-        }
+    #[tokio::test]
+    async fn test_parse_xlsx_styles_and_merges() {
+        let workbook_xml = br#"<?xml version="1.0" encoding="UTF-8"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+          xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets>
+    <sheet name="Report" sheetId="1" r:id="rId1"/>
+  </sheets>
+</workbook>"#;
 
-        // Check Row 2
-        // A2: Number "123" with Style 1 (Font Red)
-        if let ContentBlock::Text(ref tb) = table.rows[1].cells[0].content[0] {
-            assert_eq!(tb.runs[0].text, "123");
-            assert_eq!(tb.runs[0].style.font_family.as_deref(), Some("Arial"));
-            assert_eq!(tb.runs[0].style.color.as_deref(), Some("#FF0000"));
-        }
+        let styles_xml = br#"<?xml version="1.0" encoding="UTF-8"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <fonts count="2">
+    <font><sz val="11"/><name val="Calibri"/></font>
+    <font><b/><sz val="14"/><color rgb="FFFFFFFF"/><name val="Arial"/></font>
+  </fonts>
+  <fills count="3">
+    <fill><patternFill patternType="none"/></fill>
+    <fill><patternFill patternType="gray125"/></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FF1F4E78"/></patternFill></fill>
+  </fills>
+  <borders count="1">
+    <border><left/><right/><top/><bottom/></border>
+  </borders>
+  <cellXfs count="2">
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="0"/>
+    <xf numFmtId="0" fontId="1" fillId="2" borderId="0"/>
+  </cellXfs>
+</styleSheet>"#;
 
-        // B2: Number "456" with Style 2 (Fill Green)
-        if let ContentBlock::Text(ref tb) = table.rows[1].cells[1].content[0] {
-            assert_eq!(tb.runs[0].text, "456");
-        }
-        assert_eq!(
-            table.rows[1].cells[1].background_color.as_deref(),
-            Some("#00FF00")
+        let sheet1_xml = br#"<?xml version="1.0" encoding="UTF-8"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <cols>
+    <col min="1" max="2" width="20" customWidth="1"/>
+  </cols>
+  <sheetData>
+    <row r="1" ht="24">
+      <c r="A1" s="1" t="inlineStr"><is><t>Merged Header</t></is></c>
+      <c r="B1" s="1"/>
+    </row>
+  </sheetData>
+  <mergeCells count="1">
+    <mergeCell ref="A1:B1"/>
+  </mergeCells>
+</worksheet>"#;
+
+        let zip_bytes = build_xlsx_zip(&[
+            ("xl/workbook.xml", workbook_xml),
+            ("xl/_rels/workbook.xml.rels", WORKBOOK_RELS),
+            ("xl/styles.xml", styles_xml),
+            ("xl/worksheets/sheet1.xml", sheet1_xml),
+        ]);
+
+        let parser = XlsxParser::new();
+        let context = ParseContext {
+            format: Format::xlsx(),
+            filename: Some("report.xlsx".to_string()),
+            size: zip_bytes.len(),
+            options: ParseOptions::default(),
+        };
+
+        let doc = parser.parse(zip_bytes, context).await.unwrap();
+        let ContentBlock::Table(table) = &doc.pages[0].content[0] else {
+            panic!("Expected TableBlock");
+        };
+
+        let cell_a1 = &table.rows[0].cells[0];
+        assert_eq!(cell_a1.col_span, 2);
+        assert_eq!(cell_a1.row_span, 1);
+        // B1 is covered by the merge, so the row holds only the spanning cell.
+        assert_eq!(table.rows[0].cells.len(), 1);
+        assert!(cell_a1.background_color.is_some());
+
+        let ContentBlock::Text(tb) = &cell_a1.content[0] else {
+            panic!("Expected TextBlock in cell");
+        };
+        assert!(tb.runs[0].style.bold);
+        assert_eq!(tb.runs[0].style.font_family.as_deref(), Some("Arial"));
+    }
+
+    #[tokio::test]
+    async fn test_parse_xlsx_number_formatting() {
+        let workbook_xml = br#"<?xml version="1.0" encoding="UTF-8"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+          xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets>
+</workbook>"#;
+
+        let styles_xml = br#"<?xml version="1.0" encoding="UTF-8"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <numFmts count="1">
+    <numFmt numFmtId="164" formatCode="yyyy-mm-dd"/>
+  </numFmts>
+  <fonts count="1"><font><sz val="11"/><name val="Calibri"/></font></fonts>
+  <fills count="1"><fill><patternFill patternType="none"/></fill></fills>
+  <borders count="1"><border><left/><right/><top/><bottom/></border></borders>
+  <cellXfs count="3">
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="0"/>
+    <xf numFmtId="164" fontId="0" fillId="0" borderId="0"/>
+    <xf numFmtId="9" fontId="0" fillId="0" borderId="0"/>
+  </cellXfs>
+</styleSheet>"#;
+
+        let sheet1_xml = br#"<?xml version="1.0" encoding="UTF-8"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>
+    <row r="1">
+      <c r="A1" s="1"><v>43831</v></c>
+      <c r="B1" s="2"><v>0.5</v></c>
+    </row>
+  </sheetData>
+</worksheet>"#;
+
+        let zip_bytes = build_xlsx_zip(&[
+            ("xl/workbook.xml", workbook_xml),
+            ("xl/_rels/workbook.xml.rels", WORKBOOK_RELS),
+            ("xl/styles.xml", styles_xml),
+            ("xl/worksheets/sheet1.xml", sheet1_xml),
+        ]);
+
+        let parser = XlsxParser::new();
+        let context = ParseContext {
+            format: Format::xlsx(),
+            filename: Some("fmt.xlsx".to_string()),
+            size: zip_bytes.len(),
+            options: ParseOptions::default(),
+        };
+
+        let doc = parser.parse(zip_bytes, context).await.unwrap();
+        let text = doc.extract_text();
+        assert!(
+            text.contains("2020-01-01"),
+            "Expected formatted date 2020-01-01, got: {text}"
         );
-    }
-
-    #[test]
-    fn test_parse_sheet_merged() {
-        let xml = r#"
-            <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-                <sheetData>
-                    <row r="1">
-                        <c r="A1" t="str"><v>Merged Title</v></c>
-                        <c r="C1" t="str"><v>After Merge</v></c>
-                    </row>
-                    <row r="2">
-                        <c r="A2" s="1"><v>123</v></c>
-                        <c r="B2" s="2"><v>456</v></c>
-                         <c r="C2"><v>3</v></c>
-                    </row>
-                </sheetData>
-                <mergeCells>
-                    <mergeCell ref="A1:B1"/>
-                </mergeCells>
-            </worksheet>
-        "#;
-        let shared_strings = vec![];
-        let styles = None;
-
-        let table = XlsxParser::parse_sheet_clean(xml, &shared_strings, styles);
-
-        assert_eq!(table.rows.len(), 2);
-
-        // Row 1: A1 spans 2. B1 should be removed. C1 should remain.
-        assert_eq!(table.rows[0].cells.len(), 2);
-
-        // A1
-        assert_eq!(table.rows[0].cells[0].col_span, 2);
-        if let ContentBlock::Text(ref tb) = table.rows[0].cells[0].content[0] {
-            assert_eq!(tb.runs[0].text, "Merged Title");
-        }
-
-        // Next cell should be C1 (After Merge)
-        if let ContentBlock::Text(ref tb) = table.rows[0].cells[1].content[0] {
-            assert_eq!(tb.runs[0].text, "After Merge");
-        }
-
-        // Row 2: No merges. [A2, B2, C2].
-        assert_eq!(table.rows[1].cells.len(), 3);
-        assert_eq!(table.rows[1].cells[0].col_span, 1);
-        assert_eq!(table.rows[1].cells[1].col_span, 1);
+        assert!(
+            text.contains("50%"),
+            "Expected formatted percent 50%, got: {text}"
+        );
     }
 }

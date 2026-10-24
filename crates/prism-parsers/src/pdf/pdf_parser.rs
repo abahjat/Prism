@@ -117,6 +117,24 @@ impl PdfParser {
         Self
     }
 
+    /// Read only the document information dictionary (title, author, dates, ...) of `data`,
+    /// for callers that lay the PDF out with another engine. A PDF that cannot be loaded
+    /// yields default metadata.
+    #[must_use]
+    pub fn read_metadata(data: &[u8]) -> Metadata {
+        let mut metadata = Metadata::default();
+        metadata.add_custom("format", "PDF");
+        if let Ok(mut pdf) = LopdfDocument::load_mem(data) {
+            let was_encrypted = pdf.is_encrypted();
+            if was_encrypted {
+                let _ = pdf.decrypt("");
+            }
+            Self::extract_metadata(&pdf, &mut metadata);
+            metadata.add_custom("encrypted", was_encrypted);
+        }
+        metadata
+    }
+
     /// Read the document information dictionary into `metadata`
     fn extract_metadata(pdf: &LopdfDocument, metadata: &mut Metadata) {
         let Some(info) = pdf

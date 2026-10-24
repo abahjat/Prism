@@ -6,9 +6,9 @@
 //! and writes length-prefixed responses to `stdout`.
 
 use prism_sandbox::{
-    SandboxError, WorkerRequestHeader, WorkerResponseHeader, apply_worker_self_sandbox,
-    current_worker_heap_bytes, execute_wire_request, read_frame, record_worker_alloc,
-    set_worker_heap_limit, write_frame,
+    SandboxError, WorkerRequestHeader, WorkerResponseHeader, WorkerSessionState,
+    apply_worker_self_sandbox, current_worker_heap_bytes, execute_wire_request_with_session,
+    read_frame, record_worker_alloc, set_worker_heap_limit, write_frame,
 };
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::io::{self, BufReader, BufWriter};
@@ -53,6 +53,7 @@ fn main() {
     let stdout = io::stdout();
     let mut reader = BufReader::new(stdin.lock());
     let mut writer = BufWriter::new(stdout.lock());
+    let mut session_state: Option<WorkerSessionState> = None;
 
     loop {
         let frame_res = read_frame::<WorkerRequestHeader, _>(&mut reader, 512 * 1024 * 1024);
@@ -64,7 +65,7 @@ fn main() {
         set_worker_heap_limit(req_hdr.max_memory);
 
         let exec_res = catch_unwind(AssertUnwindSafe(|| {
-            execute_wire_request(&req_hdr, &payload)
+            execute_wire_request_with_session(&req_hdr, &payload, &mut session_state)
         }));
 
         let (resp_hdr, resp_bytes) = match exec_res {

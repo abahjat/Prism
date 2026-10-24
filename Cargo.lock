@@ -2905,6 +2905,7 @@ dependencies = [
  "prism-ppt",
  "prism-render",
  "prism-review",
+ "prism-sandbox",
  "prism-word",
  "serde",
  "serde_json",
@@ -3034,7 +3035,6 @@ dependencies = [
  "prism-layout",
  "prism-ppt",
  "prism-word",
- "psd",
  "pulldown-cmark",
  "quick-xml",
  "rtf-parser",
@@ -3268,15 +3268,6 @@ checksum = "52717f9a02b6965224f95ca2a81e2e0c5c43baacd28ca057577988930b6c3d5b"
 dependencies = [
  "quote",
  "syn 2.0.111",
-]
-
-[[package]]
-name = "psd"
-version = "0.3.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9a25f9b8cfffd65d911baf31a033239f7a0facb755faa2481575b70db5dc9195"
-dependencies = [
- "thiserror 1.0.69",
 ]
 
 [[package]]

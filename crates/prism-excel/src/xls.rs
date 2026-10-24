@@ -219,7 +219,7 @@ pub fn parse_xls(bytes: &[u8], max_stream_bytes: usize) -> Result<Workbook> {
     let mut sheet_cursor = 0usize;
     let mut cur_sheet: Option<Sheet> = None;
     let mut sub_bof_depth: usize = 0;
-    let mut pending_formula_cell: Option<(u32, u32, u32)> = None;
+    let mut pending_formula_cell: Option<(u32, u32, u32, String)> = None;
     // Cell comments: an `OBJ` (its id) is followed by a `TXO` whose text is in the next
     // `CONTINUE` records; the `NOTE` records at the end of the sheet point back to that id.
     let mut last_obj_id: Option<u16> = None;
@@ -353,7 +353,7 @@ fn parse_worksheet_biff_record(
     payload: &[u8],
     sst: &[String],
     fmt_opts: &FormatOptions,
-    pending_formula_cell: &mut Option<(u32, u32, u32)>,
+    pending_formula_cell: &mut Option<(u32, u32, u32, String)>,
     sheet: &mut Sheet,
     wb: &mut Workbook,
 ) {
@@ -505,6 +505,8 @@ fn parse_worksheet_biff_record(
         REC_FORMULA if payload.len() >= 20 => {
             let (r, c, ixfe) = read_cell_header(payload);
             let res_bytes = &payload[6..14];
+            let grbit = u16::from_le_bytes([payload[14], payload[15]]);
+            let is_array = (grbit & 0x0008) != 0;
             let mut wait_for_string = false;
             let val = if res_bytes[6] == 0xFF && res_bytes[7] == 0xFF {
                 match res_bytes[0] {
@@ -521,26 +523,34 @@ fn parse_worksheet_biff_record(
                 b.copy_from_slice(res_bytes);
                 CellValue::Number(f64::from_le_bytes(b))
             };
+            let expr = if payload.len() >= 22 {
+                let cce = usize::from(u16::from_le_bytes([payload[20], payload[21]]));
+                let rgce_end = (22 + cce).min(payload.len());
+                decompile_biff8_rgce(&payload[22..rgce_end])
+                    .unwrap_or_else(|| "BIFF8_FORMULA".to_string())
+            } else {
+                "BIFF8_FORMULA".to_string()
+            };
             let formula = Some(FormulaInfo {
-                expression: "BIFF8_FORMULA".to_string(),
-                is_array: false,
+                expression: expr.clone(),
+                is_array,
                 ref_range: None,
                 has_cached_value: true,
             });
             let cell = finalize_cell(val, formula, ixfe, fmt_opts, wb);
             sheet.cells.insert((r, c), cell);
             if wait_for_string {
-                *pending_formula_cell = Some((r, c, ixfe));
+                *pending_formula_cell = Some((r, c, ixfe, expr));
             } else {
                 *pending_formula_cell = None;
             }
         }
         REC_STRING => {
-            if let Some((r, c, ixfe)) = pending_formula_cell.take()
+            if let Some((r, c, ixfe, expr)) = pending_formula_cell.take()
                 && let Some((txt, _)) = read_xl_unicode_string(payload)
             {
                 let formula = Some(FormulaInfo {
-                    expression: "BIFF8_FORMULA".to_string(),
+                    expression: expr,
                     is_array: false,
                     ref_range: None,
                     has_cached_value: true,
@@ -778,10 +788,11 @@ fn parse_biff_lbl(payload: &[u8]) -> Option<DefinedName> {
     }
     let grbit = u16::from_le_bytes([payload[0], payload[1]]);
     let cch = payload[3] as usize;
+    let cce = usize::from(u16::from_le_bytes([payload[4], payload[5]]));
     let itab = u16::from_le_bytes([payload[8], payload[9]]);
     let flags = payload[14];
     let str_bytes = payload.get(15..)?;
-    let (raw_name, _) = decode_biff_chars(str_bytes, cch, (flags & 0x01) != 0)?;
+    let (raw_name, used_bytes) = decode_biff_chars(str_bytes, cch, (flags & 0x01) != 0)?;
     let name = if (grbit & 0x0020) != 0 && raw_name.len() == 1 {
         match raw_name.as_bytes()[0] {
             0x06 => "_xlnm.Print_Area".to_string(),
@@ -791,9 +802,16 @@ fn parse_biff_lbl(payload: &[u8]) -> Option<DefinedName> {
     } else {
         raw_name
     };
+    let rgce_start = 15 + used_bytes;
+    let formula = if cce > 0 && rgce_start < payload.len() {
+        let rgce_end = (rgce_start + cce).min(payload.len());
+        decompile_biff8_rgce(&payload[rgce_start..rgce_end]).unwrap_or_default()
+    } else {
+        String::new()
+    };
     Some(DefinedName {
         name,
-        formula: String::new(),
+        formula,
         local_sheet_id: if itab > 0 {
             Some(u32::from(itab - 1))
         } else {
@@ -1000,6 +1018,262 @@ fn collect_biff_records(data: &[u8]) -> Result<Vec<(u16, Vec<u8>)>> {
     Ok(out)
 }
 
+/// Longest formula text the decompiler builds; longer expressions are left undecoded.
+const MAX_FORMULA_TEXT: usize = 8192;
+
+/// Decompile a BIFF8 RPN formula token array (`rgce`, `[MS-XLS]` §2.5.198.104) into a human-readable
+/// Excel formula expression string.
+///
+/// Returns `None` rather than a partial expression when the tokens include one it does not
+/// decode (3-D and name references, shared formulas, array constants, functions missing from
+/// its table, ...), so a caller never shows a formula that differs from the stored one.
+#[must_use]
+#[allow(clippy::too_many_lines)]
+pub fn decompile_biff8_rgce(rgce: &[u8]) -> Option<String> {
+    if rgce.is_empty() {
+        return None;
+    }
+    let mut stack: Vec<String> = Vec::new();
+    let mut pos = 0usize;
+
+    while pos < rgce.len() {
+        if stack.last().is_some_and(|s| s.len() > MAX_FORMULA_TEXT) {
+            return None;
+        }
+        let ptg = rgce[pos];
+        pos += 1;
+        match ptg {
+            0x03..=0x11 => {
+                let op = match ptg {
+                    0x03 => "+",
+                    0x04 => "-",
+                    0x05 => "*",
+                    0x06 => "/",
+                    0x07 => "^",
+                    0x08 => "&",
+                    0x09 => "<",
+                    0x0A => "<=",
+                    0x0B => "=",
+                    0x0C => ">=",
+                    0x0D => ">",
+                    0x0E => "<>",
+                    0x0F => " ",
+                    0x10 => ",",
+                    _ => ":",
+                };
+                let rhs = stack.pop()?;
+                let lhs = stack.pop()?;
+                stack.push(format!("{lhs}{op}{rhs}"));
+            }
+            0x12 => {
+                let a = stack.pop()?;
+                stack.push(format!("+{a}"));
+            }
+            0x13 => {
+                let a = stack.pop()?;
+                stack.push(format!("-{a}"));
+            }
+            0x14 => {
+                let a = stack.pop()?;
+                stack.push(format!("{a}%"));
+            }
+            0x15 => {
+                let a = stack.pop()?;
+                stack.push(format!("({a})"));
+            }
+            0x16 => {
+                stack.push(String::new());
+            }
+            0x17 => {
+                if pos + 2 > rgce.len() {
+                    return None;
+                }
+                let cch = usize::from(rgce[pos]);
+                let flags = rgce[pos + 1];
+                pos += 2;
+                let (s, used) = decode_biff_chars(rgce.get(pos..)?, cch, (flags & 0x01) != 0)?;
+                pos += used;
+                stack.push(format!("\"{}\"", s.replace('"', "\"\"")));
+            }
+            0x19 => {
+                if pos + 3 > rgce.len() {
+                    return None;
+                }
+                let grbit = rgce[pos];
+                let w_attr = usize::from(u16::from_le_bytes([rgce[pos + 1], rgce[pos + 2]]));
+                pos += 3;
+                if (grbit & 0x04) != 0 {
+                    pos = pos.saturating_add((w_attr + 1) * 2);
+                } else if (grbit & 0x10) != 0 {
+                    let arg = stack.pop()?;
+                    stack.push(format!("SUM({arg})"));
+                }
+            }
+            0x1C => {
+                let code = *rgce.get(pos)?;
+                pos += 1;
+                stack.push(decode_biff_err_code(code).to_string());
+            }
+            0x1D => {
+                let b = *rgce.get(pos)? != 0;
+                pos += 1;
+                stack.push(if b { "TRUE" } else { "FALSE" }.to_string());
+            }
+            0x1E => {
+                if pos + 2 > rgce.len() {
+                    return None;
+                }
+                let v = u16::from_le_bytes([rgce[pos], rgce[pos + 1]]);
+                pos += 2;
+                stack.push(v.to_string());
+            }
+            0x1F => {
+                if pos + 8 > rgce.len() {
+                    return None;
+                }
+                let mut b = [0u8; 8];
+                b.copy_from_slice(&rgce[pos..pos + 8]);
+                pos += 8;
+                let v = f64::from_le_bytes(b);
+                stack.push(format!("{v}"));
+            }
+            0x24 | 0x44 | 0x64 => {
+                if pos + 4 > rgce.len() {
+                    return None;
+                }
+                let rw = u16::from_le_bytes([rgce[pos], rgce[pos + 1]]);
+                let col_w = u16::from_le_bytes([rgce[pos + 2], rgce[pos + 3]]);
+                pos += 4;
+                stack.push(format_biff_cell_ref(rw, col_w));
+            }
+            0x25 | 0x45 | 0x65 => {
+                if pos + 8 > rgce.len() {
+                    return None;
+                }
+                let r1 = u16::from_le_bytes([rgce[pos], rgce[pos + 1]]);
+                let r2 = u16::from_le_bytes([rgce[pos + 2], rgce[pos + 3]]);
+                let c1 = u16::from_le_bytes([rgce[pos + 4], rgce[pos + 5]]);
+                let c2 = u16::from_le_bytes([rgce[pos + 6], rgce[pos + 7]]);
+                pos += 8;
+                stack.push(format!(
+                    "{}:{}",
+                    format_biff_cell_ref(r1, c1),
+                    format_biff_cell_ref(r2, c2)
+                ));
+            }
+            0x21 | 0x41 | 0x61 => {
+                if pos + 2 > rgce.len() {
+                    return None;
+                }
+                let iftab = u16::from_le_bytes([rgce[pos], rgce[pos + 1]]);
+                pos += 2;
+                let (name, arg_count) = biff_fixed_func(iftab)?;
+                let mut func_args = Vec::with_capacity(arg_count);
+                for _ in 0..arg_count {
+                    func_args.push(stack.pop()?);
+                }
+                func_args.reverse();
+                stack.push(format!("{name}({})", func_args.join(",")));
+            }
+            0x22 | 0x42 | 0x62 => {
+                if pos + 3 > rgce.len() {
+                    return None;
+                }
+                let arg_count = usize::from(rgce[pos] & 0x7F);
+                let iftab = u16::from_le_bytes([rgce[pos + 1], rgce[pos + 2]]) & 0x7FFF;
+                pos += 3;
+                let name = biff_func_name(iftab)?;
+                let mut func_args = Vec::with_capacity(arg_count);
+                for _ in 0..arg_count {
+                    func_args.push(stack.pop()?);
+                }
+                func_args.reverse();
+                stack.push(format!("{name}({})", func_args.join(",")));
+            }
+            _ => return None,
+        }
+    }
+
+    // A well-formed formula leaves exactly one expression.
+    if stack.len() != 1 {
+        return None;
+    }
+    stack
+        .pop()
+        .filter(|s| !s.is_empty() && s.len() <= MAX_FORMULA_TEXT)
+}
+
+fn format_biff_cell_ref(rw: u16, col_word: u16) -> String {
+    let col = u32::from(col_word & 0x00FF);
+    let rw_rel = (col_word & 0x8000) != 0;
+    let col_rel = (col_word & 0x4000) != 0;
+    let mut col_str = String::new();
+    let mut c = col + 1;
+    while c > 0 {
+        #[allow(clippy::cast_possible_truncation)]
+        let rem = ((c - 1) % 26) as u8;
+        col_str.insert(0, char::from(b'A' + rem));
+        c = (c - 1) / 26;
+    }
+    let col_prefix = if col_rel { "" } else { "$" };
+    let row_prefix = if rw_rel { "" } else { "$" };
+    format!("{col_prefix}{col_str}{row_prefix}{}", u32::from(rw) + 1)
+}
+
+/// Fixed-argument functions (`PtgFunc`), `[MS-XLS]` §2.5.198.17 `Ftab`: name and argument count.
+fn biff_fixed_func(iftab: u16) -> Option<(&'static str, usize)> {
+    Some(match iftab {
+        2 => ("ISNA", 1),
+        3 => ("ISERROR", 1),
+        10 => ("NA", 0),
+        15 => ("SIN", 1),
+        16 => ("COS", 1),
+        19 => ("PI", 0),
+        20 => ("SQRT", 1),
+        24 => ("ABS", 1),
+        25 => ("INT", 1),
+        27 => ("ROUND", 2),
+        32 => ("LEN", 1),
+        33 => ("VALUE", 1),
+        34 => ("TRUE", 0),
+        35 => ("FALSE", 0),
+        38 => ("NOT", 1),
+        39 => ("MOD", 2),
+        63 => ("RAND", 0),
+        65 => ("DATE", 3),
+        74 => ("NOW", 0),
+        221 => ("TODAY", 0),
+        _ => return None,
+    })
+}
+
+/// Variable-argument function names (`PtgFuncVar`), `[MS-XLS]` §2.5.198.17 `Ftab`.
+fn biff_func_name(iftab: u16) -> Option<&'static str> {
+    Some(match iftab {
+        0 => "COUNT",
+        1 => "IF",
+        4 => "SUM",
+        5 => "AVERAGE",
+        6 => "MIN",
+        7 => "MAX",
+        8 => "ROW",
+        9 => "COLUMN",
+        10 => "NA",
+        36 => "AND",
+        37 => "OR",
+        48 => "TEXT",
+        82 => "SEARCH",
+        100 => "CHOOSE",
+        102 => "VLOOKUP",
+        109 => "LOG",
+        169 => "COUNTA",
+        219 => "ADDRESS",
+        345 => "SUMIF",
+        346 => "COUNTIF",
+        _ => return None,
+    })
+}
+
 fn read_cfb_stream(
     comp: &mut CompoundFile<Cursor<&[u8]>>,
     path: &str,
@@ -1026,4 +1300,66 @@ fn read_cfb_stream(
         out.extend_from_slice(&buf[..n]);
     }
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    #[test]
+    fn xls_biff8_rgce_formula_and_encrypted_workbooks() {
+        let mut rgce = Vec::new();
+        rgce.push(0x25); // PtgArea
+        rgce.extend_from_slice(&0u16.to_le_bytes()); // r1 = 0
+        rgce.extend_from_slice(&9u16.to_le_bytes()); // r2 = 9
+        rgce.extend_from_slice(&0xC000u16.to_le_bytes()); // c1 = 0 (relative)
+        rgce.extend_from_slice(&0xC000u16.to_le_bytes()); // c2 = 0 (relative)
+        rgce.extend_from_slice(&[0x19, 0x10, 0x00, 0x00]); // PtgAttr (bitFAttrSum)
+        rgce.push(0x1E); // PtgInt
+        rgce.extend_from_slice(&5u16.to_le_bytes());
+        rgce.push(0x03); // PtgAdd
+        assert_eq!(
+            decompile_biff8_rgce(&rgce).as_deref(),
+            Some("SUM(A1:A10)+5")
+        );
+
+        // Fixed-function ids follow the Ftab: 33 is VALUE, 34 TRUE, 35 FALSE.
+        assert_eq!(
+            decompile_biff8_rgce(&[0x21, 34, 0]).as_deref(),
+            Some("TRUE()")
+        );
+        // A token it cannot decode (PtgRef3d) yields no formula rather than a partial one.
+        let mut partial = vec![0x24, 0, 0, 0, 0xC0];
+        partial.extend_from_slice(&[0x3A, 0, 0, 0, 0, 0, 0xC0]);
+        partial.push(0x03);
+        assert_eq!(decompile_biff8_rgce(&partial), None);
+        // An unknown function is not invented.
+        assert_eq!(decompile_biff8_rgce(&[0x21, 0xFF, 0x00]), None);
+
+        let rec = |out: &mut Vec<u8>, rec_type: u16, payload: &[u8]| {
+            out.extend_from_slice(&rec_type.to_le_bytes());
+            #[allow(clippy::cast_possible_truncation)]
+            out.extend_from_slice(&(payload.len() as u16).to_le_bytes());
+            out.extend_from_slice(payload);
+        };
+        let mut bof = 0x0600u16.to_le_bytes().to_vec();
+        bof.extend_from_slice(&0x0005u16.to_le_bytes());
+        bof.extend_from_slice(&[0u8; 12]);
+        let mut biff = Vec::new();
+        rec(&mut biff, 0x0809, &bof);
+        // XOR obfuscation with the VelvetSweatshop verifier is still encryption.
+        rec(&mut biff, 0x002F, &[0, 0, 0x6A, 0xFE, 0x4B, 0xCE]);
+        rec(&mut biff, 0x000A, &[]);
+        let mut comp = CompoundFile::create(Cursor::new(Vec::new())).unwrap();
+        comp.create_stream("/Workbook")
+            .unwrap()
+            .write_all(&biff)
+            .unwrap();
+        let bytes = comp.into_inner().into_inner();
+        assert!(matches!(
+            parse_xls(&bytes, DEFAULT_MAX_XLS_STREAM_BYTES),
+            Err(Error::Encrypted(_))
+        ));
+    }
 }
