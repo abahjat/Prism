@@ -362,6 +362,173 @@ body {{
   background: rgba(249, 115, 22, 0.55);
   outline: 2px solid #ea580c;
 }}
+.prism-formula-bar {{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  background: #f8fafc;
+  border-bottom: 1px solid #cbd5e1;
+  font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}}
+.prism-formula-bar[hidden],
+.prism-sheet-tabs[hidden] {{
+  display: none;
+}}
+.prism-cell-ref {{
+  min-width: 64px;
+  font-weight: 600;
+  padding: 2px 6px;
+  background: #e2e8f0;
+  border-radius: 3px;
+  text-align: center;
+}}
+.prism-formula-expr {{
+  flex: 1;
+  padding: 2px 6px;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}}
+.prism-cell-meta {{
+  color: #475569;
+  font-size: 11px;
+}}
+.prism-sheet-tabs {{
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  background: #e2e8f0;
+  border-top: 1px solid #cbd5e1;
+  overflow-x: auto;
+}}
+.prism-sheet-tab {{
+  padding: 4px 10px;
+  border: 1px solid #cbd5e1;
+  border-bottom: none;
+  border-radius: 4px 4px 0 0;
+  background: #f1f5f9;
+  color: #334155;
+  font-size: 12px;
+  cursor: pointer;
+}}
+.prism-sheet-tab.prism-sheet-tab-active {{
+  background: #ffffff;
+  color: #0f172a;
+  font-weight: 600;
+}}
+.prism-sheet-badge {{
+  margin-left: 4px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 10px;
+  background: #fef3c7;
+  color: #92400e;
+}}
+.prism-review-panel {{
+  width: 280px;
+  background: #f8fafc;
+  border-left: 1px solid #cbd5e1;
+  overflow-y: auto;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 12px;
+  color: #1e293b;
+}}
+.prism-review-panel[hidden] {{
+  display: none;
+}}
+.prism-review-group {{
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}}
+.prism-review-group-header {{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-weight: 600;
+  color: #0f172a;
+}}
+.prism-finding-item {{
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 6px;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  background: #f8fafc;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+}}
+.prism-finding-item:hover {{
+  background: #eff6ff;
+  border-color: #60a5fa;
+}}
+.prism-finding-severity {{
+  display: inline-block;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+}}
+.prism-severity-high {{
+  background: #fee2e2;
+  color: #991b1b;
+}}
+.prism-severity-notable {{
+  background: #fef3c7;
+  color: #92400e;
+}}
+.prism-severity-info {{
+  background: #e0f2fe;
+  color: #075985;
+}}
+.prism-finding-layer,
+.prism-annotation-layer {{
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}}
+.prism-finding-highlight {{
+  position: absolute;
+  background: rgba(239, 68, 68, 0.28);
+  outline: 2px dashed #dc2626;
+}}
+.prism-annotation-box {{
+  position: absolute;
+  box-sizing: border-box;
+}}
+.prism-redaction-box {{
+  position: absolute;
+  background: #000000;
+  color: #ffffff;
+  font-size: 9px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  box-sizing: border-box;
+}}
+.prism-redaction-proposed {{
+  background: rgba(0, 0, 0, 0.62);
+  outline: 2px dashed #dc2626;
+}}
 </style>
 </head>
 <body>
@@ -392,6 +559,8 @@ body {{
     <button type="button" id="prism-btn-rotate-cw" aria-label="Rotate clockwise" title="Rotate clockwise">&#8635;</button>
     <select id="prism-markup-select" aria-label="Tracked changes markup mode" title="Tracked changes markup mode" hidden>
 {markup_options}    </select>
+    <label id="prism-forensic-hidden-wrap" hidden><input type="checkbox" id="prism-toggle-hidden-sheets">Hidden Sheets/Rows</label>
+    <label id="prism-forensic-concealed-wrap" hidden><input type="checkbox" id="prism-toggle-concealed">Reveal ;;;</label>
   </div>
   <div class="prism-toolbar-group" role="search" aria-label="Find in document">
     <input type="search" id="prism-search-input" aria-label="Search document" placeholder="Find in document...">
@@ -400,8 +569,16 @@ body {{
     <button type="button" id="prism-search-prev" aria-label="Previous match" title="Previous match">&uarr;</button>
     <button type="button" id="prism-search-next" aria-label="Next match" title="Next match">&darr;</button>
     <span id="prism-search-status" role="status" aria-live="polite"></span>
+    <button type="button" id="prism-btn-propose-redact" aria-label="Propose redactions from search hits" title="Propose redactions from search hits" hidden>Redact Hits</button>
+    <label id="prism-preview-redact-wrap" hidden><input type="checkbox" id="prism-toggle-preview-redact" checked>Preview Redactions</label>
+    <button type="button" id="prism-btn-review" aria-label="Toggle review and findings panel" title="Review &amp; Findings">Review</button>
   </div>
 </header>
+<div class="prism-formula-bar" id="prism-formula-bar" role="region" aria-label="Formula and cell inspector" hidden>
+  <span class="prism-cell-ref" id="prism-cell-ref">A1</span>
+  <span class="prism-formula-expr" id="prism-formula-expr"></span>
+  <span class="prism-cell-meta" id="prism-cell-meta"></span>
+</div>
 <div class="prism-body">
 <aside class="prism-thumbs-sidebar" role="navigation" aria-label="Page thumbnails" hidden></aside>
 <div class="prism-viewport">
@@ -418,7 +595,7 @@ body {{
 
     let _ = write!(
         html,
-        "</main>\n</div>\n</div>\n</div>\n<script nonce=\"{nonce}\">\n{PRISM_VIEWER_JS}\n</script>\n</body>\n</html>\n"
+        "</main>\n</div>\n<aside class=\"prism-review-panel\" id=\"prism-review-panel\" role=\"complementary\" aria-label=\"Hidden content findings and annotations\" hidden></aside>\n</div>\n<footer class=\"prism-sheet-tabs\" id=\"prism-sheet-tabs\" role=\"tablist\" aria-label=\"Workbook sheets\" hidden></footer>\n</div>\n<script nonce=\"{nonce}\">\n{PRISM_VIEWER_JS}\n</script>\n</body>\n</html>\n"
     );
     Ok(html)
 }

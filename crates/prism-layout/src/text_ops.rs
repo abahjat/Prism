@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //! Reading-order text extraction, character bounding boxes, and search over [`LayoutDocument`].
 
-use crate::model::{Affine, GlyphRun, Item, LayoutDocument, LayoutPage, Point, Rect, SourceRef};
+use crate::model::{
+    Affine, FillPaint, GlyphRun, Item, LayoutDocument, LayoutPage, PathCommand, Point, Rect, Rgba,
+    SourceRef,
+};
+use prism_core::review::{Finding, FindingKind, Location, ReviewRect, Severity};
 use serde::{Deserialize, Serialize};
 
 /// A positioned character on a [`LayoutPage`].
@@ -302,6 +306,344 @@ impl LayoutDocument {
         }
 
         hits
+    }
+
+    /// Return the 0-based page index and bounding rectangles for all glyph runs matching `source`.
+    #[must_use]
+    pub fn rects_for_source(&self, source: SourceRef) -> Option<(u32, Vec<Rect>)> {
+        let page = self.pages.iter().find(|p| p.index == source.page)?;
+        let mut flat_runs = Vec::new();
+        collect_glyph_runs(&page.items, Affine::IDENTITY, 0, &mut flat_runs);
+        let mut rects = Vec::new();
+        for (world_transform, run) in flat_runs {
+            if run.source == source
+                && let Some(bbox) = run_bounding_box(run, world_transform)
+            {
+                rects.push(bbox);
+            }
+        }
+        (!rects.is_empty()).then_some((page.index, rects))
+    }
+
+    /// Inspect all pages in this [`LayoutDocument`] for visually concealed text:
+    /// - [`FindingKind::WhiteOrLowContrastText`] (white or background-colored text)
+    /// - [`FindingKind::TinyText`] (`< 2 pt` effective font size)
+    /// - [`FindingKind::OffPageOrOffSlideText`] (text outside page/slide bounds)
+    /// - [`FindingKind::CoveredText`] (text occluded by a subsequent opaque shape or image)
+    /// - [`FindingKind::ZeroWidthCharacters`] (`U+200B`, `U+200C`, `U+200D`, `U+FEFF`, `U+2060`)
+    #[must_use]
+    #[allow(clippy::too_many_lines)]
+    pub fn inspect_concealed_text(&self, is_slide: bool) -> Vec<Finding> {
+        let mut findings = Vec::new();
+
+        for page in &self.pages {
+            let mut flat_items = Vec::new();
+            collect_flat_z_items(&page.items, Affine::IDENTITY, 1.0, 0, &mut flat_items);
+
+            for (z_idx, entry) in flat_items.iter().enumerate() {
+                let FlatZItem::Glyphs {
+                    transform: world_transform,
+                    opacity,
+                    run,
+                } = entry
+                else {
+                    continue;
+                };
+
+                if run.text.is_empty() {
+                    continue;
+                }
+
+                let Some(bbox) = run_bounding_box(run, *world_transform) else {
+                    continue;
+                };
+                let review_rect = ReviewRect::new(bbox.x, bbox.y, bbox.width, bbox.height);
+                let make_loc = || {
+                    if is_slide {
+                        Location::Slide {
+                            slide_index: page.index,
+                            rects: vec![review_rect],
+                        }
+                    } else {
+                        Location::PageRects {
+                            page_index: page.index,
+                            rects: vec![review_rect],
+                        }
+                    }
+                };
+
+                // 1. Zero-width characters
+                if run.text.chars().any(|c| {
+                    matches!(
+                        c,
+                        '\u{200B}' | '\u{200C}' | '\u{200D}' | '\u{FEFF}' | '\u{2060}'
+                    )
+                }) {
+                    findings.push(Finding::new(
+                        FindingKind::ZeroWidthCharacters,
+                        Severity::Notable,
+                        make_loc(),
+                        Some(run.source),
+                        Some(run.text.clone()),
+                        serde_json::json!({
+                            "page": page.index + 1,
+                        }),
+                    ));
+                }
+
+                if run.text.trim().is_empty() {
+                    continue;
+                }
+
+                // 2. Tiny text (< 2 pt)
+                let [a, b, c, d, _, _] = world_transform.coeffs;
+                let scale = a.hypot(b).max(c.hypot(d)).max(1e-4);
+                let effective_size_pt = run.size * scale;
+                if effective_size_pt < 2.0 {
+                    findings.push(Finding::new(
+                        FindingKind::TinyText,
+                        Severity::High,
+                        make_loc(),
+                        Some(run.source),
+                        Some(run.text.clone()),
+                        serde_json::json!({
+                            "font_size_pt": effective_size_pt,
+                            "page": page.index + 1,
+                        }),
+                    ));
+                }
+
+                // 3. Off-page / off-slide text
+                if bbox.right() < -1.0
+                    || bbox.bottom() < -1.0
+                    || bbox.x > page.size.width + 1.0
+                    || bbox.y > page.size.height + 1.0
+                {
+                    findings.push(Finding::new(
+                        FindingKind::OffPageOrOffSlideText,
+                        Severity::High,
+                        make_loc(),
+                        Some(run.source),
+                        Some(run.text.clone()),
+                        serde_json::json!({
+                            "x": bbox.x,
+                            "y": bbox.y,
+                            "page_width": page.size.width,
+                            "page_height": page.size.height,
+                            "page": page.index + 1,
+                        }),
+                    ));
+                }
+
+                // 4. White or low-contrast text (skip intentionally invisible Type3 search overlay runs with a == 0)
+                if run.color.a > 0 && *opacity > 0.05 {
+                    let center = Point::new(bbox.x + bbox.width * 0.5, bbox.y + bbox.height * 0.5);
+                    let mut bg_color = run.decorations.highlight.unwrap_or(Rgba::WHITE);
+                    if run.decorations.highlight.is_none() {
+                        for earlier in &flat_items[..z_idx] {
+                            if let FlatZItem::SolidRect { rect, color } = earlier
+                                && color.a >= 200
+                                && rect.width >= 4.0
+                                && rect.height >= 4.0
+                                && rect.contains(center)
+                            {
+                                bg_color = *color;
+                            }
+                        }
+                    }
+                    let dist = (i32::from(run.color.r) - i32::from(bg_color.r)).abs()
+                        + (i32::from(run.color.g) - i32::from(bg_color.g)).abs()
+                        + (i32::from(run.color.b) - i32::from(bg_color.b)).abs();
+                    if dist <= 24 {
+                        findings.push(Finding::new(
+                            FindingKind::WhiteOrLowContrastText,
+                            Severity::High,
+                            make_loc(),
+                            Some(run.source),
+                            Some(run.text.clone()),
+                            serde_json::json!({
+                                "text_color": run.color.to_hex_rgb(),
+                                "background_color": bg_color.to_hex_rgb(),
+                                "page": page.index + 1,
+                            }),
+                        ));
+                    }
+                }
+
+                // 5. Covered / occluded text by a subsequent opaque shape or image in Z-order
+                if bbox.width > 1.0 && bbox.height > 1.0 {
+                    let run_area = bbox.width * bbox.height;
+                    for later in &flat_items[z_idx + 1..] {
+                        match later {
+                            FlatZItem::SolidRect { rect, color }
+                                if color.a >= 240 && rect.width >= 4.0 && rect.height >= 4.0 =>
+                            {
+                                if rect_intersection_area(bbox, *rect) >= run_area * 0.70 {
+                                    findings.push(Finding::new(
+                                        FindingKind::CoveredText,
+                                        Severity::High,
+                                        make_loc(),
+                                        Some(run.source),
+                                        Some(run.text.clone()),
+                                        serde_json::json!({
+                                            "covered_by": "shape",
+                                            "fill_color": color.to_hex_rgb(),
+                                            "page": page.index + 1,
+                                        }),
+                                    ));
+                                    break;
+                                }
+                            }
+                            FlatZItem::ImageRect {
+                                rect,
+                                opacity: img_op,
+                            } if *img_op >= 0.90
+                                && rect.width >= 4.0
+                                && rect.height >= 4.0
+                                && rect_intersection_area(bbox, *rect) >= run_area * 0.70 =>
+                            {
+                                findings.push(Finding::new(
+                                    FindingKind::CoveredText,
+                                    Severity::High,
+                                    make_loc(),
+                                    Some(run.source),
+                                    Some(run.text.clone()),
+                                    serde_json::json!({
+                                        "covered_by": "image",
+                                        "page": page.index + 1,
+                                    }),
+                                ));
+                                break;
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+        }
+
+        findings
+    }
+}
+
+enum FlatZItem<'a> {
+    Glyphs {
+        transform: Affine,
+        opacity: f32,
+        run: &'a GlyphRun,
+    },
+    SolidRect {
+        rect: Rect,
+        color: Rgba,
+    },
+    ImageRect {
+        rect: Rect,
+        opacity: f32,
+    },
+}
+
+fn collect_flat_z_items<'a>(
+    items: &'a [Item],
+    parent_transform: Affine,
+    parent_opacity: f32,
+    depth: u32,
+    out: &mut Vec<FlatZItem<'a>>,
+) {
+    if depth > MAX_GROUP_TRAVERSAL_DEPTH {
+        return;
+    }
+    for item in items {
+        match item {
+            Item::Glyphs(run) => {
+                out.push(FlatZItem::Glyphs {
+                    transform: parent_transform.then(run.transform),
+                    opacity: parent_opacity,
+                    run,
+                });
+            }
+            Item::Path(path) => {
+                if let Some(FillPaint::Solid(mut color)) = path.fill
+                    && let Some(local_bbox) = path_commands_bbox(&path.commands)
+                {
+                    let world_m = parent_transform.then(path.transform);
+                    let rect = world_m.transform_rect_bbox(local_bbox);
+                    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                    {
+                        color.a = (f32::from(color.a) * parent_opacity).round() as u8;
+                    }
+                    out.push(FlatZItem::SolidRect { rect, color });
+                }
+            }
+            Item::Image(img) => {
+                let world_m = parent_transform.then(img.transform);
+                let rect = world_m.transform_rect_bbox(img.rect);
+                out.push(FlatZItem::ImageRect {
+                    rect,
+                    opacity: parent_opacity * img.opacity,
+                });
+            }
+            Item::Group(group) => {
+                collect_flat_z_items(
+                    &group.children,
+                    parent_transform.then(group.transform),
+                    parent_opacity * group.opacity,
+                    depth + 1,
+                    out,
+                );
+            }
+            Item::Link(_) | Item::Anchor(_) => {}
+        }
+    }
+}
+
+fn path_commands_bbox(commands: &[PathCommand]) -> Option<Rect> {
+    let mut min_x = f32::INFINITY;
+    let mut min_y = f32::INFINITY;
+    let mut max_x = f32::NEG_INFINITY;
+    let mut max_y = f32::NEG_INFINITY;
+    let mut any = false;
+    for cmd in commands {
+        let pt = match cmd {
+            PathCommand::MoveTo(p)
+            | PathCommand::LineTo(p)
+            | PathCommand::QuadTo { to: p, .. }
+            | PathCommand::CurveTo { to: p, .. } => Some(*p),
+            PathCommand::Close => None,
+        };
+        if let Some(p) = pt {
+            min_x = min_x.min(p.x);
+            min_y = min_y.min(p.y);
+            max_x = max_x.max(p.x);
+            max_y = max_y.max(p.y);
+            any = true;
+        }
+    }
+    any.then(|| {
+        Rect::new(
+            min_x,
+            min_y,
+            (max_x - min_x).max(0.0),
+            (max_y - min_y).max(0.0),
+        )
+    })
+}
+
+fn run_bounding_box(run: &GlyphRun, world_transform: Affine) -> Option<Rect> {
+    let char_boxes = build_run_char_boxes(run, world_transform);
+    let mut iter = char_boxes.into_iter().map(|(_, r)| r);
+    let first = iter.next()?;
+    Some(iter.fold(first, |acc, r| acc.union(r)))
+}
+
+fn rect_intersection_area(a: Rect, b: Rect) -> f32 {
+    let x1 = a.x.max(b.x);
+    let y1 = a.y.max(b.y);
+    let x2 = a.right().min(b.right());
+    let y2 = a.bottom().min(b.bottom());
+    if x2 > x1 && y2 > y1 {
+        (x2 - x1) * (y2 - y1)
+    } else {
+        0.0
     }
 }
 

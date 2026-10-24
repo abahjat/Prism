@@ -1,0 +1,12 @@
+[package]
+name = "prism-numfmt"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Deterministic ECMA-376 / Excel number, date, and condition format engine for Prism"
+
+[dependencies]
+serde = { workspace = true }

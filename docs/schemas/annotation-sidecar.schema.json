@@ -1,0 +1,172 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://prism.infoseek.io/schemas/annotation-sidecar.schema.json",
+  "title": "Prism Annotation and Redaction Sidecar",
+  "description": "Versioned, deterministic sidecar storing document annotations and proposed/approved redactions anchored to a document SHA-256 and Prism engine version.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "document_sha256",
+    "engine_version",
+    "annotations"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "document_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "Lowercase hex SHA-256 digest of the original unmodified source document."
+    },
+    "engine_version": {
+      "type": "string",
+      "description": "Prism engine and layout algorithm version string (e.g. '0.5.0-layout.1')."
+    },
+    "annotations": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Annotation"
+      }
+    }
+  },
+  "$defs": {
+    "ReviewRect": {
+      "type": "object",
+      "required": ["x", "y", "width", "height"],
+      "properties": {
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "width": { "type": "number", "minimum": 0 },
+        "height": { "type": "number", "minimum": 0 }
+      }
+    },
+    "SourceRef": {
+      "type": "object",
+      "required": ["page", "block", "run"],
+      "properties": {
+        "page": { "type": "integer", "minimum": 0 },
+        "block": { "type": "integer", "minimum": 0 },
+        "run": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "TextAnchor": {
+      "type": "object",
+      "required": ["start_source", "end_source", "quoted_text", "prefix", "suffix"],
+      "properties": {
+        "start_source": { "$ref": "#/$defs/SourceRef" },
+        "end_source": { "$ref": "#/$defs/SourceRef" },
+        "quoted_text": { "type": "string" },
+        "prefix": { "type": "string" },
+        "suffix": { "type": "string" }
+      }
+    },
+    "RedactionTarget": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["target_type"],
+          "properties": {
+            "target_type": { "enum": ["text_range", "page_rect"] }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["target_type", "page_index"],
+          "properties": {
+            "target_type": { "const": "whole_page" },
+            "page_index": { "type": "integer", "minimum": 0 }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["target_type", "sheet_name", "cell_range"],
+          "properties": {
+            "target_type": { "const": "cell_range" },
+            "sheet_name": { "type": "string" },
+            "cell_range": { "type": "string" }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["target_type", "field_name"],
+          "properties": {
+            "target_type": { "const": "metadata_field" },
+            "field_name": { "type": "string" }
+          }
+        }
+      ]
+    },
+    "AnnotationAnchor": {
+      "type": "object",
+      "required": ["target", "page_index", "rects_pt"],
+      "properties": {
+        "target": { "$ref": "#/$defs/RedactionTarget" },
+        "page_index": { "type": "integer", "minimum": 0 },
+        "rects_pt": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ReviewRect" }
+        },
+        "text_anchor": {
+          "anyOf": [
+            { "$ref": "#/$defs/TextAnchor" },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
+    "AnnotationKind": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["type", "color"],
+          "properties": {
+            "type": { "const": "highlight" },
+            "color": { "type": "string" }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["type", "text"],
+          "properties": {
+            "type": { "const": "note" },
+            "text": { "type": "string" },
+            "color": { "type": ["string", "null"] }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["type", "color"],
+          "properties": {
+            "type": { "const": "area_box" },
+            "color": { "type": "string" },
+            "label": { "type": ["string", "null"] }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["type", "reason_code", "label"],
+          "properties": {
+            "type": { "const": "redaction" },
+            "reason_code": { "type": "string" },
+            "label": { "type": "string" },
+            "fill_color": { "type": ["string", "null"] }
+          }
+        }
+      ]
+    },
+    "Annotation": {
+      "type": "object",
+      "required": ["id", "kind", "anchor", "proposed"],
+      "properties": {
+        "id": { "type": "string" },
+        "kind": { "$ref": "#/$defs/AnnotationKind" },
+        "anchor": { "$ref": "#/$defs/AnnotationAnchor" },
+        "author": { "type": ["string", "null"] },
+        "created_at": { "type": ["string", "null"] },
+        "proposed": { "type": "boolean" }
+      }
+    }
+  }
+}

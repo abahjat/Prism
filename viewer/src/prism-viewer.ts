@@ -40,6 +40,53 @@ export interface SearchHit {
   rects: SearchRect[];
 }
 
+export interface WorkbookSheetDescriptor {
+  index: number;
+  name: string;
+  visibility: "Visible" | "Hidden" | "VeryHidden";
+  tab_color?: { r: number; g: number; b: number; a: number } | null;
+  used_rows: number;
+  used_cols: number;
+  populated_cells: number;
+}
+
+export interface WorkbookCellRecord {
+  row: number;
+  col: number;
+  a1: string;
+  value: unknown;
+  display_text: string;
+  formula?: { expression: string } | null;
+  num_fmt_code?: string | null;
+  is_concealed?: boolean;
+}
+
+export interface FindingLocation {
+  location_type: "page" | "slide" | "sheet" | "part_path" | "document";
+  page_index?: number;
+  slide_index?: number;
+  sheet_name?: string;
+  cell_range?: string;
+  path?: string;
+  rects?: SearchRect[];
+}
+
+export interface FindingItem {
+  kind: string;
+  severity: "info" | "notable" | "high";
+  location: FindingLocation;
+  excerpt?: string;
+  detail?: unknown;
+}
+
+export interface ViewerAnnotation {
+  id: string;
+  kind: { type: string; reason_code?: string; label?: string; color?: string };
+  page_index: number;
+  rects_pct: SearchRect[];
+  proposed?: boolean;
+}
+
 export interface PrismHostBridge {
   getPageCount?: () => Promise<number> | number;
   getPageSize?: (pageIndex: number) => Promise<{ widthPt: number; heightPt: number }> | { widthPt: number; heightPt: number };
@@ -47,6 +94,12 @@ export interface PrismHostBridge {
   searchDocument?: (query: string, caseSensitive: boolean, wholeWord: boolean) => Promise<SearchHit[]> | SearchHit[];
   /** Re-lay out the document in a `PRISM_MARKUP_*` mode; pages are then fetched again. */
   setMarkupMode?: (mode: number) => Promise<void> | void;
+  /** Workbook Grid-Mode host bridge (`prism_workbook_*`). */
+  getWorkbookSheets?: () => Promise<{ sheets: WorkbookSheetDescriptor[] }> | { sheets: WorkbookSheetDescriptor[] };
+  getWorkbookCells?: (sheet: number, r0: number, c0: number, r1: number, c1: number) => Promise<{ cells: WorkbookCellRecord[] }> | { cells: WorkbookCellRecord[] };
+  /** Phase 4 Review & Findings bridge (`prism_document_hidden_content` / `prism_document_annotations`). */
+  getHiddenContentReport?: () => Promise<{ items: FindingItem[] }> | { items: FindingItem[] };
+  getAnnotations?: () => Promise<ViewerAnnotation[]> | ViewerAnnotation[];
 }
 
 declare global {
@@ -72,6 +125,12 @@ export class PrismViewerController {
   private rotationDeg = 0;
   private searchHits: SearchHit[] = [];
   private activeHitIndex = -1;
+  private findings: FindingItem[] = [];
+  private readonly revealedKinds: Set<string> = new Set();
+  private activeFindingRects: Array<{ page: number; rect: SearchRect }> = [];
+  private annotations: ViewerAnnotation[] = [];
+  private previewRedactions = true;
+  private readonly reviewPanel: HTMLElement | null;
   private observer: IntersectionObserver | null = null;
 
   constructor(root: HTMLElement) {
@@ -79,6 +138,7 @@ export class PrismViewerController {
     this.viewport = (root.querySelector(".prism-viewport") as HTMLElement) || root;
     this.pagesContainer = (root.querySelector(".prism-viewer") as HTMLElement) || root;
     this.thumbsSidebar = root.querySelector(".prism-thumbs-sidebar");
+    this.reviewPanel = root.querySelector("#prism-review-panel");
   }
 
   public async init(): Promise<void> {
@@ -87,6 +147,8 @@ export class PrismViewerController {
     this.setupThumbnails();
     this.setupVirtualization();
     this.setupKeyboardShortcuts();
+    await this.setupWorkbookGrid();
+    await this.setupReviewPanel();
     this.applyZoomAndRotation();
 
     window.addEventListener("resize", () => {
@@ -94,6 +156,109 @@ export class PrismViewerController {
         this.applyZoomAndRotation();
       }
     });
+  }
+
+  /** Ask the host to lay the document out again in `mode`, then remount the visible pages. */
+  private async relayout(mode: number): Promise<void> {
+    const setMarkupMode = window.PrismHost?.setMarkupMode;
+    if (!setMarkupMode) return;
+    await setMarkupMode(mode);
+    this.root.setAttribute("data-markup-mode", String(mode));
+    this.pageDescriptors.forEach((d) => {
+      d.htmlFragment = undefined;
+    });
+    for (const idx of Array.from(this.mountedPages)) {
+      this.mountedPages.delete(idx);
+      await this.mountPage(idx);
+    }
+  }
+
+  private async setupWorkbookGrid(): Promise<void> {
+    if (!window.PrismHost?.getWorkbookSheets) {
+      return;
+    }
+    const info = await window.PrismHost.getWorkbookSheets();
+    const sheets = info?.sheets || [];
+    if (sheets.length === 0) {
+      return;
+    }
+    const formulaBar = this.root.querySelector<HTMLElement>("#prism-formula-bar");
+    const sheetTabs = this.root.querySelector<HTMLElement>("#prism-sheet-tabs");
+    const hiddenWrap = this.root.querySelector<HTMLElement>("#prism-forensic-hidden-wrap");
+    const concealedWrap = this.root.querySelector<HTMLElement>("#prism-forensic-concealed-wrap");
+    const hiddenToggle = this.root.querySelector<HTMLInputElement>("#prism-toggle-hidden-sheets");
+    const concealedToggle = this.root.querySelector<HTMLInputElement>("#prism-toggle-concealed");
+    if (formulaBar) formulaBar.hidden = false;
+    if (sheetTabs) sheetTabs.hidden = false;
+    if (hiddenWrap) hiddenWrap.hidden = false;
+    // Concealed (`;;;`) values are already shown, in brackets, whenever hidden content is
+    // shown, so the separate reveal toggle stays hidden.
+    if (concealedWrap) concealedWrap.hidden = true;
+    // Review mode: hidden and veryHidden sheets are listed by default.
+    if (hiddenToggle) hiddenToggle.checked = true;
+
+    let activeSheet = 0;
+    const renderTabs = (): void => {
+      if (!sheetTabs) return;
+      sheetTabs.innerHTML = "";
+      const showHidden = Boolean(hiddenToggle?.checked);
+      sheets.forEach((s) => {
+        if (s.visibility !== "Visible" && !showHidden) return;
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.role = "tab";
+        btn.className = s.index === activeSheet ? "prism-sheet-tab prism-sheet-tab-active" : "prism-sheet-tab";
+        btn.textContent = s.name;
+        if (s.visibility !== "Visible") {
+          const badge = document.createElement("span");
+          badge.className = "prism-sheet-badge";
+          badge.textContent = s.visibility === "VeryHidden" ? "veryHidden" : "hidden";
+          btn.appendChild(badge);
+        }
+        btn.addEventListener("click", () => {
+          activeSheet = s.index;
+          renderTabs();
+          // A sheet spans several pages; go to its first one.
+          const first = this.pageDescriptors.find((d) => d.label === s.name);
+          if (first) this.goToPage(first.index);
+          void inspectFirstCell(activeSheet);
+        });
+        sheetTabs.appendChild(btn);
+      });
+    };
+
+    const inspectFirstCell = async (sheetIdx: number): Promise<void> => {
+      if (!window.PrismHost?.getWorkbookCells) return;
+      const res = await window.PrismHost.getWorkbookCells(sheetIdx, 0, 0, 25, 15);
+      const first = res?.cells?.[0];
+      const refEl = this.root.querySelector<HTMLElement>("#prism-cell-ref");
+      const exprEl = this.root.querySelector<HTMLElement>("#prism-formula-expr");
+      const metaEl = this.root.querySelector<HTMLElement>("#prism-cell-meta");
+      if (first) {
+        if (refEl) refEl.textContent = first.a1;
+        if (exprEl) {
+          exprEl.textContent = first.formula?.expression
+            ? `=${first.formula.expression}  (cached: ${first.display_text})`
+            : first.display_text;
+        }
+        if (metaEl) {
+          const fmt = first.num_fmt_code || "General";
+          const conc = first.is_concealed ? " [concealed ;;;]" : "";
+          metaEl.textContent = `numFmt: ${fmt}${conc}`;
+        }
+      }
+    };
+
+    hiddenToggle?.addEventListener("change", () => {
+      renderTabs();
+      void this.relayout(hiddenToggle.checked ? 0 : 2);
+    });
+    concealedToggle?.addEventListener("change", () => {
+      this.root.toggleAttribute("data-reveal-concealed", Boolean(concealedToggle.checked));
+    });
+
+    renderTabs();
+    await inspectFirstCell(activeSheet);
   }
 
   private async discoverPages(): Promise<void> {
@@ -292,16 +457,7 @@ export class PrismViewerController {
     if (markupSelect && setMarkupMode) {
       markupSelect.hidden = false;
       markupSelect.addEventListener("change", async () => {
-        const mode = parseInt(markupSelect.value, 10) || 0;
-        await setMarkupMode(mode);
-        this.root.setAttribute("data-markup-mode", String(mode));
-        this.pageDescriptors.forEach((d) => {
-          d.htmlFragment = undefined;
-        });
-        for (const idx of Array.from(this.mountedPages)) {
-          this.mountedPages.delete(idx);
-          await this.mountPage(idx);
-        }
+        await this.relayout(parseInt(markupSelect.value, 10) || 0);
       });
     }
 
@@ -579,6 +735,22 @@ export class PrismViewerController {
     }
 
     slot.appendChild(layer);
+  }
+
+  private async setupReviewPanel(): Promise<void> {
+    if (!this.reviewPanel) return;
+    if (window.PrismHost?.getHiddenContentReport) {
+      const rep = await window.PrismHost.getHiddenContentReport();
+      if (rep && Array.isArray(rep.items)) {
+        this.findings = rep.items;
+      }
+    }
+    if (window.PrismHost?.getAnnotations) {
+      const anns = await window.PrismHost.getAnnotations();
+      if (Array.isArray(anns)) {
+        this.annotations = anns;
+      }
+    }
   }
 
   private setupKeyboardShortcuts(): void {

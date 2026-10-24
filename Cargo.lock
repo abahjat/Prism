@@ -2899,9 +2899,12 @@ dependencies = [
  "bytes",
  "libc",
  "prism-core",
+ "prism-excel",
  "prism-layout",
  "prism-parsers",
+ "prism-ppt",
  "prism-render",
+ "prism-review",
  "prism-word",
  "serde",
  "serde_json",
@@ -2917,10 +2920,14 @@ dependencies = [
  "anyhow",
  "assert_fs",
  "bytes",
+ "clap",
  "predicates",
  "prism-core",
  "prism-parsers",
+ "prism-production",
  "prism-render",
+ "prism-review",
+ "prism-sandbox",
  "serde",
  "serde_json",
  "tempfile",
@@ -2951,6 +2958,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "prism-drawingml"
+version = "0.5.0"
+dependencies = [
+ "prism-core",
+ "prism-layout",
+ "prism-numfmt",
+ "quick-xml",
+ "serde",
+]
+
+[[package]]
+name = "prism-excel"
+version = "0.5.0"
+dependencies = [
+ "cfb",
+ "image",
+ "prism-core",
+ "prism-drawingml",
+ "prism-layout",
+ "prism-numfmt",
+ "quick-xml",
+ "serde",
+ "serde_json",
+ "zip 0.6.6",
+]
+
+[[package]]
 name = "prism-layout"
 version = "0.5.0"
 dependencies = [
@@ -2963,7 +2997,14 @@ dependencies = [
  "prism-core",
  "serde",
  "serde_json",
- "skrifa 0.44.0",
+ "skrifa 0.46.2",
+]
+
+[[package]]
+name = "prism-numfmt"
+version = "0.5.0"
+dependencies = [
+ "serde",
 ]
 
 [[package]]
@@ -2989,6 +3030,9 @@ dependencies = [
  "once_cell",
  "onenote_parser",
  "prism-core",
+ "prism-excel",
+ "prism-layout",
+ "prism-ppt",
  "prism-word",
  "psd",
  "pulldown-cmark",
@@ -3007,6 +3051,45 @@ dependencies = [
  "tracing",
  "uuid",
  "zip 0.6.6",
+]
+
+[[package]]
+name = "prism-ppt"
+version = "0.5.0"
+dependencies = [
+ "bytes",
+ "cfb",
+ "image",
+ "prism-core",
+ "prism-drawingml",
+ "prism-layout",
+ "prism-word",
+ "quick-xml",
+ "serde",
+ "serde_json",
+ "tracing",
+ "zip 0.6.6",
+]
+
+[[package]]
+name = "prism-production"
+version = "0.5.0"
+dependencies = [
+ "bytes",
+ "prism-core",
+ "prism-excel",
+ "prism-layout",
+ "prism-parsers",
+ "prism-ppt",
+ "prism-render",
+ "prism-review",
+ "prism-word",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 1.0.69",
+ "tiff",
+ "tokio",
 ]
 
 [[package]]
@@ -3035,13 +3118,49 @@ dependencies = [
 ]
 
 [[package]]
+name = "prism-review"
+version = "0.5.0"
+dependencies = [
+ "bytes",
+ "chrono",
+ "image",
+ "lopdf",
+ "prism-core",
+ "prism-excel",
+ "prism-layout",
+ "prism-parsers",
+ "prism-ppt",
+ "prism-render",
+ "prism-word",
+ "regex",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 1.0.69",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "prism-sandbox"
 version = "0.5.0"
 dependencies = [
  "anyhow",
+ "bytes",
+ "libc",
  "prism-core",
+ "prism-excel",
+ "prism-layout",
+ "prism-parsers",
+ "prism-ppt",
+ "prism-render",
+ "prism-review",
+ "prism-word",
+ "serde",
+ "serde_json",
  "tempfile",
  "thiserror 1.0.69",
+ "tokio",
  "tracing",
 ]
 
@@ -3060,6 +3179,7 @@ dependencies = [
  "prism-core",
  "prism-parsers",
  "prism-render",
+ "prism-review",
  "prism-sandbox",
  "serde",
  "serde_json",
@@ -3080,18 +3200,29 @@ dependencies = [
  "anyhow",
  "base64 0.22.1",
  "bytes",
+ "cfb",
  "image",
+ "prism-cli",
  "prism-core",
+ "prism-drawingml",
+ "prism-excel",
  "prism-layout",
+ "prism-numfmt",
  "prism-parsers",
+ "prism-ppt",
+ "prism-production",
  "prism-render",
+ "prism-review",
+ "prism-sandbox",
  "prism-word",
  "serde",
  "serde_json",
+ "tempfile",
  "tokio",
  "tracing",
  "tracing-subscriber",
  "walkdir",
+ "zip 0.6.6",
 ]
 
 [[package]]
@@ -3102,6 +3233,7 @@ dependencies = [
  "cfb",
  "image",
  "prism-core",
+ "prism-drawingml",
  "prism-layout",
  "quick-xml",
  "serde",

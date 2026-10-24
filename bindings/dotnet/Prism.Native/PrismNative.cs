@@ -116,6 +116,85 @@ public static class PrismLib
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
     public static extern IntPtr prism_document_font_report(IntPtr doc);
 
+    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern int prism_document_set_markup_mode(IntPtr doc, uint mode);
+
+    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern IntPtr prism_document_forensic_facts(IntPtr doc);
+
+    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern IntPtr prism_document_hidden_content(IntPtr doc);
+
+    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern IntPtr prism_document_children(IntPtr doc);
+
+    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern IntPtr prism_document_open_child(IntPtr doc, byte[] nodeId);
+
+    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern int prism_document_load_annotations(IntPtr doc, byte[] sidecarJson);
+
+    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern IntPtr prism_document_save_annotations(IntPtr doc);
+
+    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern int prism_document_add_annotation(IntPtr doc, byte[] annotationJson);
+
+    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern int prism_document_remove_annotation(IntPtr doc, byte[] annotationId);
+
+    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern IntPtr prism_document_annotations(IntPtr doc);
+
+    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern int prism_document_export_redacted(
+        IntPtr doc,
+        uint format,
+        float dpi,
+        out IntPtr outBuf,
+        out UIntPtr outLen,
+        out IntPtr outLogJson);
+
+    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern IntPtr prism_workbook_open(byte[] data, UIntPtr len, byte[]? filename);
+
+    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern void prism_workbook_close(IntPtr wb);
+
+    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern IntPtr prism_workbook_sheets(IntPtr wb);
+
+    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern IntPtr prism_workbook_sheet_layout(IntPtr wb, uint sheet);
+
+    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern IntPtr prism_workbook_cells(
+        IntPtr wb,
+        uint sheet,
+        uint r0,
+        uint c0,
+        uint r1,
+        uint c1);
+
+    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern IntPtr prism_workbook_styles(IntPtr wb);
+
+    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern IntPtr prism_workbook_drawings(IntPtr wb, uint sheet);
+
+    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern int prism_workbook_render_object(
+        IntPtr wb,
+        uint sheet,
+        uint objectId,
+        uint format,
+        float dpi,
+        out IntPtr outBuf,
+        out UIntPtr outLen);
+
+    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern IntPtr prism_workbook_search(IntPtr wb, byte[] query, uint flags);
+
     /// <summary>Library version, e.g. "0.5.0+abc1234".</summary>
     public static string Version => PtrToString(prism_version()) ?? string.Empty;
 
@@ -308,6 +387,98 @@ public sealed class PrismDocument : IDisposable
         return PrismLib.Call(PrismLib.prism_document_font_report(handle));
     }
 
+    /// <summary>Return the cross-format HiddenContentReport (items and coverage) as JSON.</summary>
+    public string GetHiddenContentJson()
+    {
+        EnsureOpen();
+        return PrismLib.Call(PrismLib.prism_document_hidden_content(handle));
+    }
+
+    /// <summary>Return the unified container/embedded-object FamilyTree as JSON.</summary>
+    public string GetChildrenJson()
+    {
+        EnsureOpen();
+        return PrismLib.Call(PrismLib.prism_document_children(handle));
+    }
+
+    /// <summary>Open a child container/embedded-object node by nodeId (e.g. "root/0") as a new PrismDocument.</summary>
+    public PrismDocument OpenChild(string nodeId)
+    {
+        if (nodeId == null) throw new ArgumentNullException(nameof(nodeId));
+        EnsureOpen();
+        IntPtr ptr = PrismLib.prism_document_open_child(handle, PrismLib.Utf8Z(nodeId)!);
+        if (ptr == IntPtr.Zero)
+        {
+            throw new PrismException(PrismLib.LastError() ?? $"Failed to open child node '{nodeId}'");
+        }
+        return new PrismDocument(ptr);
+    }
+
+    /// <summary>Load and validate an AnnotationSidecar JSON string into the document.</summary>
+    public void LoadAnnotationsJson(string sidecarJson)
+    {
+        if (sidecarJson == null) throw new ArgumentNullException(nameof(sidecarJson));
+        EnsureOpen();
+        int rc = PrismLib.prism_document_load_annotations(handle, PrismLib.Utf8Z(sidecarJson)!);
+        if (rc != 0)
+        {
+            throw new PrismException(PrismLib.LastError() ?? "Failed to load annotation sidecar");
+        }
+    }
+
+    /// <summary>Serialize the document's current AnnotationSidecar to deterministic JSON.</summary>
+    public string SaveAnnotationsJson()
+    {
+        EnsureOpen();
+        return PrismLib.Call(PrismLib.prism_document_save_annotations(handle));
+    }
+
+    /// <summary>Add a single Annotation (serialized as JSON) to the document's sidecar.</summary>
+    public void AddAnnotationJson(string annotationJson)
+    {
+        if (annotationJson == null) throw new ArgumentNullException(nameof(annotationJson));
+        EnsureOpen();
+        int rc = PrismLib.prism_document_add_annotation(handle, PrismLib.Utf8Z(annotationJson)!);
+        if (rc != 0)
+        {
+            throw new PrismException(PrismLib.LastError() ?? "Failed to add annotation");
+        }
+    }
+
+    /// <summary>Remove an annotation by ID from the document's sidecar.</summary>
+    public void RemoveAnnotation(string annotationId)
+    {
+        if (annotationId == null) throw new ArgumentNullException(nameof(annotationId));
+        EnsureOpen();
+        int rc = PrismLib.prism_document_remove_annotation(handle, PrismLib.Utf8Z(annotationId)!);
+        if (rc != 0)
+        {
+            throw new PrismException(PrismLib.LastError() ?? $"Failed to remove annotation '{annotationId}'");
+        }
+    }
+
+    /// <summary>Return resolved annotations (Exact, Moved, Unresolved) as JSON.</summary>
+    public string GetResolvedAnnotationsJson()
+    {
+        EnsureOpen();
+        return PrismLib.Call(PrismLib.prism_document_annotations(handle));
+    }
+
+    /// <summary>Export the document with approved redactions destructively applied and verified, returning (bytes, redactionLogJson).</summary>
+    public (byte[] Bytes, string RedactionLogJson) ExportRedacted(PrismExportFormat format, float dpi = 150.0f)
+    {
+        EnsureOpen();
+        int rc = PrismLib.prism_document_export_redacted(
+            handle, (uint)format, dpi, out IntPtr buf, out UIntPtr len, out IntPtr logPtr);
+        if (rc != 0)
+        {
+            throw new PrismException(PrismLib.LastError() ?? $"Failed to export redacted document as {format}");
+        }
+        byte[] bytes = PrismLib.CopyBufferAndFree(buf, len);
+        string logJson = PrismLib.PtrToStringAndFree(logPtr) ?? "{}";
+        return (bytes, logJson);
+    }
+
     private void EnsureOpen()
     {
         if (handle == IntPtr.Zero)
@@ -328,6 +499,112 @@ public sealed class PrismDocument : IDisposable
     }
 
     ~PrismDocument()
+    {
+        Dispose();
+    }
+}
+
+/// <summary>
+/// Managed wrapper around the native <c>PrismWorkbook</c> spreadsheet grid-mode handle.
+/// </summary>
+public sealed class PrismWorkbook : IDisposable
+{
+    private IntPtr handle;
+
+    private PrismWorkbook(IntPtr handle)
+    {
+        this.handle = handle;
+    }
+
+    /// <summary>Open an Excel workbook (.xlsx, .xlsm, or .xls) from an in-memory buffer.</summary>
+    public static PrismWorkbook Open(byte[] data, string? fileName = null)
+    {
+        if (data == null) throw new ArgumentNullException(nameof(data));
+        IntPtr ptr = PrismLib.prism_workbook_open(data, PrismLib.Len(data), PrismLib.Utf8Z(fileName));
+        if (ptr == IntPtr.Zero)
+        {
+            throw new PrismException(PrismLib.LastError() ?? "Failed to open PrismWorkbook");
+        }
+        return new PrismWorkbook(ptr);
+    }
+
+    /// <summary>Return sheet descriptors and workbook forensic facts as JSON.</summary>
+    public string GetSheetsJson()
+    {
+        EnsureOpen();
+        return PrismLib.Call(PrismLib.prism_workbook_sheets(handle));
+    }
+
+    /// <summary>Return column spans, row metrics, merged ranges, freeze pane, and print setup for a 0-based sheet as JSON.</summary>
+    public string GetSheetLayoutJson(uint sheetIndex)
+    {
+        EnsureOpen();
+        return PrismLib.Call(PrismLib.prism_workbook_sheet_layout(handle, sheetIndex));
+    }
+
+    /// <summary>Return populated cells in the 0-based inclusive rectangle [r0..=r1, c0..=c1] as JSON.</summary>
+    public string GetCellsJson(uint sheetIndex, uint r0, uint c0, uint r1, uint c1)
+    {
+        EnsureOpen();
+        return PrismLib.Call(PrismLib.prism_workbook_cells(handle, sheetIndex, r0, c0, r1, c1));
+    }
+
+    /// <summary>Return the deduplicated workbook StylesTable as JSON.</summary>
+    public string GetStylesJson()
+    {
+        EnsureOpen();
+        return PrismLib.Call(PrismLib.prism_workbook_styles(handle));
+    }
+
+    /// <summary>Return floating drawing objects (charts, images, shapes) anchored on a 0-based sheet as JSON.</summary>
+    public string GetDrawingsJson(uint sheetIndex)
+    {
+        EnsureOpen();
+        return PrismLib.Call(PrismLib.prism_workbook_drawings(handle, sheetIndex));
+    }
+
+    /// <summary>Render a floating drawing object on a 0-based sheet to SVG or PNG.</summary>
+    public byte[] RenderObject(uint sheetIndex, uint objectId, PrismPageFormat format, float dpi = 150.0f)
+    {
+        EnsureOpen();
+        int rc = PrismLib.prism_workbook_render_object(
+            handle, sheetIndex, objectId, (uint)format, dpi, out IntPtr buf, out UIntPtr len);
+        if (rc != 0)
+        {
+            throw new PrismException(PrismLib.LastError() ?? $"Failed to render object {objectId} on sheet {sheetIndex}");
+        }
+        return PrismLib.CopyBufferAndFree(buf, len);
+    }
+
+    /// <summary>Search across all sheets (including hidden/veryHidden) and return matching hits as JSON.</summary>
+    public string SearchJson(string query, PrismSearchFlags flags = PrismSearchFlags.None)
+    {
+        if (query == null) throw new ArgumentNullException(nameof(query));
+        EnsureOpen();
+        byte[] queryBytes = PrismLib.Utf8Z(query)!;
+        return PrismLib.Call(PrismLib.prism_workbook_search(handle, queryBytes, (uint)flags));
+    }
+
+    private void EnsureOpen()
+    {
+        if (handle == IntPtr.Zero)
+        {
+            throw new ObjectDisposedException(nameof(PrismWorkbook));
+        }
+    }
+
+    public void Dispose()
+    {
+        IntPtr h = handle;
+        if (h != IntPtr.Zero)
+        {
+            handle = IntPtr.Zero;
+            PrismLib.prism_workbook_close(h);
+        }
+        GC.SuppressFinalize(this);
+    }
+
+    ~PrismWorkbook()
     {
         Dispose();
     }

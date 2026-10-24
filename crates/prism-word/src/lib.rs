@@ -12,6 +12,7 @@ pub mod inheritance;
 pub mod layout;
 pub mod model;
 pub mod numbering;
+pub mod review;
 pub mod udm;
 
 pub use doc::{DEFAULT_MAX_DOC_STREAM_BYTES, is_doc_bytes, parse_doc};

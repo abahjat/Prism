@@ -29,7 +29,10 @@ fuzz_target!(|data: &[u8]| {
         options: ParseOptions::default(),
     };
     RUNTIME.block_on(async {
-        if let Ok(document) = parser.parse(bytes::Bytes::copy_from_slice(data), context).await {
+        if let Ok(document) = parser
+            .parse(bytes::Bytes::copy_from_slice(data), context)
+            .await
+        {
             let _ = document.extract_text();
             let renderer = prism_render::html::HtmlRenderer::new();
             let _ = renderer

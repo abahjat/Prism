@@ -2431,6 +2431,7 @@ impl WordLayoutEngine<'_> {
         Ok(())
     }
 
+    #[allow(clippy::too_many_lines)]
     fn build_drawing_items(
         &mut self,
         drawing: &WordDrawing,
@@ -2496,6 +2497,17 @@ impl WordLayoutEngine<'_> {
                 let (tb_items, _) =
                     self.render_story_blocks(blocks, inner_x, inner_y, inner_w, page_num, 1)?;
                 items.extend(tb_items);
+            }
+            DrawingPayload::Chart(chart) => {
+                let dml_theme = prism_drawingml::DrawingTheme::default();
+                let chart_items = prism_drawingml::render_chart(
+                    chart,
+                    dest,
+                    &dml_theme,
+                    &mut self.font_sys,
+                    &mut self.text_engine,
+                );
+                items.extend(chart_items);
             }
             DrawingPayload::Placeholder { label } => {
                 items.push(Item::Path(PathItem {

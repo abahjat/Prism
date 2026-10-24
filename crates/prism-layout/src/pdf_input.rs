@@ -23,8 +23,11 @@ use hayro_interpret::{
     FillRule as HayroFillRule, Image, ImageData, ImageDrawProps, InterpreterCache,
     InterpreterSettings, Paint, SoftMask, StrokeProps, TransformExt, interpret_page,
 };
-use hayro_syntax::object::dict::keys::{A, ANNOTS, RECT, SUBTYPE, URI};
-use hayro_syntax::object::{Array, Dict, Name, Object, Rect as HayroRect};
+use hayro_syntax::Filter;
+use hayro_syntax::object::dict::keys::{
+    A, ANNOTS, COLUMNS, DECODE_PARMS, DP, H, HEIGHT, RECT, ROWS, SUBTYPE, URI, W, WIDTH,
+};
+use hayro_syntax::object::{Array, Dict, Name, Object, Rect as HayroRect, Stream};
 use hayro_syntax::{LoadPdfError, Pdf};
 use image::{ColorType, ImageEncoder, codecs::png::PngEncoder};
 use kurbo::{Affine as KurboAffine, BezPath, Cap, Join, PathEl, Point as KurboPoint};
@@ -85,6 +88,14 @@ pub fn interpret_pdf_pages(
         }
     })?;
 
+    // `hayro` allocates an image's decode buffer from the sizes the stream declares before
+    // any of our callbacks see the image, so oversized images are rejected up front.
+    for object in pdf.objects() {
+        if let Object::Stream(stream) = object {
+            check_declared_image_size(&stream, options.max_image_pixels)?;
+        }
+    }
+
     let settings = build_interpreter_settings();
     let cache = InterpreterCache::new();
 
@@ -144,6 +155,7 @@ pub fn interpret_pdf_pages(
             group_stack: Vec::new(),
             run_counter: 0,
             glyph_count: 0,
+            glyph_run_depth: 0,
             limit_error: None,
         };
 
@@ -229,10 +241,207 @@ struct PdfLayoutDevice<'b> {
     group_stack: Vec<GroupFrame>,
     run_counter: u32,
     glyph_count: usize,
+    /// How many `draw_glyph_run` calls are active. A Type3 glyph procedure that shows text in
+    /// a Type3 font re-enters this device, and `hayro` does not bound that nesting.
+    glyph_run_depth: u32,
     limit_error: Option<Error>,
 }
 
 impl PdfLayoutDevice<'_> {
+    #[allow(clippy::too_many_lines)]
+    fn draw_glyph_run_inner<'a>(
+        &mut self,
+        glyph_run: &HayroGlyphRun<'_, 'a>,
+        props: &DrawProps<'a>,
+        draw_mode: &DrawMode,
+    ) {
+        let glyphs = glyph_run.glyphs();
+        if glyphs.is_empty() {
+            return;
+        }
+
+        self.glyph_count = self.glyph_count.saturating_add(glyphs.len());
+        if self.glyph_count > self.options.max_glyphs_per_page {
+            self.limit_error = Some(Error::InvalidInput(format!(
+                "PDF page glyph count ({}) exceeds max_glyphs_per_page ({})",
+                self.glyph_count, self.options.max_glyphs_per_page
+            )));
+            return;
+        }
+
+        let base_color = if matches!(draw_mode, DrawMode::Invisible) {
+            Rgba::TRANSPARENT
+        } else {
+            extract_paint_color(&props.paint)
+        };
+
+        // Accumulate segments of OutlineGlyphs that share a font and continuous baseline
+        let mut active_segment: Option<ActiveGlyphSegment> = None;
+
+        for pos_glyph in glyphs {
+            match &**pos_glyph {
+                Glyph::Outline(outline_glyph) => {
+                    let font_id = self.resolve_outline_font(outline_glyph);
+                    let raw_gid = outline_glyph.glyph_id().to_u32();
+                    let gid = u16::try_from(raw_gid).unwrap_or(0);
+
+                    // Cache 1000-upem outline (with +y down) so Type1/CFF/subset fonts render identically
+                    if self.fonts.glyph_outline(font_id, gid).is_none() {
+                        let bez = outline_glyph.outline();
+                        let cmds = convert_bezpath(&bez, true);
+                        self.fonts.insert_precomputed_outline(font_id, gid, cmds);
+                    }
+
+                    // Combined transform mapping 1000-upem font coords (+y up) -> page coords (+y down)
+                    let full_m = props.transform * pos_glyph.transform();
+                    let coeffs = full_m.as_coeffs();
+                    let sx = coeffs[0].hypot(coeffs[1]) * 1000.0;
+                    let sy = coeffs[2].hypot(coeffs[3]) * 1000.0;
+                    #[allow(clippy::cast_possible_truncation)]
+                    let font_size = normalize_zero((sy.max(sx)).max(0.1) as f32);
+                    let scale = f64::from(font_size) / 1000.0;
+
+                    // Convert full_m into our LayoutPage run transform where glyph outlines already have -y
+                    // and are scaled by `font_size / 1000.0` at render time.
+                    let glyph_scale_m = KurboAffine::new([scale, 0.0, 0.0, -scale, 0.0, 0.0]);
+                    let glyph_run_m = full_m * glyph_scale_m.inverse();
+
+                    let adv_upem = outline_glyph.advance_width().unwrap_or(500.0);
+                    let adv_pt = normalize_zero(adv_upem * (font_size / 1000.0));
+                    let unicode_str = extract_unicode_string(pos_glyph.as_unicode());
+
+                    // Check if we can append to the active segment or should start a new GlyphRun
+                    let should_split = if let Some(ref seg) = active_segment {
+                        if seg.font_id != font_id || (seg.font_size - font_size).abs() > 0.25 {
+                            true
+                        } else {
+                            let local_pt = seg.inv_run_m * (full_m * KurboPoint::ZERO);
+                            #[allow(clippy::cast_possible_truncation)]
+                            let lx = local_pt.x as f32;
+                            #[allow(clippy::cast_possible_truncation)]
+                            let ly = local_pt.y as f32;
+                            let gap = lx - seg.expected_next_x;
+                            // Split on baseline change, backward jump, or word-space gap in TJ arrays
+                            ly.abs() > font_size * 0.35
+                                || gap < -font_size * 0.4
+                                || gap > font_size * 0.16
+                        }
+                    } else {
+                        true
+                    };
+
+                    if should_split {
+                        if let Some(finished) = active_segment.take() {
+                            self.emit_glyph_segment(finished, base_color);
+                        }
+                        let inv_run_m = glyph_run_m.inverse();
+                        active_segment = Some(ActiveGlyphSegment {
+                            font_id,
+                            font_size,
+                            run_m: glyph_run_m,
+                            inv_run_m,
+                            glyphs: Vec::new(),
+                            text: String::new(),
+                            clusters: Vec::new(),
+                            expected_next_x: 0.0,
+                        });
+                    }
+
+                    if let Some(ref mut seg) = active_segment {
+                        let local_pt = seg.inv_run_m * (full_m * KurboPoint::ZERO);
+                        #[allow(clippy::cast_possible_truncation)]
+                        let gx = normalize_zero(local_pt.x as f32);
+                        #[allow(clippy::cast_possible_truncation)]
+                        let gy = normalize_zero(local_pt.y as f32);
+
+                        // Update previous glyph's advance to match actual delta-x if on same baseline
+                        if let Some(prev_g) = seg.glyphs.last_mut()
+                            && gx > prev_g.x
+                        {
+                            let actual_adv = normalize_zero(gx - prev_g.x);
+                            prev_g.advance = actual_adv;
+                            if let Some(prev_c) = seg.clusters.last_mut() {
+                                prev_c.advance = actual_adv;
+                            }
+                        }
+
+                        let glyph_idx = seg.glyphs.len();
+                        seg.glyphs.push(PositionedGlyph {
+                            glyph_id: gid,
+                            x: gx,
+                            y: gy,
+                            advance: adv_pt,
+                        });
+
+                        if !unicode_str.is_empty() {
+                            let start_byte = seg.text.len();
+                            seg.text.push_str(&unicode_str);
+                            let end_byte = seg.text.len();
+                            #[allow(clippy::cast_possible_truncation)]
+                            seg.clusters.push(Cluster {
+                                text_range: (start_byte as u32)..(end_byte as u32),
+                                glyph_range: (glyph_idx as u32)..((glyph_idx + 1) as u32),
+                                x: gx,
+                                advance: adv_pt,
+                            });
+                        }
+
+                        seg.expected_next_x = gx + adv_pt;
+                    }
+                }
+                Glyph::Type3(t3_glyph) => {
+                    if let Some(finished) = active_segment.take() {
+                        self.emit_glyph_segment(finished, base_color);
+                    }
+                    // Interpret the Type3 glyph's drawing operations into this device
+                    t3_glyph.interpret(self, props.transform, pos_glyph.transform(), &props.paint);
+
+                    // Also emit an invisible searchable GlyphRun if the Type3 glyph has a Unicode mapping
+                    let unicode_str = extract_unicode_string(t3_glyph.as_unicode());
+                    if !unicode_str.is_empty() {
+                        let fallback_font = self.ensure_fallback_font();
+                        let full_m = props.transform * pos_glyph.transform();
+                        let origin = full_m * KurboPoint::ZERO;
+                        let coeffs = full_m.as_coeffs();
+                        let sy = coeffs[2].hypot(coeffs[3]) * 1000.0;
+                        #[allow(clippy::cast_possible_truncation)]
+                        let font_size = normalize_zero(sy.max(6.0) as f32);
+                        let adv = font_size * 0.5;
+                        let run_idx = self.run_counter;
+                        self.run_counter += 1;
+                        #[allow(clippy::cast_possible_truncation)]
+                        let text_len = unicode_str.len() as u32;
+                        #[allow(clippy::cast_possible_truncation)]
+                        let ox = normalize_zero(origin.x as f32);
+                        #[allow(clippy::cast_possible_truncation)]
+                        let oy = normalize_zero(origin.y as f32);
+                        let page_index = self.page_index;
+                        self.current_items_mut().push(Item::Glyphs(GlyphRun {
+                            font: fallback_font,
+                            size: font_size,
+                            color: Rgba::TRANSPARENT,
+                            transform: Affine::translate(ox, oy),
+                            glyphs: Vec::new(),
+                            text: unicode_str,
+                            clusters: vec![Cluster {
+                                text_range: 0..text_len,
+                                glyph_range: 0..0,
+                                x: 0.0,
+                                advance: adv,
+                            }],
+                            decorations: Decorations::default(),
+                            source: SourceRef::new(page_index, 0, run_idx),
+                        }));
+                    }
+                }
+            }
+        }
+
+        if let Some(finished) = active_segment.take() {
+            self.emit_glyph_segment(finished, base_color);
+        }
+    }
+
     fn current_items_mut(&mut self) -> &mut Vec<Item> {
         if let Some(top) = self.group_stack.last_mut() {
             &mut top.items
@@ -456,191 +665,18 @@ impl<'a> Device<'a> for PdfLayoutDevice<'_> {
         if self.limit_error.is_some() {
             return;
         }
-        let glyphs = glyph_run.glyphs();
-        if glyphs.is_empty() {
-            return;
-        }
-
-        self.glyph_count = self.glyph_count.saturating_add(glyphs.len());
-        if self.glyph_count > self.options.max_glyphs_per_page {
+        if self.glyph_run_depth >= self.options.max_recursion_depth {
+            // Type3 glyphs drawing Type3 text recursed ~1,000 levels deep before the glyph
+            // limit stopped them, overflowing the stack (`pdf_interpret` fuzz target).
             self.limit_error = Some(Error::InvalidInput(format!(
-                "PDF page glyph count ({}) exceeds max_glyphs_per_page ({})",
-                self.glyph_count, self.options.max_glyphs_per_page
+                "PDF Type3 glyph nesting exceeds max_recursion_depth ({})",
+                self.options.max_recursion_depth
             )));
             return;
         }
-
-        let base_color = if matches!(draw_mode, DrawMode::Invisible) {
-            Rgba::TRANSPARENT
-        } else {
-            extract_paint_color(&props.paint)
-        };
-
-        // Accumulate segments of OutlineGlyphs that share a font and continuous baseline
-        let mut active_segment: Option<ActiveGlyphSegment> = None;
-
-        for pos_glyph in glyphs {
-            match &**pos_glyph {
-                Glyph::Outline(outline_glyph) => {
-                    let font_id = self.resolve_outline_font(outline_glyph);
-                    let raw_gid = outline_glyph.glyph_id().to_u32();
-                    let gid = u16::try_from(raw_gid).unwrap_or(0);
-
-                    // Cache 1000-upem outline (with +y down) so Type1/CFF/subset fonts render identically
-                    if self.fonts.glyph_outline(font_id, gid).is_none() {
-                        let bez = outline_glyph.outline();
-                        let cmds = convert_bezpath(&bez, true);
-                        self.fonts.insert_precomputed_outline(font_id, gid, cmds);
-                    }
-
-                    // Combined transform mapping 1000-upem font coords (+y up) -> page coords (+y down)
-                    let full_m = props.transform * pos_glyph.transform();
-                    let coeffs = full_m.as_coeffs();
-                    let sx = coeffs[0].hypot(coeffs[1]) * 1000.0;
-                    let sy = coeffs[2].hypot(coeffs[3]) * 1000.0;
-                    #[allow(clippy::cast_possible_truncation)]
-                    let font_size = normalize_zero((sy.max(sx)).max(0.1) as f32);
-                    let scale = f64::from(font_size) / 1000.0;
-
-                    // Convert full_m into our LayoutPage run transform where glyph outlines already have -y
-                    // and are scaled by `font_size / 1000.0` at render time.
-                    let glyph_scale_m = KurboAffine::new([scale, 0.0, 0.0, -scale, 0.0, 0.0]);
-                    let glyph_run_m = full_m * glyph_scale_m.inverse();
-
-                    let adv_upem = outline_glyph.advance_width().unwrap_or(500.0);
-                    let adv_pt = normalize_zero(adv_upem * (font_size / 1000.0));
-                    let unicode_str = extract_unicode_string(pos_glyph.as_unicode());
-
-                    // Check if we can append to the active segment or should start a new GlyphRun
-                    let should_split = if let Some(ref seg) = active_segment {
-                        if seg.font_id != font_id || (seg.font_size - font_size).abs() > 0.25 {
-                            true
-                        } else {
-                            let local_pt = seg.inv_run_m * (full_m * KurboPoint::ZERO);
-                            #[allow(clippy::cast_possible_truncation)]
-                            let lx = local_pt.x as f32;
-                            #[allow(clippy::cast_possible_truncation)]
-                            let ly = local_pt.y as f32;
-                            let gap = lx - seg.expected_next_x;
-                            // Split on baseline change, backward jump, or word-space gap in TJ arrays
-                            ly.abs() > font_size * 0.35
-                                || gap < -font_size * 0.4
-                                || gap > font_size * 0.16
-                        }
-                    } else {
-                        true
-                    };
-
-                    if should_split {
-                        if let Some(finished) = active_segment.take() {
-                            self.emit_glyph_segment(finished, base_color);
-                        }
-                        let inv_run_m = glyph_run_m.inverse();
-                        active_segment = Some(ActiveGlyphSegment {
-                            font_id,
-                            font_size,
-                            run_m: glyph_run_m,
-                            inv_run_m,
-                            glyphs: Vec::new(),
-                            text: String::new(),
-                            clusters: Vec::new(),
-                            expected_next_x: 0.0,
-                        });
-                    }
-
-                    if let Some(ref mut seg) = active_segment {
-                        let local_pt = seg.inv_run_m * (full_m * KurboPoint::ZERO);
-                        #[allow(clippy::cast_possible_truncation)]
-                        let gx = normalize_zero(local_pt.x as f32);
-                        #[allow(clippy::cast_possible_truncation)]
-                        let gy = normalize_zero(local_pt.y as f32);
-
-                        // Update previous glyph's advance to match actual delta-x if on same baseline
-                        if let Some(prev_g) = seg.glyphs.last_mut()
-                            && gx > prev_g.x
-                        {
-                            let actual_adv = normalize_zero(gx - prev_g.x);
-                            prev_g.advance = actual_adv;
-                            if let Some(prev_c) = seg.clusters.last_mut() {
-                                prev_c.advance = actual_adv;
-                            }
-                        }
-
-                        let glyph_idx = seg.glyphs.len();
-                        seg.glyphs.push(PositionedGlyph {
-                            glyph_id: gid,
-                            x: gx,
-                            y: gy,
-                            advance: adv_pt,
-                        });
-
-                        if !unicode_str.is_empty() {
-                            let start_byte = seg.text.len();
-                            seg.text.push_str(&unicode_str);
-                            let end_byte = seg.text.len();
-                            #[allow(clippy::cast_possible_truncation)]
-                            seg.clusters.push(Cluster {
-                                text_range: (start_byte as u32)..(end_byte as u32),
-                                glyph_range: (glyph_idx as u32)..((glyph_idx + 1) as u32),
-                                x: gx,
-                                advance: adv_pt,
-                            });
-                        }
-
-                        seg.expected_next_x = gx + adv_pt;
-                    }
-                }
-                Glyph::Type3(t3_glyph) => {
-                    if let Some(finished) = active_segment.take() {
-                        self.emit_glyph_segment(finished, base_color);
-                    }
-                    // Interpret the Type3 glyph's drawing operations into this device
-                    t3_glyph.interpret(self, props.transform, pos_glyph.transform(), &props.paint);
-
-                    // Also emit an invisible searchable GlyphRun if the Type3 glyph has a Unicode mapping
-                    let unicode_str = extract_unicode_string(t3_glyph.as_unicode());
-                    if !unicode_str.is_empty() {
-                        let fallback_font = self.ensure_fallback_font();
-                        let full_m = props.transform * pos_glyph.transform();
-                        let origin = full_m * KurboPoint::ZERO;
-                        let coeffs = full_m.as_coeffs();
-                        let sy = coeffs[2].hypot(coeffs[3]) * 1000.0;
-                        #[allow(clippy::cast_possible_truncation)]
-                        let font_size = normalize_zero(sy.max(6.0) as f32);
-                        let adv = font_size * 0.5;
-                        let run_idx = self.run_counter;
-                        self.run_counter += 1;
-                        #[allow(clippy::cast_possible_truncation)]
-                        let text_len = unicode_str.len() as u32;
-                        #[allow(clippy::cast_possible_truncation)]
-                        let ox = normalize_zero(origin.x as f32);
-                        #[allow(clippy::cast_possible_truncation)]
-                        let oy = normalize_zero(origin.y as f32);
-                        let page_index = self.page_index;
-                        self.current_items_mut().push(Item::Glyphs(GlyphRun {
-                            font: fallback_font,
-                            size: font_size,
-                            color: Rgba::TRANSPARENT,
-                            transform: Affine::translate(ox, oy),
-                            glyphs: Vec::new(),
-                            text: unicode_str,
-                            clusters: vec![Cluster {
-                                text_range: 0..text_len,
-                                glyph_range: 0..0,
-                                x: 0.0,
-                                advance: adv,
-                            }],
-                            decorations: Decorations::default(),
-                            source: SourceRef::new(page_index, 0, run_idx),
-                        }));
-                    }
-                }
-            }
-        }
-
-        if let Some(finished) = active_segment.take() {
-            self.emit_glyph_segment(finished, base_color);
-        }
+        self.glyph_run_depth += 1;
+        self.draw_glyph_run_inner(glyph_run, &props, draw_mode);
+        self.glyph_run_depth -= 1;
     }
 
     #[allow(clippy::too_many_lines)]
@@ -655,6 +691,14 @@ impl<'a> Device<'a> for PdfLayoutDevice<'_> {
 
         match image {
             Image::Stencil(stencil_img) => {
+                // Stencils do not expose their stream; object streams were checked on load.
+                let declared = u64::from(stencil_img.width()) * u64::from(stencil_img.height());
+                if declared > max_pixels {
+                    self.limit_error = Some(Error::InvalidInput(format!(
+                        "PDF stencil image declares {declared} px, exceeding max_image_pixels ({max_pixels})"
+                    )));
+                    return;
+                }
                 stencil_img.with_stencil(
                     |stencil, paint| {
                         let pixels = u64::from(stencil.width) * u64::from(stencil.height);
@@ -682,6 +726,10 @@ impl<'a> Device<'a> for PdfLayoutDevice<'_> {
                 );
             }
             Image::Raster(raster_img) => {
+                if let Err(err) = check_declared_image_size(raster_img.stream(), max_pixels) {
+                    self.limit_error = Some(err);
+                    return;
+                }
                 raster_img.with_rgba(
                     |img_data, alpha_opt| {
                         let w = img_data.width();
@@ -828,7 +876,53 @@ fn extract_unicode_string(bf: Option<BfString>) -> String {
     }
 }
 
+/// Reject an image stream whose decode buffer would exceed `max_pixels`: `/Width` x `/Height`,
+/// and for CCITT `/Columns` x max(`/Rows`, `/Height`), which the decoder allocates even when
+/// they disagree with the image size. Streams that are not images pass.
+fn check_declared_image_size(stream: &Stream<'_>, max_pixels: u64) -> Result<()> {
+    let dict = stream.dict();
+    let (Some(width), Some(height)) = (
+        dict.get::<u32>(WIDTH).or_else(|| dict.get::<u32>(W)),
+        dict.get::<u32>(HEIGHT).or_else(|| dict.get::<u32>(H)),
+    ) else {
+        return Ok(());
+    };
+    let mut pixels = u64::from(width) * u64::from(height);
+    if stream.filters().contains(&Filter::CcittFaxDecode) {
+        let mut params: Vec<Dict<'_>> = Vec::new();
+        for key in [DECODE_PARMS, DP] {
+            if let Some(d) = dict.get::<Dict<'_>>(key) {
+                params.push(d);
+            } else if let Some(a) = dict.get::<Array<'_>>(key) {
+                params.extend(a.iter::<Dict<'_>>());
+            }
+        }
+        for p in params {
+            // Columns defaults to 1728; a value past u32 is truncated by the decoder.
+            let columns = p
+                .get::<usize>(COLUMNS)
+                .map_or(1728, |c| u64::try_from(c).unwrap_or(u64::MAX));
+            let rows = u64::from(p.get::<u32>(ROWS).unwrap_or(0).max(height));
+            pixels = pixels.max(columns.saturating_mul(rows));
+        }
+    }
+    if pixels > max_pixels {
+        return Err(Error::InvalidInput(format!(
+            "PDF image declares {pixels} px, exceeding max_image_pixels ({max_pixels})"
+        )));
+    }
+    Ok(())
+}
+
 fn encode_png_bytes(width: u32, height: u32, raw: &[u8], color_type: ColorType) -> Option<Vec<u8>> {
+    // `write_image` panics unless the buffer holds exactly width * height pixels, and a
+    // malformed image stream can decode to more or fewer bytes than its dimensions claim.
+    let expected = u64::from(width)
+        .checked_mul(u64::from(height))?
+        .checked_mul(u64::from(color_type.bytes_per_pixel()))?;
+    if width == 0 || height == 0 || raw.len() as u64 != expected {
+        return None;
+    }
     let mut buf = Vec::new();
     let encoder = PngEncoder::new(&mut buf);
     encoder
@@ -972,6 +1066,16 @@ mod tests {
     use super::*;
 
     #[test]
+    fn image_data_that_disagrees_with_its_size_is_skipped() {
+        // `write_image` would panic on these (`pdf_interpret` fuzz target).
+        assert!(encode_png_bytes(4, 4, &[0; 47], ColorType::Rgb8).is_none());
+        assert!(encode_png_bytes(4, 4, &[0; 49], ColorType::Rgb8).is_none());
+        assert!(encode_png_bytes(0, 4, &[], ColorType::L8).is_none());
+        assert!(encode_png_bytes(u32::MAX, u32::MAX, &[], ColorType::Rgba8).is_none());
+        assert!(encode_png_bytes(4, 4, &[0; 48], ColorType::Rgb8).is_some());
+    }
+
+    #[test]
     fn test_interpret_corpus_pdf_text_and_char_boxes() {
         let pdf_bytes = std::fs::read("../../test-files/testComment.pdf")
             .expect("read test-files/testComment.pdf");
@@ -1017,6 +1121,11 @@ mod tests {
         objects.extend(
             (0..count).map(|_| "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] >>".into()),
         );
+        pdf_from_objects(&objects)
+    }
+
+    /// A PDF whose objects are `objects` (numbered from 1, object 1 the catalog).
+    fn pdf_from_objects(objects: &[String]) -> Vec<u8> {
         let mut out = b"%PDF-1.7\n".to_vec();
         let mut offsets = Vec::new();
         for (i, obj) in objects.iter().enumerate() {
@@ -1038,6 +1147,67 @@ mod tests {
             .as_bytes(),
         );
         out
+    }
+
+    fn stream_object(content: &str) -> String {
+        format!(
+            "<< /Length {} >>\nstream\n{content}\nendstream",
+            content.len()
+        )
+    }
+
+    #[test]
+    fn type3_glyphs_that_draw_themselves_stop_at_the_recursion_limit() {
+        // The glyph procedure for `a` shows `a` in `/F1`. The font has no resources of its own,
+        // so `/F1` resolves through the page to the same Type3 font. `hayro` does not limit this
+        // nesting; it overflowed the stack (`pdf_interpret` fuzz target).
+        let objects = vec![
+            "<< /Type /Catalog /Pages 2 0 R >>".to_string(),
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_string(),
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents 4 0 R \
+             /Resources << /Font << /F1 5 0 R >> >> >>"
+                .to_string(),
+            stream_object("BT /F1 12 Tf 10 10 Td (a) Tj ET"),
+            "<< /Type /Font /Subtype /Type3 /FontBBox [0 0 1000 1000] \
+             /FontMatrix [0.001 0 0 0.001 0 0] /CharProcs << /a 6 0 R >> \
+             /Encoding << /Type /Encoding /Differences [97 /a] >> /FirstChar 97 /LastChar 97 \
+             /Widths [1000] >>"
+                .to_string(),
+            stream_object("1000 0 d0 BT /F1 1000 Tf (a) Tj ET"),
+        ];
+        let pdf = pdf_from_objects(&objects);
+        let result = std::thread::Builder::new()
+            .stack_size(1 << 20)
+            .spawn(move || {
+                interpret_pdf_bytes(&pdf, &LayoutOptions::default()).map(|d| d.pages.len())
+            })
+            .expect("spawn")
+            .join()
+            .expect("no stack overflow");
+        let err = result.expect_err("self-referencing Type3 glyphs are rejected");
+        assert!(err.to_string().contains("Type3"), "{err}");
+    }
+
+    #[test]
+    fn ccitt_images_are_checked_against_their_declared_decode_size() {
+        // A 1x1 image whose CCITT parameters ask for a 2^31 x 2^31 decode buffer, which
+        // `hayro` allocated before any limit was checked (`pdf_interpret` fuzz target).
+        let objects = vec![
+            "<< /Type /Catalog /Pages 2 0 R >>".to_string(),
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_string(),
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents 4 0 R \
+             /Resources << /XObject << /Im1 5 0 R >> >> >>"
+                .to_string(),
+            stream_object("q 100 0 0 100 0 0 cm /Im1 Do Q"),
+            "<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /BitsPerComponent 1 \
+             /ColorSpace /DeviceGray /Filter /CCITTFaxDecode \
+             /DecodeParms << /K -1 /Columns 2147483647 /Rows 2147483647 >> /Length 1 >>\n\
+             stream\n\0\nendstream"
+                .to_string(),
+        ];
+        let err = interpret_pdf_bytes(&pdf_from_objects(&objects), &LayoutOptions::default())
+            .expect_err("oversized decode buffer is rejected");
+        assert!(err.to_string().contains("max_image_pixels"), "{err}");
     }
 
     #[test]
