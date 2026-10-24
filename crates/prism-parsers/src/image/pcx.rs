@@ -75,8 +75,15 @@ impl Parser for PcxParser {
         let xmax = u16::from_le_bytes([data[8], data[9]]);
         let ymax = u16::from_le_bytes([data[10], data[11]]);
 
-        let width = u32::from(xmax - xmin + 1);
-        let height = u32::from(ymax - ymin + 1);
+        // The window is inclusive; a maximum below its minimum is malformed, and 0..=65535
+        // is 65536 wide, so the sizes are computed in u32.
+        if xmax < xmin || ymax < ymin {
+            return Err(Error::ParseError(
+                "PCX image window has its maximum below its minimum".to_string(),
+            ));
+        }
+        let width = u32::from(xmax) - u32::from(xmin) + 1;
+        let height = u32::from(ymax) - u32::from(ymin) + 1;
 
         debug!("PCX dimensions: {width}x{height}");
 
@@ -139,5 +146,46 @@ impl Parser for PcxParser {
             ],
             requires_sandbox: false,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use prism_core::parser::ParseOptions;
+
+    fn context(len: usize) -> ParseContext {
+        ParseContext {
+            format: Format::pcx(),
+            filename: None,
+            size: len,
+            options: ParseOptions::default(),
+        }
+    }
+
+    fn header(xmin: u16, ymin: u16, xmax: u16, ymax: u16) -> Bytes {
+        let mut d = vec![0u8; 128];
+        d[..4].copy_from_slice(&[0x0A, 5, 1, 8]);
+        d[4..6].copy_from_slice(&xmin.to_le_bytes());
+        d[6..8].copy_from_slice(&ymin.to_le_bytes());
+        d[8..10].copy_from_slice(&xmax.to_le_bytes());
+        d[10..12].copy_from_slice(&ymax.to_le_bytes());
+        Bytes::from(d)
+    }
+
+    #[tokio::test]
+    async fn window_bounds_are_checked_not_overflowed() {
+        // `parse_any` fuzz finds: a maximum below the minimum, and the full 0..=65535 range,
+        // both overflowed the u16 size arithmetic.
+        let inverted = header(10, 0, 5, 0);
+        assert!(
+            PcxParser::new()
+                .parse(inverted, context(128))
+                .await
+                .is_err()
+        );
+        let full = header(0, 0, u16::MAX, 0);
+        let doc = PcxParser::new().parse(full, context(128)).await.unwrap();
+        assert_eq!(doc.resources.images[0].width, 65_536);
     }
 }
