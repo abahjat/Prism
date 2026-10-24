@@ -18,6 +18,12 @@
       this.rotationDeg = 0;
       this.searchHits = [];
       this.activeHitIndex = -1;
+      this.findings = [];
+      this.revealedKinds = new Set();
+      this.activeFindingRects = [];
+      this.annotations = [];
+      this.previewRedactions = true;
+      this.reviewPanel = root.querySelector("#prism-review-panel");
       this.observer = null;
     }
 
@@ -28,6 +34,7 @@
       this.setupVirtualization();
       this.setupKeyboardShortcuts();
       await this.setupWorkbookGrid();
+      await this.setupReviewPanel();
       this.applyZoomAndRotation();
 
       window.addEventListener("resize", () => {
@@ -265,6 +272,8 @@
         slot.dataset.mounted = "true";
         this.mountedPages.add(pageIndex);
         this.renderPageSearchHits(pageIndex);
+        this.renderPageFindingOverlays(pageIndex);
+        this.renderPageAnnotations(pageIndex);
       }
     }
 
@@ -383,6 +392,33 @@
       if (searchNext) searchNext.addEventListener("click", () => this.navigateSearchHit(1));
       const searchPrev = this.root.querySelector("#prism-search-prev");
       if (searchPrev) searchPrev.addEventListener("click", () => this.navigateSearchHit(-1));
+
+      const reviewBtn = this.root.querySelector("#prism-btn-review");
+      if (reviewBtn) {
+        reviewBtn.addEventListener("click", () => {
+          if (this.reviewPanel) {
+            if (this.reviewPanel.hasAttribute("hidden")) {
+              this.reviewPanel.removeAttribute("hidden");
+            } else {
+              this.reviewPanel.setAttribute("hidden", "");
+            }
+            this.applyZoomAndRotation();
+          }
+        });
+      }
+
+      const proposeBtn = this.root.querySelector("#prism-btn-propose-redact");
+      if (proposeBtn) {
+        proposeBtn.addEventListener("click", () => this.proposeRedactionsFromSearch());
+      }
+
+      const previewToggle = this.root.querySelector("#prism-toggle-preview-redact");
+      if (previewToggle) {
+        previewToggle.addEventListener("change", () => {
+          this.previewRedactions = Boolean(previewToggle.checked);
+          this.renderAllMountedAnnotations();
+        });
+      }
     }
 
     setupThumbnails() {
@@ -487,8 +523,10 @@
 
       const trimmed = query.trim();
       const statusEl = this.root.querySelector("#prism-search-status");
+      const proposeBtn = this.root.querySelector("#prism-btn-propose-redact");
       if (!trimmed) {
         if (statusEl) statusEl.textContent = "";
+        if (proposeBtn) proposeBtn.hidden = true;
         return;
       }
 
@@ -500,10 +538,12 @@
 
       if (this.searchHits.length > 0) {
         this.activeHitIndex = 0;
+        if (proposeBtn) proposeBtn.hidden = false;
         this.renderAllMountedSearchHits();
         this.scrollToActiveHit();
-      } else if (statusEl) {
-        statusEl.textContent = "0 of 0";
+      } else {
+        if (proposeBtn) proposeBtn.hidden = true;
+        if (statusEl) statusEl.textContent = "0 of 0";
       }
     }
 
@@ -618,6 +658,237 @@
         }
       }
 
+      slot.appendChild(layer);
+    }
+
+    async setupReviewPanel() {
+      if (!this.reviewPanel) return;
+      if (window.PrismHost && window.PrismHost.getHiddenContentReport) {
+        const rep = await window.PrismHost.getHiddenContentReport();
+        if (rep && Array.isArray(rep.items)) {
+          this.findings = rep.items;
+        }
+      } else if (this.root.dataset.hiddenReport) {
+        try {
+          const rep = JSON.parse(this.root.dataset.hiddenReport);
+          if (rep && Array.isArray(rep.items)) {
+            this.findings = rep.items;
+          }
+        } catch (_e) {}
+      }
+      if (window.PrismHost && window.PrismHost.getAnnotations) {
+        const anns = await window.PrismHost.getAnnotations();
+        if (Array.isArray(anns)) {
+          this.annotations = anns;
+        }
+      }
+      this.renderReviewPanelContent();
+    }
+
+    renderReviewPanelContent() {
+      if (!this.reviewPanel) return;
+      this.reviewPanel.innerHTML = "";
+
+      const title = document.createElement("div");
+      title.style.fontWeight = "700";
+      title.textContent = `Findings (${this.findings.length}) & Annotations (${this.annotations.length})`;
+      this.reviewPanel.appendChild(title);
+
+      const groups = new Map();
+      for (const item of this.findings) {
+        const k = item.kind || "other";
+        if (!groups.has(k)) groups.set(k, []);
+        groups.get(k).push(item);
+      }
+
+      groups.forEach((items, kind) => {
+        const groupBox = document.createElement("div");
+        groupBox.className = "prism-review-group";
+
+        const header = document.createElement("div");
+        header.className = "prism-review-group-header";
+        const kindLabel = document.createElement("span");
+        kindLabel.textContent = `${kind} (${items.length})`;
+
+        const toggleLabel = document.createElement("label");
+        toggleLabel.style.fontSize = "11px";
+        const toggle = document.createElement("input");
+        toggle.type = "checkbox";
+        toggle.checked = this.revealedKinds.has(kind);
+        toggle.setAttribute("data-reveal-kind", kind);
+        toggle.addEventListener("change", () => {
+          if (toggle.checked) {
+            this.revealedKinds.add(kind);
+          } else {
+            this.revealedKinds.delete(kind);
+          }
+          this.renderAllMountedFindings();
+        });
+        toggleLabel.appendChild(toggle);
+        toggleLabel.appendChild(document.createTextNode(" Reveal"));
+
+        header.appendChild(kindLabel);
+        header.appendChild(toggleLabel);
+        groupBox.appendChild(header);
+
+        items.forEach((finding) => {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "prism-finding-item";
+          const sev = String(finding.severity || "info").toLowerCase();
+          const locText = this.describeFindingLocation(finding.location);
+          // Excerpts, sheet names and part paths come from the document: text nodes only.
+          const sevEl = document.createElement("span");
+          sevEl.className = "prism-finding-severity prism-severity-" + sev.replace(/[^a-z]/g, "");
+          sevEl.textContent = sev;
+          const body = document.createElement("span");
+          const strong = document.createElement("strong");
+          strong.textContent = locText;
+          body.appendChild(strong);
+          if (finding.excerpt) {
+            body.appendChild(document.createTextNode(`: ${finding.excerpt}`));
+          }
+          btn.appendChild(sevEl);
+          btn.appendChild(body);
+          btn.addEventListener("click", () => this.jumpToFinding(finding));
+          groupBox.appendChild(btn);
+        });
+
+        this.reviewPanel.appendChild(groupBox);
+      });
+    }
+
+    describeFindingLocation(loc) {
+      if (!loc) return "Document";
+      if (loc.location_type === "page") return `Page ${(loc.page_index || 0) + 1}`;
+      if (loc.location_type === "slide") return `Slide ${(loc.slide_index || 0) + 1}`;
+      if (loc.location_type === "sheet") {
+        return loc.cell_range ? `${loc.sheet_name}!${loc.cell_range}` : loc.sheet_name;
+      }
+      if (loc.location_type === "part_path") return loc.path || "Part";
+      return "Document";
+    }
+
+    jumpToFinding(finding) {
+      const loc = finding && finding.location;
+      if (!loc) return;
+      if (loc.location_type === "page" || loc.location_type === "slide") {
+        const pageIdx = loc.page_index ?? loc.slide_index ?? 0;
+        this.activeFindingRects = (loc.rects || []).map((r) => ({ page: pageIdx, rect: r }));
+        this.goToPage(pageIdx);
+        this.renderAllMountedFindings();
+      } else if (loc.location_type === "sheet" && loc.sheet_name) {
+        const first = this.pageDescriptors.find((d) => d.label === loc.sheet_name);
+        if (first) this.goToPage(first.index);
+      }
+    }
+
+    proposeRedactionsFromSearch() {
+      if (this.searchHits.length === 0) return;
+      this.searchHits.forEach((hit, idx) => {
+        this.annotations.push({
+          id: `prop-ui-${idx + 1}`,
+          kind: { type: "redaction", reason_code: "SEARCH", label: "REDACTED" },
+          page_index: hit.page,
+          rects_pct: hit.rects,
+          proposed: true,
+        });
+      });
+      const previewWrap = this.root.querySelector("#prism-preview-redact-wrap");
+      if (previewWrap) previewWrap.hidden = false;
+      this.renderReviewPanelContent();
+      this.renderAllMountedAnnotations();
+    }
+
+    renderAllMountedFindings() {
+      for (const pageIdx of this.mountedPages) {
+        this.renderPageFindingOverlays(pageIdx);
+      }
+    }
+
+    renderPageFindingOverlays(pageIndex) {
+      const slot = this.pageSlots[pageIndex];
+      if (!slot) return;
+      const old = slot.querySelector(".prism-finding-layer");
+      if (old) old.remove();
+
+      const desc = this.pageDescriptors[pageIndex];
+      const pageW = desc ? desc.widthPt : 612;
+      const pageH = desc ? desc.heightPt : 792;
+
+      const rectsToDraw = [];
+      for (const item of this.activeFindingRects) {
+        if (item.page === pageIndex && item.rect) rectsToDraw.push(item.rect);
+      }
+      for (const finding of this.findings) {
+        if (!this.revealedKinds.has(finding.kind)) continue;
+        const loc = finding.location;
+        if (!loc) continue;
+        const pIdx = loc.page_index ?? loc.slide_index;
+        if (pIdx === pageIndex && Array.isArray(loc.rects)) {
+          for (const r of loc.rects) rectsToDraw.push(r);
+        }
+      }
+
+      if (rectsToDraw.length === 0) return;
+      const layer = document.createElement("div");
+      layer.className = "prism-finding-layer";
+      layer.setAttribute("aria-hidden", "true");
+
+      for (const r of rectsToDraw) {
+        const box = document.createElement("div");
+        box.className = "prism-finding-highlight";
+        box.style.left = `${(r.x / pageW) * 100}%`;
+        box.style.top = `${(r.y / pageH) * 100}%`;
+        box.style.width = `${(r.width / pageW) * 100}%`;
+        box.style.height = `${(r.height / pageH) * 100}%`;
+        layer.appendChild(box);
+      }
+      slot.appendChild(layer);
+    }
+
+    renderAllMountedAnnotations() {
+      for (const pageIdx of this.mountedPages) {
+        this.renderPageAnnotations(pageIdx);
+      }
+    }
+
+    renderPageAnnotations(pageIndex) {
+      const slot = this.pageSlots[pageIndex];
+      if (!slot) return;
+      const old = slot.querySelector(".prism-annotation-layer");
+      if (old) old.remove();
+
+      const pageAnns = this.annotations.filter((a) => a.page_index === pageIndex);
+      if (pageAnns.length === 0) return;
+
+      const layer = document.createElement("div");
+      layer.className = "prism-annotation-layer";
+      layer.setAttribute("aria-hidden", "true");
+
+      for (const ann of pageAnns) {
+        if (ann.kind && ann.kind.type === "redaction" && !this.previewRedactions) {
+          continue;
+        }
+        const rects = ann.rects_pct || [];
+        for (const r of rects) {
+          const box = document.createElement("div");
+          if (ann.kind && ann.kind.type === "redaction") {
+            box.className = ann.proposed
+              ? "prism-redaction-box prism-redaction-proposed"
+              : "prism-redaction-box";
+            box.textContent = ann.kind.label || "REDACTED";
+          } else {
+            box.className = "prism-annotation-box";
+            box.style.background = "rgba(255, 235, 59, 0.4)";
+          }
+          box.style.left = `${r.x}%`;
+          box.style.top = `${r.y}%`;
+          box.style.width = `${r.width}%`;
+          box.style.height = `${r.height}%`;
+          layer.appendChild(box);
+        }
+      }
       slot.appendChild(layer);
     }
 

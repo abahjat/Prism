@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- Phase 4 review and production features:
+  - Hidden-content report (`prism_core::review`, `prism_parsers::review::generate_hidden_content_report`): findings with severity, location, source reference and bounded excerpt, plus a coverage list of what each provider inspected. Providers for DOCX/DOC, PPTX/PPT, XLSX/XLS, PDF, EML/MBOX/MSG and ZIP/TAR/7z; other formats report zero-width characters only. Viewer findings panel (`#prism-review-panel`).
+  - Container family tree (`prism_core::tree`, `prism_parsers::tree::build_family_tree`, `open_child_bytes`) over archives, email attachments, OLE object pools, OOXML embeddings and PDF embedded files, with depth, byte and member budgets and SHA-256 cycle detection.
+  - `prism-review`: annotation sidecar (`AnnotationSidecar`, schema in `docs/schemas/annotation-sidecar.schema.json`) with text anchors re-resolved across engine versions, proposed redactions from a search or regular expression (`propose_pattern_redactions`), destructive redaction of glyphs, image pixels, spreadsheet cells, formulas, comments and metadata (`apply_redactions`, `apply_workbook_redactions`, `scrub_metadata`, `export_redacted_document`), output verification (`verify_redacted_output`), and a content-addressed `FilesystemCache`.
+  - `prism-production` (`run_production`): Bates numbering with family ranges, six-position endorsements, slip sheets, single- and multi-page TIFF, PNG and PDF output (PDF/A-2b through krilla's validator), Concordance `.dat`, Opticon `.opt` and CSV load files with reference readers, and a `manifest.json` rewritten after every document so interrupted runs resume.
+  - `prism-sandbox` and `prism-worker`: worker-process pool over a stdin/stdout protocol (`PRWK` v1) with a per-job heap limit, wall-clock timeout, Windows Job Objects, and Linux `no_new_privs`, disabled core dumps and an address-space backstop; `InProcessExecutor` for hosts that cannot spawn processes.
+  - `prism-cli` (`detect`, `info`, `text`, `render`, `export`, `report`, `tree`, `produce`, `verify-redactions`) and `prism-server` endpoints (`/api/render`, `/api/text`, `/api/report`, `/api/tree`, `/api/export`) that run documents through the worker pool.
+  - C ABI `prism_document_hidden_content`, `prism_document_children`, `prism_document_open_child`, `prism_document_load_annotations`, `prism_document_save_annotations`, `prism_document_add_annotation`, `prism_document_remove_annotation`, `prism_document_annotations` and `prism_document_export_redacted`, with `Prism.Native` bindings.
+  - ADRs `0010`–`0013`, `docs/architecture/{review,production,sandbox}.md`, `docs/deployment.md`, fuzz targets (`sidecar_parse`, `redaction_apply`, `loadfile_parse`, `container_tree`), and text extraction from PDF Form XObjects.
 - `prism-drawingml`: shared ECMA-376 `DrawingML` crate across Word, PowerPoint, and Excel:
   - 12-slot `DrawingTheme` color scheme (`dk1`, `lt1`, `dk2`, `lt2`, `accent1..6`, `hlink`, `folHlink`), font scheme (`majorFont`, `minorFont`), and exact RGB/HSL color transform pipeline (`tint`, `shade`, `lumMod`, `lumOff`, `satMod`, `satOff`, `alpha`).
   - Preset geometry for the 187 `ST_ShapeType` names (`build_preset_geometry_paths`; hand-written approximations, not yet generated from `presetShapeDefinitions.xml`), custom geometry (`custGeom`), and the 17-operator guide formula evaluator.
@@ -59,6 +68,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Remaining advisories (zip extraction APIs that are not used; unmaintained transitive crates) are listed with reasons in `deny.toml`.
 
 ### Fixed
+- Number formats: a date or time format applied to a serial Excel cannot show (negative, or after 9999-12-31) panicked on very large values (`numfmt` fuzz target); it now shows `########` as Excel does.
+- Redaction: a partly covered image that is flipped or rotated (PDF images usually are) had the wrong pixels filled, leaving the covered pixels in the output under the box.
+- Redaction: rectangle-only redactions recorded the removed text one character at a time, so verification checked nothing; the removed text is now recorded as whole stretches.
+- Redaction: cell-range redactions in `export_redacted_document` (used by `/api/export`, `prism export` and `prism_document_export_redacted`) were logged as applied but left the cell values in the output. The workbook is now redacted before layout, and cell-range redactions on other documents are refused.
+- Redaction: verification also searches UTF-16BE (PDF text strings), and its error messages no longer repeat the redacted text.
+- Productions: the manifest was written only at the end, so an interrupted run could not resume; a document is reused only when it still starts at the same Bates number; natives of documents with approved redactions are no longer produced through native-only slip sheets; a workbook whose cell redactions cannot be applied stops the production instead of falling back to the unredacted text.
+- Family tree: every member of an archive was decompressed before any limit was checked, so one archive could exhaust memory; members are now charged against the budgets as they are read.
+- PDF text extraction: nested Form XObjects could invoke each other exponentially (16 levels deep); invocations are capped per page and a form that invokes itself is skipped.
+- Server and CLI cache entries are keyed by filename as well as content, since the filename steers format detection.
+- `prism-worker` lookup no longer runs `cargo build` from a release build; the worker's Linux address-space limit no longer equals the heap limit.
 - Excel print layout covers the whole used range (it stopped at 5,000 rows × 256 columns without notice), skips pages with nothing on them as Excel does, and reports `max_pages` as an error. A whole-sheet print area or merge (`A1:XFD1048576`) no longer hangs.
 - Workbook text extraction (`workbook_to_udm`) keeps every row and column (it stopped at 2,000 × 128), includes the stored value of `;;;` cells and cell comments, and no longer scans the sheet once per row.
 - XLSX: entity and character references (`&amp;`, `&lt;`, `&#10;`) in strings, formulas, comments and names were dropped; numbers in the Text (`@`) format showed a literal `@`.

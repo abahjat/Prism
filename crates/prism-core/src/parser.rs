@@ -5,13 +5,18 @@
 
 use async_trait::async_trait;
 use bytes::Bytes;
+use serde::{Deserialize, Serialize};
 
 use crate::document::Document;
 use crate::error::Result;
 use crate::format::Format;
+use crate::tree::{
+    ContainerLimits, DEFAULT_MAX_CONTAINER_BYTES, DEFAULT_MAX_CONTAINER_DEPTH,
+    DEFAULT_MAX_CONTAINER_MEMBERS,
+};
 
 /// Options for parsing documents
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ParseOptions {
     /// Whether to extract images
     pub extract_images: bool,
@@ -30,6 +35,36 @@ pub struct ParseOptions {
 
     /// Password for encrypted documents
     pub password: Option<String>,
+
+    /// Maximum container recursion depth (defaults to [`DEFAULT_MAX_CONTAINER_DEPTH`]).
+    #[serde(default)]
+    pub max_container_depth: Option<u32>,
+
+    /// Maximum total expanded bytes across container members (defaults to [`DEFAULT_MAX_CONTAINER_BYTES`]).
+    #[serde(default)]
+    pub max_container_bytes: Option<u64>,
+
+    /// Maximum total member count across a container family tree (defaults to [`DEFAULT_MAX_CONTAINER_MEMBERS`]).
+    #[serde(default)]
+    pub max_container_members: Option<usize>,
+}
+
+impl ParseOptions {
+    /// Return the effective [`ContainerLimits`] configured on these [`ParseOptions`].
+    #[must_use]
+    pub fn container_limits(&self) -> ContainerLimits {
+        ContainerLimits {
+            max_depth: self
+                .max_container_depth
+                .unwrap_or(DEFAULT_MAX_CONTAINER_DEPTH),
+            max_total_bytes: self
+                .max_container_bytes
+                .unwrap_or(DEFAULT_MAX_CONTAINER_BYTES),
+            max_members: self
+                .max_container_members
+                .unwrap_or(DEFAULT_MAX_CONTAINER_MEMBERS),
+        }
+    }
 }
 
 /// Context provided to parsers during parsing
@@ -132,6 +167,10 @@ mod tests {
         let opts = ParseOptions::default();
         assert!(!opts.extract_images);
         assert!(!opts.preserve_formatting);
+        let limits = opts.container_limits();
+        assert_eq!(limits.max_depth, DEFAULT_MAX_CONTAINER_DEPTH);
+        assert_eq!(limits.max_total_bytes, DEFAULT_MAX_CONTAINER_BYTES);
+        assert_eq!(limits.max_members, DEFAULT_MAX_CONTAINER_MEMBERS);
     }
 
     #[test]

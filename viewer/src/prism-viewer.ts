@@ -61,6 +61,32 @@ export interface WorkbookCellRecord {
   is_concealed?: boolean;
 }
 
+export interface FindingLocation {
+  location_type: "page" | "slide" | "sheet" | "part_path" | "document";
+  page_index?: number;
+  slide_index?: number;
+  sheet_name?: string;
+  cell_range?: string;
+  path?: string;
+  rects?: SearchRect[];
+}
+
+export interface FindingItem {
+  kind: string;
+  severity: "info" | "notable" | "high";
+  location: FindingLocation;
+  excerpt?: string;
+  detail?: unknown;
+}
+
+export interface ViewerAnnotation {
+  id: string;
+  kind: { type: string; reason_code?: string; label?: string; color?: string };
+  page_index: number;
+  rects_pct: SearchRect[];
+  proposed?: boolean;
+}
+
 export interface PrismHostBridge {
   getPageCount?: () => Promise<number> | number;
   getPageSize?: (pageIndex: number) => Promise<{ widthPt: number; heightPt: number }> | { widthPt: number; heightPt: number };
@@ -71,6 +97,9 @@ export interface PrismHostBridge {
   /** Workbook Grid-Mode host bridge (`prism_workbook_*`). */
   getWorkbookSheets?: () => Promise<{ sheets: WorkbookSheetDescriptor[] }> | { sheets: WorkbookSheetDescriptor[] };
   getWorkbookCells?: (sheet: number, r0: number, c0: number, r1: number, c1: number) => Promise<{ cells: WorkbookCellRecord[] }> | { cells: WorkbookCellRecord[] };
+  /** Phase 4 Review & Findings bridge (`prism_document_hidden_content` / `prism_document_annotations`). */
+  getHiddenContentReport?: () => Promise<{ items: FindingItem[] }> | { items: FindingItem[] };
+  getAnnotations?: () => Promise<ViewerAnnotation[]> | ViewerAnnotation[];
 }
 
 declare global {
@@ -96,6 +125,12 @@ export class PrismViewerController {
   private rotationDeg = 0;
   private searchHits: SearchHit[] = [];
   private activeHitIndex = -1;
+  private findings: FindingItem[] = [];
+  private readonly revealedKinds: Set<string> = new Set();
+  private activeFindingRects: Array<{ page: number; rect: SearchRect }> = [];
+  private annotations: ViewerAnnotation[] = [];
+  private previewRedactions = true;
+  private readonly reviewPanel: HTMLElement | null;
   private observer: IntersectionObserver | null = null;
 
   constructor(root: HTMLElement) {
@@ -103,6 +138,7 @@ export class PrismViewerController {
     this.viewport = (root.querySelector(".prism-viewport") as HTMLElement) || root;
     this.pagesContainer = (root.querySelector(".prism-viewer") as HTMLElement) || root;
     this.thumbsSidebar = root.querySelector(".prism-thumbs-sidebar");
+    this.reviewPanel = root.querySelector("#prism-review-panel");
   }
 
   public async init(): Promise<void> {
@@ -112,6 +148,7 @@ export class PrismViewerController {
     this.setupVirtualization();
     this.setupKeyboardShortcuts();
     await this.setupWorkbookGrid();
+    await this.setupReviewPanel();
     this.applyZoomAndRotation();
 
     window.addEventListener("resize", () => {
@@ -698,6 +735,22 @@ export class PrismViewerController {
     }
 
     slot.appendChild(layer);
+  }
+
+  private async setupReviewPanel(): Promise<void> {
+    if (!this.reviewPanel) return;
+    if (window.PrismHost?.getHiddenContentReport) {
+      const rep = await window.PrismHost.getHiddenContentReport();
+      if (rep && Array.isArray(rep.items)) {
+        this.findings = rep.items;
+      }
+    }
+    if (window.PrismHost?.getAnnotations) {
+      const anns = await window.PrismHost.getAnnotations();
+      if (Array.isArray(anns)) {
+        this.annotations = anns;
+      }
+    }
   }
 
   private setupKeyboardShortcuts(): void {

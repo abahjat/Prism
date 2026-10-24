@@ -15,6 +15,7 @@ categories = ["parser-implementations"]
 # Internal dependencies
 prism-core = { workspace = true }
 prism-excel = { workspace = true }
+prism-layout = { workspace = true }
 prism-ppt = { workspace = true }
 prism-word = { workspace = true }
 

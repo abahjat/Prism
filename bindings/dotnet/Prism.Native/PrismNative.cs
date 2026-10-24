@@ -123,6 +123,39 @@ public static class PrismLib
     public static extern IntPtr prism_document_forensic_facts(IntPtr doc);
 
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern IntPtr prism_document_hidden_content(IntPtr doc);
+
+    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern IntPtr prism_document_children(IntPtr doc);
+
+    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern IntPtr prism_document_open_child(IntPtr doc, byte[] nodeId);
+
+    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern int prism_document_load_annotations(IntPtr doc, byte[] sidecarJson);
+
+    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern IntPtr prism_document_save_annotations(IntPtr doc);
+
+    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern int prism_document_add_annotation(IntPtr doc, byte[] annotationJson);
+
+    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern int prism_document_remove_annotation(IntPtr doc, byte[] annotationId);
+
+    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern IntPtr prism_document_annotations(IntPtr doc);
+
+    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern int prism_document_export_redacted(
+        IntPtr doc,
+        uint format,
+        float dpi,
+        out IntPtr outBuf,
+        out UIntPtr outLen,
+        out IntPtr outLogJson);
+
+    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
     public static extern IntPtr prism_workbook_open(byte[] data, UIntPtr len, byte[]? filename);
 
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
@@ -352,6 +385,98 @@ public sealed class PrismDocument : IDisposable
     {
         EnsureOpen();
         return PrismLib.Call(PrismLib.prism_document_font_report(handle));
+    }
+
+    /// <summary>Return the cross-format HiddenContentReport (items and coverage) as JSON.</summary>
+    public string GetHiddenContentJson()
+    {
+        EnsureOpen();
+        return PrismLib.Call(PrismLib.prism_document_hidden_content(handle));
+    }
+
+    /// <summary>Return the unified container/embedded-object FamilyTree as JSON.</summary>
+    public string GetChildrenJson()
+    {
+        EnsureOpen();
+        return PrismLib.Call(PrismLib.prism_document_children(handle));
+    }
+
+    /// <summary>Open a child container/embedded-object node by nodeId (e.g. "root/0") as a new PrismDocument.</summary>
+    public PrismDocument OpenChild(string nodeId)
+    {
+        if (nodeId == null) throw new ArgumentNullException(nameof(nodeId));
+        EnsureOpen();
+        IntPtr ptr = PrismLib.prism_document_open_child(handle, PrismLib.Utf8Z(nodeId)!);
+        if (ptr == IntPtr.Zero)
+        {
+            throw new PrismException(PrismLib.LastError() ?? $"Failed to open child node '{nodeId}'");
+        }
+        return new PrismDocument(ptr);
+    }
+
+    /// <summary>Load and validate an AnnotationSidecar JSON string into the document.</summary>
+    public void LoadAnnotationsJson(string sidecarJson)
+    {
+        if (sidecarJson == null) throw new ArgumentNullException(nameof(sidecarJson));
+        EnsureOpen();
+        int rc = PrismLib.prism_document_load_annotations(handle, PrismLib.Utf8Z(sidecarJson)!);
+        if (rc != 0)
+        {
+            throw new PrismException(PrismLib.LastError() ?? "Failed to load annotation sidecar");
+        }
+    }
+
+    /// <summary>Serialize the document's current AnnotationSidecar to deterministic JSON.</summary>
+    public string SaveAnnotationsJson()
+    {
+        EnsureOpen();
+        return PrismLib.Call(PrismLib.prism_document_save_annotations(handle));
+    }
+
+    /// <summary>Add a single Annotation (serialized as JSON) to the document's sidecar.</summary>
+    public void AddAnnotationJson(string annotationJson)
+    {
+        if (annotationJson == null) throw new ArgumentNullException(nameof(annotationJson));
+        EnsureOpen();
+        int rc = PrismLib.prism_document_add_annotation(handle, PrismLib.Utf8Z(annotationJson)!);
+        if (rc != 0)
+        {
+            throw new PrismException(PrismLib.LastError() ?? "Failed to add annotation");
+        }
+    }
+
+    /// <summary>Remove an annotation by ID from the document's sidecar.</summary>
+    public void RemoveAnnotation(string annotationId)
+    {
+        if (annotationId == null) throw new ArgumentNullException(nameof(annotationId));
+        EnsureOpen();
+        int rc = PrismLib.prism_document_remove_annotation(handle, PrismLib.Utf8Z(annotationId)!);
+        if (rc != 0)
+        {
+            throw new PrismException(PrismLib.LastError() ?? $"Failed to remove annotation '{annotationId}'");
+        }
+    }
+
+    /// <summary>Return resolved annotations (Exact, Moved, Unresolved) as JSON.</summary>
+    public string GetResolvedAnnotationsJson()
+    {
+        EnsureOpen();
+        return PrismLib.Call(PrismLib.prism_document_annotations(handle));
+    }
+
+    /// <summary>Export the document with approved redactions destructively applied and verified, returning (bytes, redactionLogJson).</summary>
+    public (byte[] Bytes, string RedactionLogJson) ExportRedacted(PrismExportFormat format, float dpi = 150.0f)
+    {
+        EnsureOpen();
+        int rc = PrismLib.prism_document_export_redacted(
+            handle, (uint)format, dpi, out IntPtr buf, out UIntPtr len, out IntPtr logPtr);
+        if (rc != 0)
+        {
+            throw new PrismException(PrismLib.LastError() ?? $"Failed to export redacted document as {format}");
+        }
+        byte[] bytes = PrismLib.CopyBufferAndFree(buf, len);
+        string logJson = PrismLib.PtrToStringAndFree(logPtr) ?? "{}";
+        return (bytes, logJson);
     }
 
     private void EnsureOpen()

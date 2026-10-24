@@ -7,20 +7,34 @@ license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 
-description = "WebAssembly sandbox for secure parser execution"
-keywords = ["sandbox", "wasm", "security", "isolation"]
-categories = ["wasm", "parser-implementations"]
+description = "Process-isolated worker pool and OS sandboxing for untrusted document parsing and rendering"
+keywords = ["sandbox", "isolation", "security", "worker-pool", "ediscovery"]
+categories = ["os", "parser-implementations"]
+
+[[bin]]
+name = "prism-worker"
+path = "src/bin/prism-worker.rs"
 
 [dependencies]
-# Internal dependencies
 prism-core = { workspace = true }
+prism-excel = { workspace = true }
+prism-layout = { workspace = true }
+prism-parsers = { workspace = true }
+prism-ppt = { workspace = true }
+prism-render = { workspace = true }
+prism-review = { workspace = true }
+prism-word = { workspace = true }
 
-# Error handling
+serde = { workspace = true }
+serde_json = { workspace = true }
 thiserror = { workspace = true }
 anyhow = { workspace = true }
-
-# Logging
 tracing = { workspace = true }
+tokio = { workspace = true }
+bytes = { workspace = true }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
 
 [dev-dependencies]
 tempfile = { workspace = true }

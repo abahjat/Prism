@@ -388,7 +388,13 @@ fn format_number_sections(num: f64, format_code: &str, options: &FormatOptions) 
     }
 
     if section_is_datetime(&meta.cleaned) {
-        let text = format_datetime_section(num, &meta.cleaned, options.date_system);
+        let text = if date_serial_in_range(num, options.date_system) {
+            format_datetime_section(num, &meta.cleaned, options.date_system)
+        } else {
+            // Excel fills the cell with `#` when a date/time format gets a serial it cannot
+            // show (negative in the 1900 system, or past 9999-12-31).
+            "#".repeat(8)
+        };
         return FormattedValue {
             text,
             color: meta.color,
@@ -1230,6 +1236,19 @@ struct CivilDateTime {
     millis: u32,
 }
 
+/// Serial of 9999-12-31 in the 1900 system, the last date Excel can display.
+const MAX_DATE_SERIAL_1900: f64 = 2_958_465.0;
+
+/// Whether `serial` is a date/time Excel can display in `system`. Values outside the range
+/// are shown as `#` fill; checking first also keeps the integer conversions below in range.
+fn date_serial_in_range(serial: f64, system: DateSystem) -> bool {
+    match system {
+        DateSystem::Date1900 => (0.0..MAX_DATE_SERIAL_1900 + 1.0).contains(&serial),
+        // Negative 1904 serials keep their existing clamp-to-1904-01-01 behaviour.
+        DateSystem::Date1904 => serial.is_finite() && serial + 1462.0 < MAX_DATE_SERIAL_1900 + 1.0,
+    }
+}
+
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 fn serial_to_civil(serial: f64, system: DateSystem) -> CivilDateTime {
     let adjusted_serial = match system {
@@ -1813,5 +1832,16 @@ mod tests {
     fn date_literals_keep_non_ascii_characters() {
         assert_eq!(fmt(45000.0, "yyyy\"年\"m\"月\"d\"日\""), "2023年3月15日");
         assert_eq!(fmt(45000.0, r"d\€m"), "15€3");
+    }
+
+    #[test]
+    fn dates_outside_excel_range_show_hash_fill() {
+        // Fuzz crash: a ~1e34 serial overflowed the day arithmetic.
+        let huge = f64::from_le_bytes([114, 0, 1, 1, 0, 0, 0, 71]);
+        assert_eq!(fmt(huge, "dGd"), "########");
+        assert_eq!(fmt(f64::MAX, "[h]:mm"), "########");
+        assert_eq!(fmt(-1.0, "yyyy-mm-dd"), "########");
+        assert_eq!(fmt(2_958_466.0, "yyyy-mm-dd"), "########");
+        assert_eq!(fmt(2_958_465.0, "yyyy-mm-dd"), "9999-12-31");
     }
 }

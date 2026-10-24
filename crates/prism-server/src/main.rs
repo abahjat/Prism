@@ -1,342 +1,37 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-//! # Prism Server
+//! # Prism Server Binary Entry Point
 //!
-//! REST API server for Prism document processing.
-//!
-//! This is the main entry point for the Prism HTTP server.
+//! Starts the hardened Prism HTTP API server bound to `127.0.0.1:8080` by default.
 
-mod config;
-mod convert;
-
-use axum::http::{HeaderValue, Method, header};
-use axum::{
-    Router,
-    extract::{DefaultBodyLimit, Json},
-    http::StatusCode,
-    response::{IntoResponse, Response},
-    routing::{get, post},
-};
-use prism_parsers::ParserRegistry;
-use prism_render::html::HtmlRenderer;
-use serde::Serialize;
+use clap::Parser;
+use prism_server::{AppState, ServerArgs, ServerConfig, build_app_router};
 use std::net::SocketAddr;
-use std::sync::Arc;
-use tower_http::cors::{AllowOrigin, CorsLayer};
-use tower_http::services::ServeDir;
 use tracing::{Level, info};
-
-use config::ServerConfig;
-
-/// Application state
-#[derive(Clone)]
-struct AppState {
-    /// Parser registry for format support
-    parser_registry: Arc<ParserRegistry>,
-    /// HTML renderer
-    html_renderer: Arc<HtmlRenderer>,
-    /// Server configuration
-    config: Arc<ServerConfig>,
-}
-
-impl AppState {
-    /// Create a new AppState with default configuration
-    fn new() -> Self {
-        let mut registry = ParserRegistry::new();
-
-        // Register PDF parser
-        registry.register(Arc::new(prism_parsers::PdfParser::new()));
-
-        // Register image parsers
-        registry.register(Arc::new(prism_parsers::PngParser::new()));
-        registry.register(Arc::new(prism_parsers::JpegParser::new()));
-        registry.register(Arc::new(prism_parsers::TiffParser::new()));
-        registry.register(Arc::new(prism_parsers::GifParser::new()));
-        registry.register(Arc::new(prism_parsers::WebpParser::new()));
-        registry.register(Arc::new(prism_parsers::BmpParser::new()));
-        registry.register(Arc::new(prism_parsers::SvgParser::new()));
-        registry.register(Arc::new(prism_parsers::EmfParser::new()));
-        registry.register(Arc::new(prism_parsers::EmzParser::new()));
-        registry.register(Arc::new(prism_parsers::EpsParser::new()));
-        registry.register(Arc::new(prism_parsers::WmfParser::new()));
-        registry.register(Arc::new(prism_parsers::IcoParser::new()));
-        registry.register(Arc::new(prism_parsers::TgaParser::new()));
-        registry.register(Arc::new(prism_parsers::SvgzParser::new()));
-
-        // Register Office parsers (modern)
-        registry.register(Arc::new(prism_parsers::DocxParser::new()));
-        registry.register(Arc::new(prism_parsers::PptxParser::new()));
-        registry.register(Arc::new(prism_parsers::XlsxParser::new()));
-
-        // Register Office parsers (legacy)
-        registry.register(Arc::new(prism_parsers::DocParser::new()));
-        registry.register(Arc::new(prism_parsers::PptParser::new()));
-        registry.register(Arc::new(prism_parsers::XlsParser::new()));
-
-        // Register OpenDocument parsers
-        registry.register(Arc::new(prism_parsers::OdtParser::new()));
-        registry.register(Arc::new(prism_parsers::OdsParser::new()));
-        registry.register(Arc::new(prism_parsers::OdpParser::new()));
-        registry.register(Arc::new(prism_parsers::OdgParser::new()));
-
-        // Register OneNote parser
-        registry.register(Arc::new(prism_parsers::OneNoteParser::new()));
-
-        // Register Visio parser
-        registry.register(Arc::new(prism_parsers::VsdxParser::new()));
-
-        // Register Microsoft Project parser
-        registry.register(Arc::new(prism_parsers::MppParser::new()));
-
-        // Register XPS parser
-        registry.register(Arc::new(prism_parsers::XpsParser::new()));
-
-        // Register text-based parsers
-        registry.register(Arc::new(prism_parsers::TextParser::new()));
-        registry.register(Arc::new(prism_parsers::EpubParser::new()));
-        registry.register(Arc::new(prism_parsers::HtmlParser::new()));
-        registry.register(Arc::new(prism_parsers::JsonParser::new()));
-        registry.register(Arc::new(prism_parsers::XmlParser::new()));
-        registry.register(Arc::new(prism_parsers::CsvParser::new()));
-        registry.register(Arc::new(prism_parsers::MarkdownParser::new()));
-        registry.register(Arc::new(prism_parsers::LogParser::new()));
-        registry.register(Arc::new(prism_parsers::RtfParser::new()));
-
-        // Register code parsers
-        registry.register(Arc::new(prism_parsers::CodeParser::new(
-            prism_core::format::Format::rust(),
-        )));
-        registry.register(Arc::new(prism_parsers::CodeParser::new(
-            prism_core::format::Format::python(),
-        )));
-        registry.register(Arc::new(prism_parsers::CodeParser::new(
-            prism_core::format::Format::javascript(),
-        )));
-        registry.register(Arc::new(prism_parsers::CodeParser::new(
-            prism_core::format::Format::typescript(),
-        )));
-        registry.register(Arc::new(prism_parsers::CodeParser::new(
-            prism_core::format::Format::c(),
-        )));
-        registry.register(Arc::new(prism_parsers::CodeParser::new(
-            prism_core::format::Format::cpp(),
-        )));
-        registry.register(Arc::new(prism_parsers::CodeParser::new(
-            prism_core::format::Format::css(),
-        )));
-
-        // Register email parsers
-        registry.register(Arc::new(prism_parsers::EmlParser::new()));
-        registry.register(Arc::new(prism_parsers::MsgParser::new()));
-        registry.register(Arc::new(prism_parsers::MboxParser::new()));
-        registry.register(Arc::new(prism_parsers::VcfParser::new()));
-        registry.register(Arc::new(prism_parsers::IcsParser::new()));
-        registry.register(Arc::new(prism_parsers::MhtParser::new()));
-
-        // Register CAD parsers
-        registry.register(Arc::new(prism_parsers::DxfParser::new()));
-
-        // Register archive parsers
-        registry.register(Arc::new(prism_parsers::ArchiveParser::new(
-            prism_core::format::Format::zip(),
-        )));
-        registry.register(Arc::new(prism_parsers::ArchiveParser::new(
-            prism_core::format::Format::tar(),
-        )));
-        registry.register(Arc::new(prism_parsers::ArchiveParser::new(
-            prism_core::format::Format::gzip(),
-        )));
-
-        info!("Registered {} parsers", registry.count());
-
-        // Log registered MIME types for debugging
-        for parser in registry.all_parsers() {
-            info!(
-                "  - {}: {}",
-                parser.metadata().name,
-                parser.format().mime_type
-            );
-        }
-
-        let renderer = HtmlRenderer::new();
-        let config = ServerConfig::default();
-
-        Self {
-            parser_registry: Arc::new(registry),
-            html_renderer: Arc::new(renderer),
-            config: Arc::new(config),
-        }
-    }
-}
-
-/// Health check response
-#[derive(Debug, Serialize)]
-struct HealthResponse {
-    status: String,
-    version: String,
-}
-
-/// Error response
-#[derive(Debug, Serialize)]
-pub struct ErrorResponse {
-    pub error: String,
-    pub message: String,
-}
-
-/// API error type
-#[derive(Debug)]
-pub enum ApiError {
-    /// Bad request (400)
-    BadRequest(String),
-    /// Unsupported media type (415)
-    UnsupportedMediaType(String),
-    /// Not implemented (501)
-    NotImplemented(String),
-    /// Internal server error (500)
-    InternalServerError(String),
-}
-
-impl IntoResponse for ApiError {
-    fn into_response(self) -> Response {
-        let (status, message) = match self {
-            ApiError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg),
-            ApiError::UnsupportedMediaType(msg) => (StatusCode::UNSUPPORTED_MEDIA_TYPE, msg),
-            ApiError::NotImplemented(msg) => (StatusCode::NOT_IMPLEMENTED, msg),
-            ApiError::InternalServerError(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
-        };
-
-        let body = Json(ErrorResponse {
-            error: status.to_string(),
-            message,
-        });
-
-        (status, body).into_response()
-    }
-}
-
-/// Health check endpoint
-async fn health() -> Json<HealthResponse> {
-    Json(HealthResponse {
-        status: "ok".to_string(),
-        version: env!("CARGO_PKG_VERSION").to_string(),
-    })
-}
-
-/// Version endpoint
-async fn version() -> Json<serde_json::Value> {
-    Json(serde_json::json!({
-        "server": env!("CARGO_PKG_VERSION"),
-        "commit": prism_core::GIT_HASH,
-        "full_version": prism_core::FULL_VERSION,
-        "core": prism_core::VERSION,
-        "parsers": prism_parsers::VERSION,
-        "render": prism_render::VERSION,
-        "sandbox": prism_sandbox::VERSION,
-    }))
-}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // Parse CLI arguments
-    use clap::Parser;
-    let args = config::ServerArgs::parse();
+    let args = ServerArgs::parse();
 
-    // Initialize tracing
     tracing_subscriber::fmt()
         .with_max_level(Level::INFO)
         .with_target(false)
         .init();
 
-    info!("Starting Prism Server v{}", env!("CARGO_PKG_VERSION"));
-
-    // Initialize app state
-    let state = AppState::new();
-
-    // Build router with API routes
-    let api_router = Router::new()
-        .route("/health", get(health))
-        .route("/version", get(version))
-        .route("/convert", post(convert::convert))
-        .layer(DefaultBodyLimit::max(5 * 1024 * 1024 * 1024)) // 5GB limit
-        .with_state(state);
-
-    // Build CORS layer based on configuration
-    let cors_layer = build_cors_layer(&args.cors_origins);
     info!(
-        "CORS configured for: {}",
-        if args.cors_origins.is_empty() {
-            "documain.ai (default)"
-        } else {
-            &args.cors_origins
-        }
+        "Starting Prism Server v{} (engine: {})",
+        prism_server::VERSION,
+        prism_core::ENGINE_VERSION
     );
 
-    // Combine API routes with static file serving
-    let app = Router::new()
-        .nest("/api", api_router)
-        .nest_service("/", ServeDir::new("web-viewer"))
-        .layer(cors_layer);
+    let config = ServerConfig::from_args(&args);
+    let state = AppState::with_config(config);
+    let app = build_app_router(state, &args.cors_origins);
 
-    // Start server with configurable host and port
     let addr = SocketAddr::from((args.host, args.port));
-    info!("Server listening on {}", addr);
+    info!("Server listening on http://{}", addr);
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app).await?;
 
     Ok(())
-}
-
-/// Build CORS layer based on configuration
-///
-/// If origins is empty, defaults to allowing documain.ai and all its subdomains.
-/// If origins is "*", allows all origins (development only).
-/// Otherwise, parses comma-separated list of allowed origins.
-fn build_cors_layer(origins: &str) -> CorsLayer {
-    let origins = origins.trim();
-
-    if origins == "*" {
-        // Permissive mode (development only)
-        info!("CORS: Permissive mode enabled (all origins allowed)");
-        return CorsLayer::permissive();
-    }
-
-    if origins.is_empty() {
-        // Default: allow documain.ai and all subdomains, plus localhost for development
-        info!("CORS: Restricting to documain.ai, subdomains, and localhost");
-        CorsLayer::new()
-            .allow_origin(AllowOrigin::predicate(|origin: &HeaderValue, _| {
-                if let Ok(origin_str) = origin.to_str() {
-                    // Allow exact matches and subdomains
-                    origin_str == "https://documain.ai"
-                        || origin_str == "http://documain.ai"
-                        || origin_str.ends_with(".documain.ai")
-                        // Allow localhost for development
-                        || origin_str.starts_with("http://localhost:")
-                        || origin_str.starts_with("http://127.0.0.1:")
-                        || origin_str == "http://localhost"
-                        || origin_str == "http://127.0.0.1"
-                } else {
-                    false
-                }
-            }))
-            .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
-            .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION, header::ACCEPT])
-            .expose_headers([header::CONTENT_TYPE])
-            .allow_credentials(true)
-    } else {
-        // Parse comma-separated origins
-        let allowed_origins: Vec<HeaderValue> = origins
-            .split(',')
-            .filter_map(|s| s.trim().parse().ok())
-            .collect();
-
-        info!("CORS: Allowing {} custom origins", allowed_origins.len());
-
-        CorsLayer::new()
-            .allow_origin(allowed_origins)
-            .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
-            .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION, header::ACCEPT])
-            .expose_headers([header::CONTENT_TYPE])
-            .allow_credentials(true)
-    }
 }

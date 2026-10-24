@@ -8,6 +8,7 @@
 use krilla::action::{Action, LinkAction};
 use krilla::annotation::{Annotation, LinkAnnotation, Target};
 use krilla::color::rgb;
+use krilla::configure::{Archival, Configuration, ConfigurationBuilder};
 use krilla::geom::{
     Path as KrillaPath, PathBuilder as KrillaPathBuilder, Point as KrillaPoint, Rect as KrillaRect,
     Size as KrillaSize, Transform as KrillaTransform,
@@ -40,6 +41,10 @@ const NOTO_SANS_FALLBACK_TTF: &[u8] = include_bytes!("../../../assets/fonts/Noto
 pub struct PdfExportOptions {
     /// Compress PDF content streams with Deflate (default `true`).
     pub compress_streams: bool,
+    /// Write PDF/A-2b: krilla validates the document against PDF/A-2b while serializing and
+    /// adds the XMP metadata and output intent it requires; export fails if the page content
+    /// cannot conform (default `false`).
+    pub pdf_a2b: bool,
     /// Resource limits enforced during export.
     pub layout_options: LayoutOptions,
 }
@@ -48,6 +53,7 @@ impl Default for PdfExportOptions {
     fn default() -> Self {
         Self {
             compress_streams: true,
+            pdf_a2b: false,
             layout_options: LayoutOptions::default(),
         }
     }
@@ -78,12 +84,21 @@ pub fn export_document_pdf(doc: &LayoutDocument, options: &PdfExportOptions) -> 
         )));
     }
 
+    let configuration = if options.pdf_a2b {
+        ConfigurationBuilder::new()
+            .with_archival_validator(Archival::A2_B)
+            .finish()
+            .map_err(|e| Error::RenderError(format!("PDF/A-2b configuration failed: {e:?}")))?
+    } else {
+        Configuration::default()
+    };
     let settings = SerializeSettings {
+        configuration,
         pretty: false,
         compress_content_streams: options.compress_streams,
         no_device_cs: false,
         ascii_compatible: false,
-        xmp_metadata: false,
+        xmp_metadata: options.pdf_a2b,
         cmyk_profile: None,
         enable_tagging: false,
         ..SerializeSettings::default()
@@ -744,5 +759,20 @@ mod tests {
             extracted.contains("Searchable PDF Export Round-Trip"),
             "Expected searchable round-trip text, got {extracted:?}"
         );
+
+        // PDF/A-2b output declares its conformance in XMP and stays searchable.
+        let archival = export_document_pdf(
+            &doc,
+            &PdfExportOptions {
+                pdf_a2b: true,
+                ..PdfExportOptions::default()
+            },
+        )
+        .expect("export pdf/a-2b");
+        let raw = String::from_utf8_lossy(&archival);
+        assert!(raw.contains("pdfaid:part") && raw.contains("pdfaid:conformance"));
+        assert!(raw.contains("OutputIntent"));
+        let reparsed = interpret_pdf_bytes(&archival, &LayoutOptions::default()).expect("reparse");
+        assert!(reparsed.pages[0].text().contains("Searchable PDF Export"));
     }
 }
