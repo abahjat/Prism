@@ -157,6 +157,8 @@ pub struct ChartSpace {
     pub series: Vec<ChartSeries>,
     /// Primary value axis specification.
     pub value_axis: AxisSpec,
+    /// Optional secondary value axis specification (`c:valAx` on right side of plot).
+    pub secondary_value_axis: Option<AxisSpec>,
     /// Category axis specification.
     pub category_axis: AxisSpec,
     /// Doughnut hole size percentage (`10..=90`, default `50`).
@@ -355,6 +357,15 @@ pub fn parse_chart_xml(xml: &str) -> Result<ChartSpace> {
     let mut title_run_ended = false;
     let mut in_format_code = false;
     let mut in_val_ax = false;
+    let mut val_ax_count = 0usize;
+    let mut current_val_ax = AxisSpec {
+        show_major_gridlines: true,
+        ..AxisSpec::default()
+    };
+    let mut current_val_ax_id: Option<String> = None;
+    let mut val_axes_with_ids: Vec<(Option<String>, AxisSpec)> = Vec::new();
+    let mut current_group_ax_ids: Vec<String> = Vec::new();
+    let mut series_group_ax_ids: Vec<Vec<String>> = Vec::new();
     let mut in_dlbls = false;
 
     loop {
@@ -372,6 +383,7 @@ pub fn parse_chart_xml(xml: &str) -> Result<ChartSpace> {
                     b"barChart" | b"bar3DChart" => {
                         bar_dir_is_bar = false;
                         bar_grouping.clear();
+                        current_group_ax_ids.clear();
                         current_kind = ChartKind::ColumnClustered;
                     }
                     b"barDir" => {
@@ -403,48 +415,56 @@ pub fn parse_chart_xml(xml: &str) -> Result<ChartSpace> {
                         }
                     }
                     b"lineChart" | b"line3DChart" => {
+                        current_group_ax_ids.clear();
                         current_kind = ChartKind::Line;
                         if chart.series.is_empty() {
                             chart.primary_kind = current_kind;
                         }
                     }
                     b"areaChart" | b"area3DChart" => {
+                        current_group_ax_ids.clear();
                         current_kind = ChartKind::Area;
                         if chart.series.is_empty() {
                             chart.primary_kind = current_kind;
                         }
                     }
                     b"pieChart" | b"pie3DChart" | b"ofPieChart" => {
+                        current_group_ax_ids.clear();
                         current_kind = ChartKind::Pie;
                         if chart.series.is_empty() {
                             chart.primary_kind = current_kind;
                         }
                     }
                     b"doughnutChart" => {
+                        current_group_ax_ids.clear();
                         current_kind = ChartKind::Doughnut;
                         if chart.series.is_empty() {
                             chart.primary_kind = current_kind;
                         }
                     }
                     b"scatterChart" => {
+                        current_group_ax_ids.clear();
                         current_kind = ChartKind::Scatter;
                         if chart.series.is_empty() {
                             chart.primary_kind = current_kind;
                         }
                     }
                     b"bubbleChart" => {
+                        current_group_ax_ids.clear();
                         current_kind = ChartKind::Bubble;
                         if chart.series.is_empty() {
                             chart.primary_kind = current_kind;
                         }
                     }
                     b"radarChart" => {
+                        current_group_ax_ids.clear();
                         current_kind = ChartKind::Radar;
                         if chart.series.is_empty() {
                             chart.primary_kind = current_kind;
                         }
                     }
                     b"stockChart" => {
+                        current_group_ax_ids.clear();
                         current_kind = ChartKind::Stock;
                         if chart.series.is_empty() {
                             chart.primary_kind = current_kind;
@@ -574,43 +594,69 @@ pub fn parse_chart_xml(xml: &str) -> Result<ChartSpace> {
                             };
                         }
                     }
-                    b"valAx" => in_val_ax = true,
+                    b"valAx" => {
+                        in_val_ax = true;
+                        current_val_ax = AxisSpec {
+                            show_major_gridlines: val_ax_count == 0,
+                            ..AxisSpec::default()
+                        };
+                        current_val_ax_id = None;
+                        val_ax_count += 1;
+                    }
+                    b"axId" => {
+                        if let Some(val) = attr_val(e, b"val") {
+                            if in_val_ax {
+                                if current_val_ax_id.is_none() {
+                                    current_val_ax_id = Some(val);
+                                }
+                            } else if current_series.is_none() {
+                                current_group_ax_ids.push(val);
+                                for prev_ids in series_group_ax_ids.iter_mut().rev() {
+                                    if prev_ids.len() < current_group_ax_ids.len() {
+                                        prev_ids.clone_from(&current_group_ax_ids);
+                                    } else {
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
                     b"min" if in_val_ax => {
                         if let Some(val) = attr_val(e, b"val")
                             && let Ok(v) = val.parse::<f64>()
                         {
-                            chart.value_axis.min = Some(v);
+                            current_val_ax.min = Some(v);
                         }
                     }
                     b"max" if in_val_ax => {
                         if let Some(val) = attr_val(e, b"val")
                             && let Ok(v) = val.parse::<f64>()
                         {
-                            chart.value_axis.max = Some(v);
+                            current_val_ax.max = Some(v);
                         }
                     }
                     b"majorUnit" if in_val_ax => {
                         if let Some(val) = attr_val(e, b"val")
                             && let Ok(v) = val.parse::<f64>()
                         {
-                            chart.value_axis.major_unit = Some(v);
+                            current_val_ax.major_unit = Some(v);
                         }
                     }
                     b"logBase" if in_val_ax => {
                         if let Some(val) = attr_val(e, b"val")
                             && let Ok(v) = val.parse::<f64>()
                         {
-                            chart.value_axis.log_base = Some(v);
+                            current_val_ax.log_base = Some(v);
                         }
                     }
                     b"orientation" if in_val_ax => {
                         if let Some(val) = attr_val(e, b"val") {
-                            chart.value_axis.reversed = val == "maxMin";
+                            current_val_ax.reversed = val == "maxMin";
                         }
                     }
                     b"numFmt" if in_val_ax => {
                         if let Some(code) = attr_val(e, b"formatCode") {
-                            chart.value_axis.format_code = Some(code);
+                            current_val_ax.format_code = Some(code);
                         }
                     }
                     b"externalData" => {
@@ -670,6 +716,7 @@ pub fn parse_chart_xml(xml: &str) -> Result<ChartSpace> {
                     b"ser" | b"series" => {
                         if let Some(ser) = current_series.take() {
                             chart.series.push(ser);
+                            series_group_ax_ids.push(current_group_ax_ids.clone());
                         }
                         in_ser_tx = false;
                         in_cat = false;
@@ -690,7 +737,13 @@ pub fn parse_chart_xml(xml: &str) -> Result<ChartSpace> {
                     }
                     b"formatCode" => in_format_code = false,
                     b"dLbls" => in_dlbls = false,
-                    b"valAx" => in_val_ax = false,
+                    b"valAx" => {
+                        in_val_ax = false;
+                        val_axes_with_ids.push((
+                            current_val_ax_id.take(),
+                            std::mem::take(&mut current_val_ax),
+                        ));
+                    }
                     _ => {}
                 }
             }
@@ -699,6 +752,21 @@ pub fn parse_chart_xml(xml: &str) -> Result<ChartSpace> {
             _ => {}
         }
         buf.clear();
+    }
+
+    if let Some((_, first_ax)) = val_axes_with_ids.first() {
+        chart.value_axis = first_ax.clone();
+    }
+    if val_axes_with_ids.len() >= 2 {
+        let (ref sec_id, ref sec_ax) = val_axes_with_ids[1];
+        chart.secondary_value_axis = Some(sec_ax.clone());
+        if let Some(sec_ax_id) = sec_id {
+            for (ser, grp_ids) in chart.series.iter_mut().zip(series_group_ax_ids.iter()) {
+                if grp_ids.iter().any(|id| id == sec_ax_id) {
+                    ser.use_secondary_axis = true;
+                }
+            }
+        }
     }
 
     Ok(chart)
@@ -809,16 +877,35 @@ pub fn render_chart(
         0.0
     };
 
+    let secondary_pad = if chart.secondary_value_axis.is_some()
+        || chart.series.iter().any(|s| s.use_secondary_axis)
+    {
+        30.0
+    } else {
+        0.0
+    };
+
     let plot_rect = Rect::new(
         bounds.x + 36.0,
         bounds.y + top_pad,
-        (bounds.width - 44.0 - right_legend_w).max(24.0),
+        (bounds.width - 44.0 - right_legend_w - secondary_pad).max(24.0),
         (bounds.height - top_pad - 22.0 - bottom_legend_h).max(24.0),
     );
 
     match chart.primary_kind {
         ChartKind::Pie | ChartKind::Doughnut | ChartKind::Sunburst => {
             render_pie_or_doughnut(
+                chart,
+                plot_rect,
+                &palette,
+                &theme.minor_latin_font,
+                font_sys,
+                text_engine,
+                &mut items,
+            );
+        }
+        ChartKind::Radar => {
+            render_radar_chart(
                 chart,
                 plot_rect,
                 &palette,
@@ -884,7 +971,8 @@ pub fn render_chart(
     clippy::too_many_lines,
     clippy::cast_precision_loss,
     clippy::cast_possible_truncation,
-    clippy::cast_sign_loss
+    clippy::cast_sign_loss,
+    clippy::similar_names
 )]
 fn render_cartesian_chart(
     chart: &ChartSpace,
@@ -917,6 +1005,7 @@ fn render_cartesian_chart(
                 chart
                     .series
                     .iter()
+                    .filter(|s| !s.use_secondary_axis)
                     .filter_map(|s| s.values.get(pt_i).copied())
                     .filter(|v| v.is_finite())
                     .sum::<f64>()
@@ -926,29 +1015,120 @@ fn render_cartesian_chart(
         chart
             .series
             .iter()
+            .filter(|s| !s.use_secondary_axis)
             .flat_map(|s| s.values.iter().copied())
             .collect()
     };
 
-    let scale = compute_excel_axis_scale(
-        &all_vals,
-        chart.value_axis.min,
-        chart.value_axis.max,
-        chart.value_axis.major_unit,
-        true,
-        is_stacked_100,
-    );
+    let log_base = chart
+        .value_axis
+        .log_base
+        .filter(|&b| b > 1.0 && b.is_finite());
+    let scale = if let Some(base) = log_base {
+        let pos_vals: Vec<f64> = all_vals
+            .iter()
+            .copied()
+            .filter(|&v| v > 0.0 && v.is_finite())
+            .collect();
+        let min_v = chart
+            .value_axis
+            .min
+            .filter(|&v| v > 0.0 && v.is_finite())
+            .unwrap_or_else(|| {
+                let dmin = pos_vals.iter().copied().fold(f64::INFINITY, f64::min);
+                if dmin.is_finite() && dmin > 0.0 {
+                    base.powf(dmin.log(base).floor())
+                } else {
+                    1.0
+                }
+            });
+        let max_v = chart
+            .value_axis
+            .max
+            .filter(|&v| v > min_v && v.is_finite())
+            .unwrap_or_else(|| {
+                let dmax = pos_vals.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+                if dmax.is_finite() && dmax > min_v {
+                    base.powf(dmax.log(base).ceil())
+                } else {
+                    min_v * base * base
+                }
+            });
+        AxisScale {
+            min: min_v,
+            max: max_v.max(min_v * base),
+            major_unit: base,
+        }
+    } else {
+        compute_excel_axis_scale(
+            &all_vals,
+            chart.value_axis.min,
+            chart.value_axis.max,
+            chart.value_axis.major_unit,
+            true,
+            is_stacked_100,
+        )
+    };
 
     let val_span = (scale.max - scale.min).max(1e-6);
     let map_y = |v: f64| -> f32 {
-        let norm = ((v - scale.min) / val_span).clamp(0.0, 1.0) as f32;
+        let norm = if let Some(base) = log_base {
+            let l_min = scale.min.max(1e-9).log(base);
+            let l_max = scale.max.max(scale.min * base).log(base);
+            let l_val = v.max(scale.min * 0.1).max(1e-9).log(base);
+            ((l_val - l_min) / (l_max - l_min).max(1e-6)).clamp(0.0, 1.0) as f32
+        } else {
+            ((v - scale.min) / val_span).clamp(0.0, 1.0) as f32
+        };
         if chart.value_axis.reversed {
             plot.y + norm * plot.height
         } else {
             plot.bottom() - norm * plot.height
         }
     };
-    let zero_y = map_y(0.0_f64.clamp(scale.min, scale.max));
+    let zero_y = map_y(if log_base.is_some() {
+        scale.min
+    } else {
+        0.0_f64.clamp(scale.min, scale.max)
+    });
+
+    // Optional secondary value axis scale and mapping
+    let sec_vals: Vec<f64> = chart
+        .series
+        .iter()
+        .filter(|s| s.use_secondary_axis)
+        .flat_map(|s| s.values.iter().copied())
+        .collect();
+    let sec_axis_spec = chart.secondary_value_axis.clone().unwrap_or_default();
+    let sec_scale = if !sec_vals.is_empty() || chart.secondary_value_axis.is_some() {
+        Some(compute_excel_axis_scale(
+            if sec_vals.is_empty() {
+                &all_vals
+            } else {
+                &sec_vals
+            },
+            sec_axis_spec.min,
+            sec_axis_spec.max,
+            sec_axis_spec.major_unit,
+            true,
+            false,
+        ))
+    } else {
+        None
+    };
+    let map_sec_y = |v: f64| -> f32 {
+        if let Some(s_scale) = sec_scale {
+            let s_span = (s_scale.max - s_scale.min).max(1e-6);
+            let norm = ((v - s_scale.min) / s_span).clamp(0.0, 1.0) as f32;
+            if sec_axis_spec.reversed {
+                plot.y + norm * plot.height
+            } else {
+                plot.bottom() - norm * plot.height
+            }
+        } else {
+            map_y(v)
+        }
+    };
 
     // Gridlines and Y-axis tick labels
     let fmt_opts = FormatOptions::default();
@@ -959,9 +1139,25 @@ fn render_cartesian_chart(
         .or_else(|| chart.series.first().and_then(|s| s.format_code.as_deref()))
         .unwrap_or(if is_stacked_100 { "0%" } else { "General" });
 
-    let num_steps = ((scale.max - scale.min) / scale.major_unit).round() as usize;
-    for step in 0..=num_steps.min(12) {
-        let tick_val = scale.min + (step as f64) * scale.major_unit;
+    let tick_values: Vec<f64> = if let Some(base) = log_base {
+        let mut ticks = Vec::new();
+        let mut cur = scale.min.max(1e-9);
+        for _ in 0..=12 {
+            ticks.push(cur);
+            if cur >= scale.max {
+                break;
+            }
+            cur *= base;
+        }
+        ticks
+    } else {
+        let num_steps = ((scale.max - scale.min) / scale.major_unit).round() as usize;
+        (0..=num_steps.min(12))
+            .map(|step| scale.min + (step as f64) * scale.major_unit)
+            .collect()
+    };
+
+    for tick_val in tick_values {
         let ty = map_y(tick_val);
         if chart.value_axis.show_major_gridlines {
             items.push(Item::Path(PathItem {
@@ -992,8 +1188,74 @@ fn render_cartesian_chart(
         );
     }
 
-    // Category labels along X axis
-    if let Some(first_ser) = chart.series.first()
+    // Secondary Y-axis tick labels on right side of plot
+    if let Some(s_scale) = sec_scale {
+        let sec_fmt = sec_axis_spec.format_code.as_deref().unwrap_or("General");
+        let s_steps = ((s_scale.max - s_scale.min) / s_scale.major_unit).round() as usize;
+        for step in 0..=s_steps.min(10) {
+            let tv = s_scale.min + (step as f64) * s_scale.major_unit;
+            let ty = map_sec_y(tv);
+            let lbl = format_with_code(&CellInputValue::Number(tv), sec_fmt, &fmt_opts).text;
+            emit_label(
+                items,
+                &lbl,
+                Point::new(plot.right() + 4.0, ty - 4.0),
+                Some(28.0),
+                7.0,
+                false,
+                Rgba::rgb(0x59, 0x59, 0x59),
+                TextAlign::Left,
+                font_family,
+                font_sys,
+                text_engine,
+            );
+        }
+    }
+
+    // Optional numeric X-axis scale for XY Scatter / Bubble charts
+    let all_x_vals: Vec<f64> = chart
+        .series
+        .iter()
+        .filter(|s| matches!(s.kind, ChartKind::Scatter | ChartKind::Bubble))
+        .flat_map(|s| s.x_values.iter().copied())
+        .filter(|v| v.is_finite())
+        .collect();
+    let x_scale = if all_x_vals.is_empty() {
+        None
+    } else {
+        Some(compute_excel_axis_scale(
+            &all_x_vals,
+            chart.category_axis.min,
+            chart.category_axis.max,
+            chart.category_axis.major_unit,
+            false,
+            false,
+        ))
+    };
+
+    // Category / X-axis labels along X axis
+    if let Some(xs) = x_scale {
+        let x_steps = ((xs.max - xs.min) / xs.major_unit).round() as usize;
+        for step in 0..=x_steps.min(10) {
+            let xv = xs.min + (step as f64) * xs.major_unit;
+            let x_norm = ((xv - xs.min) / (xs.max - xs.min).max(1e-6)).clamp(0.0, 1.0) as f32;
+            let gx = plot.x + x_norm * plot.width;
+            let lbl = format_with_code(&CellInputValue::Number(xv), "General", &fmt_opts).text;
+            emit_label(
+                items,
+                &lbl,
+                Point::new(gx - 14.0, plot.bottom() + 3.0),
+                Some(28.0),
+                7.0,
+                false,
+                Rgba::rgb(0x59, 0x59, 0x59),
+                TextAlign::Center,
+                font_family,
+                font_sys,
+                text_engine,
+            );
+        }
+    } else if let Some(first_ser) = chart.series.first()
         && max_pts > 0
     {
         let group_w = plot.width / (max_pts as f32);
@@ -1027,6 +1289,13 @@ fn render_cartesian_chart(
 
     for (s_idx, ser) in chart.series.iter().enumerate() {
         let color = ser.color.unwrap_or(palette[s_idx % palette.len()]);
+        let map_ser_y = |v: f64| -> f32 {
+            if ser.use_secondary_axis {
+                map_sec_y(v)
+            } else {
+                map_y(v)
+            }
+        };
         match ser.kind {
             ChartKind::Line | ChartKind::Radar | ChartKind::Stock => {
                 let mut line_cmds = Vec::new();
@@ -1038,7 +1307,7 @@ fn render_cartesian_chart(
                         continue;
                     }
                     let px = plot.x + ((i as f32) + 0.5) * group_w;
-                    let py = map_y(val);
+                    let py = map_ser_y(val);
                     if pen_down {
                         line_cmds.push(PathCommand::LineTo(Point::new(px, py)));
                     } else {
@@ -1072,7 +1341,7 @@ fn render_cartesian_chart(
                     for (i, &val) in ser.values.iter().enumerate() {
                         let px = plot.x + ((i as f32) + 0.5) * group_w;
                         let val = if val.is_finite() { val } else { 0.0 };
-                        cmds.push(PathCommand::LineTo(Point::new(px, map_y(val))));
+                        cmds.push(PathCommand::LineTo(Point::new(px, map_ser_y(val))));
                     }
                     let last_x = plot.x + ((ser.values.len() as f32) - 0.5) * group_w;
                     cmds.push(PathCommand::LineTo(Point::new(last_x, zero_y)));
@@ -1093,14 +1362,22 @@ fn render_cartesian_chart(
                     if !val.is_finite() {
                         continue;
                     }
-                    let px = plot.x + ((i as f32) + 0.5) * group_w;
-                    let py = map_y(val);
+                    let px = if let (Some(xs), Some(&xv)) = (x_scale, ser.x_values.get(i))
+                        && xv.is_finite()
+                    {
+                        let x_norm =
+                            ((xv - xs.min) / (xs.max - xs.min).max(1e-6)).clamp(0.0, 1.0) as f32;
+                        plot.x + x_norm * plot.width
+                    } else {
+                        plot.x + ((i as f32) + 0.5) * group_w
+                    };
+                    let py = map_ser_y(val);
                     let r = ser
                         .bubble_sizes
                         .get(i)
                         .map_or(3.0, |&b| (b.abs().sqrt() as f32).clamp(3.0, 14.0));
                     items.push(Item::Path(PathItem {
-                        commands: rect_cmds(Rect::new(px - r, py - r, r * 2.0, r * 2.0)),
+                        commands: circle_cmds(px, py, r),
                         fill: Some(FillPaint::Solid(color)),
                         stroke: None,
                         fill_rule: FillRule::NonZero,
@@ -1150,7 +1427,7 @@ fn render_cartesian_chart(
                         stacked_pos_y[i] = new_top;
                         (new_top, base_y)
                     } else {
-                        let vy = map_y(eff_val);
+                        let vy = map_ser_y(eff_val);
                         (vy.min(zero_y), vy.max(zero_y))
                     };
 
@@ -1185,6 +1462,187 @@ fn render_cartesian_chart(
             }
         }
     }
+}
+
+#[allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::too_many_lines
+)]
+fn render_radar_chart(
+    chart: &ChartSpace,
+    plot: Rect,
+    palette: &[Rgba; 6],
+    font_family: &str,
+    font_sys: &mut FontSystem,
+    text_engine: &mut TextLayoutEngine,
+    items: &mut Vec<Item>,
+) {
+    let max_pts = chart
+        .series
+        .iter()
+        .map(|s| s.values.len())
+        .max()
+        .unwrap_or(0);
+    if max_pts < 3 {
+        render_cartesian_chart(
+            chart,
+            plot,
+            palette,
+            font_family,
+            font_sys,
+            text_engine,
+            items,
+        );
+        return;
+    }
+
+    let all_vals: Vec<f64> = chart
+        .series
+        .iter()
+        .flat_map(|s| s.values.iter().copied())
+        .filter(|v| v.is_finite())
+        .collect();
+    let scale = compute_excel_axis_scale(
+        &all_vals,
+        chart.value_axis.min,
+        chart.value_axis.max,
+        chart.value_axis.major_unit,
+        true,
+        false,
+    );
+    let val_span = (scale.max - scale.min).max(1e-6);
+
+    let cx = plot.x + plot.width * 0.5;
+    let cy = plot.y + plot.height * 0.5;
+    let max_r = (plot.width.min(plot.height) * 0.40).max(12.0);
+    let step_ang = TAU / (max_pts as f32);
+    let start_ang = -std::f32::consts::FRAC_PI_2;
+
+    // Spiderweb concentric rings (4 rings)
+    for ring in 1..=4 {
+        let rr = max_r * ((ring as f32) / 4.0);
+        let mut ring_cmds = Vec::with_capacity(max_pts + 2);
+        for i in 0..max_pts {
+            let ang = start_ang + (i as f32) * step_ang;
+            let pt = Point::new(cx + rr * ang.cos(), cy + rr * ang.sin());
+            if i == 0 {
+                ring_cmds.push(PathCommand::MoveTo(pt));
+            } else {
+                ring_cmds.push(PathCommand::LineTo(pt));
+            }
+        }
+        ring_cmds.push(PathCommand::Close);
+        items.push(Item::Path(PathItem {
+            commands: ring_cmds,
+            fill: None,
+            stroke: Some(thin_stroke(Rgba::rgb(0xE5, 0xE7, 0xEB), 0.5)),
+            fill_rule: FillRule::NonZero,
+            transform: Affine::IDENTITY,
+        }));
+    }
+
+    // Radial spokes + perimeter category labels
+    for i in 0..max_pts {
+        let ang = start_ang + (i as f32) * step_ang;
+        let tip = Point::new(cx + max_r * ang.cos(), cy + max_r * ang.sin());
+        items.push(Item::Path(PathItem {
+            commands: vec![
+                PathCommand::MoveTo(Point::new(cx, cy)),
+                PathCommand::LineTo(tip),
+            ],
+            fill: None,
+            stroke: Some(thin_stroke(Rgba::rgb(0xD1, 0xD5, 0xDB), 0.5)),
+            fill_rule: FillRule::NonZero,
+            transform: Affine::IDENTITY,
+        }));
+        if let Some(first_ser) = chart.series.first() {
+            let cat_str = first_ser
+                .categories
+                .get(i)
+                .cloned()
+                .unwrap_or_else(|| (i + 1).to_string());
+            let lx = cx + (max_r + 10.0) * ang.cos() - 16.0;
+            let ly = cy + (max_r + 8.0) * ang.sin() - 4.0;
+            emit_label(
+                items,
+                &cat_str,
+                Point::new(lx, ly),
+                Some(32.0),
+                6.5,
+                false,
+                Rgba::rgb(0x59, 0x59, 0x59),
+                TextAlign::Center,
+                font_family,
+                font_sys,
+                text_engine,
+            );
+        }
+    }
+
+    // Series radar polygons
+    for (s_idx, ser) in chart.series.iter().enumerate() {
+        let color = ser.color.unwrap_or(palette[s_idx % palette.len()]);
+        let mut poly_cmds = Vec::with_capacity(max_pts + 2);
+        for i in 0..max_pts {
+            let val = ser
+                .values
+                .get(i)
+                .copied()
+                .filter(|v| v.is_finite())
+                .unwrap_or(scale.min);
+            let norm = ((val - scale.min) / val_span).clamp(0.0, 1.0) as f32;
+            let rr = norm * max_r;
+            let ang = start_ang + (i as f32) * step_ang;
+            let pt = Point::new(cx + rr * ang.cos(), cy + rr * ang.sin());
+            if i == 0 {
+                poly_cmds.push(PathCommand::MoveTo(pt));
+            } else {
+                poly_cmds.push(PathCommand::LineTo(pt));
+            }
+        }
+        if poly_cmds.len() >= 3 {
+            poly_cmds.push(PathCommand::Close);
+            let mut fill_c = color;
+            fill_c.a = 64;
+            items.push(Item::Path(PathItem {
+                commands: poly_cmds,
+                fill: Some(FillPaint::Solid(fill_c)),
+                stroke: Some(thin_stroke(color, 1.5)),
+                fill_rule: FillRule::NonZero,
+                transform: Affine::IDENTITY,
+            }));
+        }
+    }
+}
+
+fn circle_cmds(cx: f32, cy: f32, r: f32) -> Vec<PathCommand> {
+    let k = 0.552_284_8 * r;
+    vec![
+        PathCommand::MoveTo(Point::new(cx + r, cy)),
+        PathCommand::CurveTo {
+            ctrl1: Point::new(cx + r, cy + k),
+            ctrl2: Point::new(cx + k, cy + r),
+            to: Point::new(cx, cy + r),
+        },
+        PathCommand::CurveTo {
+            ctrl1: Point::new(cx - k, cy + r),
+            ctrl2: Point::new(cx - r, cy + k),
+            to: Point::new(cx - r, cy),
+        },
+        PathCommand::CurveTo {
+            ctrl1: Point::new(cx - r, cy - k),
+            ctrl2: Point::new(cx - k, cy - r),
+            to: Point::new(cx, cy - r),
+        },
+        PathCommand::CurveTo {
+            ctrl1: Point::new(cx + k, cy - r),
+            ctrl2: Point::new(cx + r, cy - k),
+            to: Point::new(cx + r, cy),
+        },
+        PathCommand::Close,
+    ]
 }
 
 #[allow(

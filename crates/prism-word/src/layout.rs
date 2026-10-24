@@ -37,7 +37,110 @@ use prism_layout::{
 };
 use std::collections::{BTreeMap, BTreeSet};
 
-/// Default footnote area separator spacing in points.
+/// Compute the horizontal `[min_x, max_x]` exclusion interval carved by an ECMA-376
+/// `wp:wrapPolygon` (normalized `0..=21600` coordinates inside `rect`) across the vertical
+/// scanband `[y_top, y_bottom]`.
+#[must_use]
+pub fn carve_wrap_polygon_interval(
+    rect: Rect,
+    polygon: &[(f32, f32)],
+    y_top: f32,
+    y_bottom: f32,
+) -> Option<(f32, f32)> {
+    if y_bottom <= rect.y || y_top >= rect.bottom() {
+        return None;
+    }
+    if polygon.len() < 3 || rect.width <= 0.0 || rect.height <= 0.0 {
+        return Some((rect.x, rect.right()));
+    }
+
+    let pts: Vec<(f32, f32)> = polygon
+        .iter()
+        .map(|&(px, py)| {
+            (
+                rect.x + (px / 21_600.0).clamp(0.0, 1.0) * rect.width,
+                rect.y + (py / 21_600.0).clamp(0.0, 1.0) * rect.height,
+            )
+        })
+        .collect();
+
+    let band_top = y_top.max(rect.y);
+    let band_bot = y_bottom.min(rect.bottom());
+    let sample_ys = [band_top, f32::midpoint(band_top, band_bot), band_bot];
+
+    let mut min_x = f32::INFINITY;
+    let mut max_x = f32::NEG_INFINITY;
+
+    for &(vx, vy) in &pts {
+        if vy >= band_top && vy <= band_bot {
+            min_x = min_x.min(vx);
+            max_x = max_x.max(vx);
+        }
+    }
+
+    for &sy in &sample_ys {
+        for i in 0..pts.len() {
+            let (x0, y0) = pts[i];
+            let (x1, y1) = pts[(i + 1) % pts.len()];
+            if (y0 <= sy && y1 >= sy) || (y1 <= sy && y0 >= sy) {
+                let dy = y1 - y0;
+                let ix = if dy.abs() < 1e-5 {
+                    x0.min(x1)
+                } else {
+                    x0 + ((sy - y0) / dy) * (x1 - x0)
+                };
+                min_x = min_x.min(ix);
+                max_x = max_x.max(ix);
+            }
+        }
+    }
+
+    if min_x.is_finite() && max_x.is_finite() && max_x >= min_x {
+        Some((
+            min_x.clamp(rect.x, rect.right()),
+            max_x.clamp(rect.x, rect.right()),
+        ))
+    } else {
+        Some((rect.x, rect.right()))
+    }
+}
+
+fn adjust_band_for_exclusions(
+    exclusions: &[ExclusionZone],
+    mut x: f32,
+    mut w: f32,
+    y: f32,
+    line_h: f32,
+) -> (f32, f32) {
+    for zone in exclusions {
+        if y + line_h <= zone.rect.y || y >= zone.rect.bottom() {
+            continue;
+        }
+        let interval = match zone.wrap_mode {
+            WrapMode::Square => Some((zone.rect.x, zone.rect.right())),
+            WrapMode::Tight { ref polygon } | WrapMode::Through { ref polygon } => {
+                carve_wrap_polygon_interval(zone.rect, polygon, y, y + line_h)
+            }
+            WrapMode::Inline | WrapMode::None | WrapMode::TopAndBottom => None,
+        };
+        if let Some((ex_left, ex_right)) = interval {
+            let right = x + w;
+            if ex_right > x && ex_left < right {
+                let left_space = (ex_left - x).max(0.0);
+                let right_space = (right - ex_right).max(0.0);
+                if right_space >= left_space && right_space > 36.0 {
+                    x = ex_right + 6.0;
+                    w = right_space - 6.0;
+                } else if left_space > 36.0 {
+                    w = left_space - 6.0;
+                }
+            }
+        }
+    }
+    (x, w.max(18.0))
+}
+
+///Default footnote area separator spacing in points.
 const FOOTNOTE_SEP_HEIGHT_PT: f32 = 10.0;
 
 /// Author palette for tracked-change revisions (deterministic by author name).
@@ -62,14 +165,57 @@ const AUTHOR_PALETTE: [Rgba; 6] = [
 pub fn layout_word_document(doc: &WordDocument, options: &LayoutOptions) -> Result<LayoutDocument> {
     let needs_second_pass = document_has_page_count_fields(doc);
 
-    let first_pass = run_layout_pass(doc, options, 1, &[])?;
+    let first_pass = run_layout_pass(doc, options, 1, &[], None)?;
     if !needs_second_pass {
         return Ok(first_pass.document);
     }
 
     let total_pages = first_pass.document.pages.len().max(1);
-    let second_pass = run_layout_pass(doc, options, total_pages, &first_pass.section_page_counts)?;
+    let second_pass = run_layout_pass(
+        doc,
+        options,
+        total_pages,
+        &first_pass.section_page_counts,
+        None,
+    )?;
     Ok(second_pass.document)
+}
+
+/// Lay out only the requested 0-based `page_range` (`start_page..end_page`) of a [`WordDocument`].
+///
+/// Stops flow pagination as soon as `page_range.end` pages have been produced and discards
+/// item buffers for pages preceding `page_range.start`, reducing time-to-first-page (`0..1`)
+/// on large multi-hundred-page documents to a fraction of full-document layout time.
+/// Documents with `NUMPAGES` / `SECTIONPAGES` fields are laid out in full once first, so those
+/// fields show the real totals.
+///
+/// # Errors
+///
+/// Returns an [`Error`] if resource limits in `options` are exceeded.
+pub fn layout_word_document_range(
+    doc: &WordDocument,
+    options: &LayoutOptions,
+    page_range: std::ops::Range<usize>,
+) -> Result<LayoutDocument> {
+    if page_range.start >= page_range.end {
+        return Ok(LayoutDocument::new());
+    }
+    // `NUMPAGES` / `SECTIONPAGES` fields need the real totals, so documents that have them
+    // take a full first pass; the second pass then keeps only the requested pages.
+    if document_has_page_count_fields(doc) {
+        let first_pass = run_layout_pass(doc, options, 1, &[], None)?;
+        let total_pages = first_pass.document.pages.len().max(1);
+        let pass = run_layout_pass(
+            doc,
+            options,
+            total_pages,
+            &first_pass.section_page_counts,
+            Some(page_range),
+        )?;
+        return Ok(pass.document);
+    }
+    let pass = run_layout_pass(doc, options, 1, &[], Some(page_range))?;
+    Ok(pass.document)
 }
 
 struct PassOutput {
@@ -162,6 +308,7 @@ struct WordLayoutEngine<'a> {
     footnote_display_numbers: BTreeMap<i32, usize>,
     endnote_display_numbers: BTreeMap<i32, usize>,
     block_counter: u32,
+    page_range: Option<std::ops::Range<usize>>,
 }
 
 fn run_layout_pass(
@@ -169,6 +316,7 @@ fn run_layout_pass(
     options: &LayoutOptions,
     known_total_pages: usize,
     known_section_pages: &[usize],
+    page_range: Option<std::ops::Range<usize>>,
 ) -> Result<PassOutput> {
     let mut font_sys = FontSystem::new(options);
     font_sys.register_document_fonts(&doc.fonts);
@@ -218,6 +366,7 @@ fn run_layout_pass(
         footnote_display_numbers: BTreeMap::new(),
         endnote_display_numbers: BTreeMap::new(),
         block_counter: 0,
+        page_range,
     };
 
     engine.layout_all_sections()?;
@@ -225,6 +374,12 @@ fn run_layout_pass(
 }
 
 impl WordLayoutEngine<'_> {
+    fn reached_page_limit(&self) -> bool {
+        self.page_range
+            .as_ref()
+            .is_some_and(|r| self.finished_pages.len() >= r.end)
+    }
+
     fn layout_all_sections(&mut self) -> Result<()> {
         if self.doc.sections.is_empty() {
             let default_sec = WordSection::default();
@@ -233,6 +388,9 @@ impl WordLayoutEngine<'_> {
         }
 
         for (sec_idx, section) in self.doc.sections.iter().enumerate() {
+            if self.reached_page_limit() {
+                return Ok(());
+            }
             let break_kind = section.props.break_kind;
             if sec_idx == 0 {
                 self.start_new_page(sec_idx, &section.props, 0)?;
@@ -267,7 +425,7 @@ impl WordLayoutEngine<'_> {
             self.layout_block_slice(&section.blocks, sec_idx, &section.props, 0)?;
         }
 
-        if !self.referenced_endnotes.is_empty() {
+        if !self.referenced_endnotes.is_empty() && !self.reached_page_limit() {
             let last_sec_idx = self.doc.sections.len().saturating_sub(1);
             let last_props = self
                 .doc
@@ -287,7 +445,16 @@ impl WordLayoutEngine<'_> {
         sec_props: &SectionProperties,
         sec_page_offset: usize,
     ) -> Result<()> {
-        if let Some(prev_page) = self.current_page.take() {
+        if let Some(mut prev_page) = self.current_page.take() {
+            if let Some(ref r) = self.page_range
+                && (prev_page.page.index as usize) < r.start
+            {
+                prev_page.page.items.clear();
+                prev_page.background_items.clear();
+                prev_page.foreground_items.clear();
+                prev_page.footnote_ids.clear();
+                prev_page.comment_ids.clear();
+            }
             self.finished_pages.push(prev_page);
         }
         if self.finished_pages.len() >= self.options.max_pages {
@@ -436,6 +603,9 @@ impl WordLayoutEngine<'_> {
         }
 
         for (idx, block) in blocks.iter().enumerate() {
+            if self.reached_page_limit() {
+                break;
+            }
             let next_block = blocks.get(idx + 1);
             match block {
                 WordBlock::Paragraph(para) => {
@@ -488,6 +658,8 @@ impl WordLayoutEngine<'_> {
         let same_contextual_style = p_style.contextual_spacing
             && p_style.style_id.is_some()
             && self.prev_style_id == p_style.style_id;
+        // Space before is dropped at the top of a column. Word keeps it there after a hard
+        // break or at the start of the document, which this does not distinguish yet.
         let space_before = if self.at_column_top || same_contextual_style {
             0.0
         } else {
@@ -822,9 +994,35 @@ impl WordLayoutEngine<'_> {
         let mut hyperlink_bounds: BTreeMap<usize, Rect> = BTreeMap::new();
         if let Some(ref mut page) = self.current_page {
             for line in slice_lines {
+                let line_y_top = start_y + (line.top - y_shift);
+                let line_h = (line.bottom - line.top).max(10.0);
+                let (shifted_x, _) = adjust_band_for_exclusions(
+                    &page.exclusions,
+                    para_x,
+                    para_w,
+                    line_y_top,
+                    line_h,
+                );
+                // Lines were broken at the full paragraph width, so a line is only moved past a
+                // wrap polygon when it still fits; otherwise it would run off the margin.
+                let line_right = shaped
+                    .runs
+                    .get(line.run_range.clone())
+                    .unwrap_or_default()
+                    .iter()
+                    .map(|r| {
+                        r.transform.coeffs[4] + r.glyphs.iter().map(|g| g.advance).sum::<f32>()
+                    })
+                    .fold(0.0_f32, f32::max);
+                let line_para_x = if shifted_x + line_right <= para_x + para_w + 0.5 {
+                    shifted_x
+                } else {
+                    para_x
+                };
                 for run_idx in line.run_range.clone() {
                     if let Some(mut run) = shaped.runs.get(run_idx).cloned() {
-                        run.transform.coeffs[4] = normalize_zero(run.transform.coeffs[4] + para_x);
+                        run.transform.coeffs[4] =
+                            normalize_zero(run.transform.coeffs[4] + line_para_x);
                         run.transform.coeffs[5] =
                             normalize_zero(run.transform.coeffs[5] + start_y - y_shift);
 
@@ -2384,37 +2582,11 @@ impl WordLayoutEngine<'_> {
         }
     }
 
-    fn adjust_horizontal_for_exclusions(
-        &self,
-        mut x: f32,
-        mut w: f32,
-        y: f32,
-        line_h: f32,
-    ) -> (f32, f32) {
+    fn adjust_horizontal_for_exclusions(&self, x: f32, w: f32, y: f32, line_h: f32) -> (f32, f32) {
         let Some(ref page) = self.current_page else {
             return (x, w);
         };
-        for zone in &page.exclusions {
-            if matches!(
-                zone.wrap_mode,
-                WrapMode::Square | WrapMode::Tight { .. } | WrapMode::Through { .. }
-            ) && y + line_h > zone.rect.y
-                && y < zone.rect.bottom()
-            {
-                let right = x + w;
-                if zone.rect.right() > x && zone.rect.x < right {
-                    let left_space = (zone.rect.x - x).max(0.0);
-                    let right_space = (right - zone.rect.right()).max(0.0);
-                    if right_space >= left_space && right_space > 36.0 {
-                        x = zone.rect.right() + 6.0;
-                        w = right_space - 6.0;
-                    } else if left_space > 36.0 {
-                        w = left_space - 6.0;
-                    }
-                }
-            }
-        }
-        (x, w.max(18.0))
+        adjust_band_for_exclusions(&page.exclusions, x, w, y, line_h)
     }
 
     fn render_drawing_into_rect(
@@ -2569,6 +2741,11 @@ impl WordLayoutEngine<'_> {
         for (page_idx, mut active) in finished.drain(..).enumerate() {
             if let Some(cnt) = section_page_counts.get_mut(active.section_index) {
                 *cnt += 1;
+            }
+            if let Some(ref r) = self.page_range
+                && (page_idx < r.start || page_idx >= r.end)
+            {
+                continue;
             }
             let sec_props = self
                 .doc

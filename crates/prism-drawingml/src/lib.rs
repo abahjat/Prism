@@ -24,7 +24,7 @@ pub use chart::{
 pub use geometry::{
     ALL_PRESET_SHAPES, CustomGeometry, CustomPath, CustomPathCmd, GuideDef,
     build_custom_geometry_paths, build_preset_geometry_paths, eval_guide_formula,
-    is_known_preset_shape,
+    is_known_preset_shape, preset_geometry_definition,
 };
 pub use theme::{
     ColorTransform, DrawingTheme, apply_color_transforms, parse_drawing_theme, parse_hex_rgba,

@@ -31,9 +31,292 @@ use zip::ZipArchive;
 
 /// Default maximum decompressed bytes per ZIP entry (`64 MiB`).
 pub const DEFAULT_MAX_XLSX_ENTRY_BYTES: usize = 64 * 1024 * 1024;
+/// Default maximum populated cells per worksheet (`1,000,000`).
+pub const DEFAULT_MAX_CELLS_PER_SHEET: usize = 1_000_000;
+/// Default maximum shared string table entries (`1,000,000`).
+pub const DEFAULT_MAX_SHARED_STRINGS: usize = 1_000_000;
+/// Default maximum style records in `xl/styles.xml` (`65,536`).
+pub const DEFAULT_MAX_STYLES: usize = 65_536;
 
 /// English Metric Units per typographic point (`12,700`).
 const EMU_PER_POINT: f32 = 12_700.0;
+
+/// Explicit resource caps enforced while parsing an `.xlsx` / `.xlsm` workbook.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ExcelParseLimits {
+    /// Maximum decompressed bytes per ZIP entry (default: `64 MiB`).
+    pub max_entry_bytes: usize,
+    /// Maximum populated cells per worksheet (default: `1,000,000`).
+    pub max_cells_per_sheet: usize,
+    /// Maximum entries in `xl/sharedStrings.xml` (default: `1,000,000`).
+    pub max_shared_strings: usize,
+    /// Maximum style records (`fonts + fills + borders + cell_xfs + dxfs + num_fmts`) in `xl/styles.xml` (default: `65,536`).
+    pub max_styles: usize,
+}
+
+impl Default for ExcelParseLimits {
+    fn default() -> Self {
+        Self {
+            max_entry_bytes: DEFAULT_MAX_XLSX_ENTRY_BYTES,
+            max_cells_per_sheet: DEFAULT_MAX_CELLS_PER_SHEET,
+            max_shared_strings: DEFAULT_MAX_SHARED_STRINGS,
+            max_styles: DEFAULT_MAX_STYLES,
+        }
+    }
+}
+
+/// Metadata for a worksheet in a [`LazyWorkbook`] before its XML part is parsed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LazySheetDescriptor {
+    /// Zero-based worksheet tab index.
+    pub index: usize,
+    /// Worksheet tab name.
+    pub name: String,
+    /// OOXML `sheetId`.
+    pub sheet_id: u32,
+    /// Tab visibility (`Visible`, `Hidden`, `VeryHidden`).
+    pub visibility: SheetVisibility,
+    /// Resolved ZIP entry path (e.g. `"xl/worksheets/sheet1.xml"`).
+    pub part_path: Option<String>,
+}
+
+/// Lazy `.xlsx` workbook handle that parses workbook metadata, styles, theme, and shared strings
+/// upfront while deferring worksheet XML (`xl/worksheets/sheetN.xml`) parsing until requested.
+#[derive(Debug, Clone)]
+pub struct LazyWorkbook {
+    bytes: Vec<u8>,
+    limits: ExcelParseLimits,
+    workbook: Workbook,
+    descriptors: Vec<LazySheetDescriptor>,
+    loaded_sheets: Vec<Option<Sheet>>,
+    shared_strings: Vec<SharedStringItem>,
+    persons_map: BTreeMap<String, String>,
+    distinct_authors: BTreeSet<String>,
+}
+
+impl LazyWorkbook {
+    /// Open a [`LazyWorkbook`] with [`ExcelParseLimits::default`], parsing workbook-level metadata,
+    /// styles, theme, and shared strings while deferring worksheet XML parsing.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::ParseError`] if `xl/workbook.xml` is missing or malformed, or
+    /// [`Error::MemoryLimitExceeded`] if any workbook-level limit is exceeded.
+    pub fn open(bytes: Vec<u8>) -> Result<Self> {
+        Self::open_with_limits(bytes, ExcelParseLimits::default())
+    }
+
+    /// Open a [`LazyWorkbook`] with explicit [`ExcelParseLimits`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::ParseError`] if `xl/workbook.xml` is missing or malformed, or
+    /// [`Error::MemoryLimitExceeded`] if any limit in `limits` is exceeded.
+    pub fn open_with_limits(bytes: Vec<u8>, limits: ExcelParseLimits) -> Result<Self> {
+        let max_entry_bytes = limits.max_entry_bytes;
+        let cursor = Cursor::new(bytes.as_slice());
+        let mut archive = ZipArchive::new(cursor)
+            .map_err(|e| Error::ParseError(format!("Invalid XLSX ZIP archive: {e}")))?;
+
+        let mut wb = Workbook::default();
+
+        if archive.by_name("xl/vbaProject.bin").is_ok() {
+            wb.forensic.vba_project_present = true;
+        }
+
+        if let Ok(core_xml) = read_zip_string(&mut archive, "docProps/core.xml", max_entry_bytes) {
+            parse_core_props(&core_xml, &mut wb);
+        }
+
+        if let Ok(theme_xml) = read_zip_string(&mut archive, "xl/theme/theme1.xml", max_entry_bytes)
+        {
+            wb.theme = parse_drawing_theme(&theme_xml);
+        }
+
+        if let Ok(styles_xml) = read_zip_string(&mut archive, "xl/styles.xml", max_entry_bytes) {
+            wb.styles = parse_styles_xml(&styles_xml, &wb.theme, limits.max_styles)?;
+        }
+
+        let shared_strings = if let Ok(sst_xml) =
+            read_zip_string(&mut archive, "xl/sharedStrings.xml", max_entry_bytes)
+        {
+            parse_shared_strings(&sst_xml, &wb.theme, limits.max_shared_strings)?
+        } else {
+            Vec::new()
+        };
+
+        let entry_names: Vec<String> = (0..archive.len())
+            .filter_map(|i| archive.by_index(i).ok().map(|f| f.name().to_string()))
+            .collect();
+        let mut persons_map: BTreeMap<String, String> = BTreeMap::new();
+        for name in &entry_names {
+            if name.starts_with("xl/persons/")
+                && is_xml_ext(name)
+                && let Ok(pxml) = read_zip_string(&mut archive, name, max_entry_bytes)
+            {
+                parse_persons_xml(&pxml, &mut persons_map);
+            }
+            if (name.starts_with("xl/externalLinks/_rels/") || name == "xl/connections.xml")
+                && let Ok(exml) = read_zip_string(&mut archive, name, max_entry_bytes)
+            {
+                extract_external_targets(&exml, &mut wb);
+            }
+        }
+
+        let wb_xml = read_zip_string(&mut archive, "xl/workbook.xml", max_entry_bytes)
+            .map_err(|_| Error::ParseError("Missing xl/workbook.xml".to_string()))?;
+        let wb_rels = parse_part_rels(&mut archive, "xl/workbook.xml", max_entry_bytes);
+        record_external_rels(&wb_rels, &mut wb);
+
+        let sheet_stubs = parse_workbook_xml(&wb_xml, &wb_rels, &mut wb);
+        wb.forensic.defined_names_count = wb.defined_names.len();
+
+        let mut descriptors = Vec::with_capacity(sheet_stubs.len());
+        for (idx, stub) in sheet_stubs.into_iter().enumerate() {
+            match stub.visibility {
+                SheetVisibility::Visible => wb.forensic.visible_sheet_names.push(stub.name.clone()),
+                SheetVisibility::Hidden => wb.forensic.hidden_sheet_names.push(stub.name.clone()),
+                SheetVisibility::VeryHidden => {
+                    wb.forensic.very_hidden_sheet_names.push(stub.name.clone());
+                }
+            }
+            descriptors.push(LazySheetDescriptor {
+                index: idx,
+                name: stub.name,
+                sheet_id: stub.sheet_id,
+                visibility: stub.visibility,
+                part_path: stub.part_path,
+            });
+        }
+
+        let loaded_sheets = vec![None; descriptors.len()];
+        Ok(Self {
+            bytes,
+            limits,
+            workbook: wb,
+            descriptors,
+            loaded_sheets,
+            shared_strings,
+            persons_map,
+            distinct_authors: BTreeSet::new(),
+        })
+    }
+
+    /// Return the worksheet descriptors discovered in `xl/workbook.xml`.
+    #[must_use]
+    pub fn descriptors(&self) -> &[LazySheetDescriptor] {
+        &self.descriptors
+    }
+
+    /// Total number of worksheets in the workbook.
+    #[must_use]
+    pub fn sheet_count(&self) -> usize {
+        self.descriptors.len()
+    }
+
+    /// Whether the worksheet at 0-based `sheet_idx` has already been parsed.
+    #[must_use]
+    pub fn is_sheet_loaded(&self, sheet_idx: usize) -> bool {
+        self.loaded_sheets
+            .get(sheet_idx)
+            .is_some_and(Option::is_some)
+    }
+
+    /// Number of worksheets that have been parsed so far.
+    #[must_use]
+    pub fn loaded_sheet_count(&self) -> usize {
+        self.loaded_sheets.iter().filter(|s| s.is_some()).count()
+    }
+
+    /// Access the workbook-level metadata, styles, theme, and forensic facts.
+    #[must_use]
+    pub fn workbook_meta(&self) -> &Workbook {
+        &self.workbook
+    }
+
+    /// Parse and cache the worksheet at 0-based `sheet_idx` on demand, returning a reference to it.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::InvalidInput`] if `sheet_idx` is out of range, or
+    /// [`Error::MemoryLimitExceeded`] if the worksheet exceeds `limits.max_cells_per_sheet`
+    /// or `limits.max_entry_bytes`.
+    pub fn load_sheet(&mut self, sheet_idx: usize) -> Result<&Sheet> {
+        if sheet_idx >= self.descriptors.len() {
+            return Err(Error::InvalidInput(format!(
+                "Worksheet index {sheet_idx} out of range (sheet_count = {})",
+                self.descriptors.len()
+            )));
+        }
+        if self.loaded_sheets[sheet_idx].is_none() {
+            let desc = &self.descriptors[sheet_idx];
+            let cursor = Cursor::new(self.bytes.as_slice());
+            let mut archive = ZipArchive::new(cursor)
+                .map_err(|e| Error::ParseError(format!("Invalid XLSX ZIP archive: {e}")))?;
+
+            let mut sheet = if let Some(ref part_path) = desc.part_path {
+                match parse_worksheet_part(
+                    part_path,
+                    &desc.name,
+                    desc.sheet_id,
+                    desc.visibility,
+                    &self.shared_strings,
+                    &self.persons_map,
+                    &mut self.distinct_authors,
+                    &mut archive,
+                    &self.limits,
+                    &mut self.workbook,
+                ) {
+                    Ok(s) => s,
+                    Err(Error::MemoryLimitExceeded { used, limit }) => {
+                        return Err(Error::MemoryLimitExceeded { used, limit });
+                    }
+                    Err(_) => Sheet {
+                        name: desc.name.clone(),
+                        sheet_id: desc.sheet_id,
+                        visibility: desc.visibility,
+                        ..Sheet::default()
+                    },
+                }
+            } else {
+                Sheet {
+                    name: desc.name.clone(),
+                    sheet_id: desc.sheet_id,
+                    visibility: desc.visibility,
+                    ..Sheet::default()
+                }
+            };
+
+            #[allow(clippy::cast_possible_truncation)]
+            apply_defined_names_to_sheet(
+                &mut sheet,
+                sheet_idx as u32,
+                &self.workbook.defined_names,
+            );
+            self.workbook.forensic.comment_authors =
+                self.distinct_authors.iter().cloned().collect();
+            self.loaded_sheets[sheet_idx] = Some(sheet);
+        }
+
+        self.loaded_sheets[sheet_idx]
+            .as_ref()
+            .ok_or_else(|| Error::Internal("Loaded sheet missing".to_string()))
+    }
+
+    /// Materialize all remaining worksheets and consume the [`LazyWorkbook`] into a full [`Workbook`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::MemoryLimitExceeded`] if any worksheet exceeds `limits`.
+    pub fn into_workbook(mut self) -> Result<Workbook> {
+        for idx in 0..self.descriptors.len() {
+            self.load_sheet(idx)?;
+        }
+        let mut wb = self.workbook;
+        wb.sheets = self.loaded_sheets.into_iter().flatten().collect();
+        Ok(wb)
+    }
+}
 
 /// Check whether `bytes` is a ZIP archive containing `xl/workbook.xml`.
 #[must_use]
@@ -67,114 +350,24 @@ struct RelEntry {
 ///
 /// Returns [`Error::ParseError`] if the archive is malformed or [`Error::MemoryLimitExceeded`]
 /// if an entry exceeds `max_entry_bytes`.
-#[allow(clippy::too_many_lines)]
 pub fn parse_xlsx(bytes: &[u8], max_entry_bytes: usize) -> Result<Workbook> {
-    let cursor = Cursor::new(bytes);
-    let mut archive = ZipArchive::new(cursor)
-        .map_err(|e| Error::ParseError(format!("Invalid XLSX ZIP archive: {e}")))?;
-
-    let mut wb = Workbook::default();
-
-    if archive.by_name("xl/vbaProject.bin").is_ok() {
-        wb.forensic.vba_project_present = true;
-    }
-
-    // 1. Parse docProps/core.xml
-    if let Ok(core_xml) = read_zip_string(&mut archive, "docProps/core.xml", max_entry_bytes) {
-        parse_core_props(&core_xml, &mut wb);
-    }
-
-    // 2. Parse xl/theme/theme1.xml
-    if let Ok(theme_xml) = read_zip_string(&mut archive, "xl/theme/theme1.xml", max_entry_bytes) {
-        wb.theme = parse_drawing_theme(&theme_xml);
-    }
-
-    // 3. Parse xl/styles.xml
-    if let Ok(styles_xml) = read_zip_string(&mut archive, "xl/styles.xml", max_entry_bytes) {
-        wb.styles = parse_styles_xml(&styles_xml, &wb.theme);
-    }
-
-    // 4. Parse xl/sharedStrings.xml
-    let shared_strings = if let Ok(sst_xml) =
-        read_zip_string(&mut archive, "xl/sharedStrings.xml", max_entry_bytes)
-    {
-        parse_shared_strings(&sst_xml, &wb.theme)
-    } else {
-        Vec::new()
+    let limits = ExcelParseLimits {
+        max_entry_bytes,
+        ..ExcelParseLimits::default()
     };
+    parse_xlsx_with_limits(bytes, &limits)
+}
 
-    // 5. Parse xl/persons/person*.xml for threaded comments
-    let entry_names: Vec<String> = (0..archive.len())
-        .filter_map(|i| archive.by_index(i).ok().map(|f| f.name().to_string()))
-        .collect();
-    let mut persons_map: BTreeMap<String, String> = BTreeMap::new();
-    for name in &entry_names {
-        if name.starts_with("xl/persons/")
-            && is_xml_ext(name)
-            && let Ok(pxml) = read_zip_string(&mut archive, name, max_entry_bytes)
-        {
-            parse_persons_xml(&pxml, &mut persons_map);
-        }
-        // Record externalLinks and connections
-        if (name.starts_with("xl/externalLinks/_rels/") || name == "xl/connections.xml")
-            && let Ok(exml) = read_zip_string(&mut archive, name, max_entry_bytes)
-        {
-            extract_external_targets(&exml, &mut wb);
-        }
-    }
-
-    // 6. Parse xl/workbook.xml and xl/_rels/workbook.xml.rels
-    let wb_xml = read_zip_string(&mut archive, "xl/workbook.xml", max_entry_bytes)
-        .map_err(|_| Error::ParseError("Missing xl/workbook.xml".to_string()))?;
-    let wb_rels = parse_part_rels(&mut archive, "xl/workbook.xml", max_entry_bytes);
-    record_external_rels(&wb_rels, &mut wb);
-
-    let sheet_stubs = parse_workbook_xml(&wb_xml, &wb_rels, &mut wb);
-    wb.forensic.defined_names_count = wb.defined_names.len();
-
-    // 7. Parse each worksheet in tab order
-    let mut distinct_authors = BTreeSet::new();
-    for (sheet_idx, stub) in sheet_stubs.into_iter().enumerate() {
-        match stub.visibility {
-            SheetVisibility::Visible => wb.forensic.visible_sheet_names.push(stub.name.clone()),
-            SheetVisibility::Hidden => wb.forensic.hidden_sheet_names.push(stub.name.clone()),
-            SheetVisibility::VeryHidden => {
-                wb.forensic.very_hidden_sheet_names.push(stub.name.clone());
-            }
-        }
-
-        let mut sheet = if let Some(ref part_path) = stub.part_path
-            && let Ok(s) = parse_worksheet_part(
-                part_path,
-                &stub.name,
-                stub.sheet_id,
-                stub.visibility,
-                &shared_strings,
-                &persons_map,
-                &mut distinct_authors,
-                &mut archive,
-                max_entry_bytes,
-                &mut wb,
-            ) {
-            s
-        } else {
-            Sheet {
-                name: stub.name,
-                sheet_id: stub.sheet_id,
-                visibility: stub.visibility,
-                ..Sheet::default()
-            }
-        };
-
-        // Apply workbook-level Print_Area and Print_Titles defined names for this sheet
-        #[allow(clippy::cast_possible_truncation)]
-        apply_defined_names_to_sheet(&mut sheet, sheet_idx as u32, &wb.defined_names);
-
-        wb.sheets.push(sheet);
-    }
-
-    wb.forensic.comment_authors = distinct_authors.into_iter().collect();
-    Ok(wb)
+/// Parse an `.xlsx` or `.xlsm` archive from `bytes` into a sparse [`Workbook`], enforcing
+/// all resource caps in `limits` (`max_entry_bytes`, `max_cells_per_sheet`, `max_shared_strings`,
+/// and `max_styles`).
+///
+/// # Errors
+///
+/// Returns [`Error::ParseError`] if the archive is malformed or [`Error::MemoryLimitExceeded`]
+/// if any cap in `limits` is exceeded.
+pub fn parse_xlsx_with_limits(bytes: &[u8], limits: &ExcelParseLimits) -> Result<Workbook> {
+    LazyWorkbook::open_with_limits(bytes.to_vec(), *limits)?.into_workbook()
 }
 
 #[derive(Debug, Clone)]
@@ -313,7 +506,7 @@ fn apply_defined_names_to_sheet(sheet: &mut Sheet, sheet_idx: u32, defined_names
 }
 
 #[allow(clippy::too_many_lines, clippy::similar_names)]
-fn parse_styles_xml(xml: &str, theme: &DrawingTheme) -> WorkbookStyles {
+fn parse_styles_xml(xml: &str, theme: &DrawingTheme, max_styles: usize) -> Result<WorkbookStyles> {
     let mut styles = WorkbookStyles::default();
     let mut reader = Reader::from_str(xml);
     reader.config_mut().trim_text(true);
@@ -336,6 +529,22 @@ fn parse_styles_xml(xml: &str, theme: &DrawingTheme) -> WorkbookStyles {
     let mut cur_dxf: Option<DxfStyle> = None;
     let mut in_dxf_font = false;
     let mut in_dxf_fill = false;
+
+    let check_style_limit = |s: &WorkbookStyles| -> Result<()> {
+        let total = s.fonts.len()
+            + s.fills.len()
+            + s.borders.len()
+            + s.cell_xfs.len()
+            + s.dxfs.len()
+            + s.num_fmts.len();
+        if total > max_styles {
+            return Err(Error::MemoryLimitExceeded {
+                used: total,
+                limit: max_styles,
+            });
+        }
+        Ok(())
+    };
 
     loop {
         match reader.read_event().map(resolve_general_ref) {
@@ -511,6 +720,7 @@ fn parse_styles_xml(xml: &str, theme: &DrawingTheme) -> WorkbookStyles {
             Ok(Event::Eof) | Err(_) => break,
             _ => {}
         }
+        check_style_limit(&styles)?;
     }
 
     if styles.fonts.is_empty() {
@@ -519,7 +729,7 @@ fn parse_styles_xml(xml: &str, theme: &DrawingTheme) -> WorkbookStyles {
     if styles.cell_xfs.is_empty() {
         styles.cell_xfs.push(CellXf::default());
     }
-    styles
+    Ok(styles)
 }
 
 #[allow(clippy::too_many_arguments, clippy::fn_params_excessive_bools)]
@@ -753,7 +963,11 @@ pub fn biff_indexed_color(idx: u16) -> Option<Rgba> {
 }
 
 #[allow(clippy::too_many_lines)]
-fn parse_shared_strings(xml: &str, theme: &DrawingTheme) -> Vec<SharedStringItem> {
+fn parse_shared_strings(
+    xml: &str,
+    theme: &DrawingTheme,
+    max_shared_strings: usize,
+) -> Result<Vec<SharedStringItem>> {
     let mut out = Vec::new();
     let mut reader = Reader::from_str(xml);
     reader.config_mut().trim_text(false);
@@ -829,6 +1043,12 @@ fn parse_shared_strings(xml: &str, theme: &DrawingTheme) -> Vec<SharedStringItem
                     }
                     "si" if in_si => {
                         in_si = false;
+                        if out.len() >= max_shared_strings {
+                            return Err(Error::MemoryLimitExceeded {
+                                used: out.len() + 1,
+                                limit: max_shared_strings,
+                            });
+                        }
                         if has_rich_runs {
                             let any_styled = runs.iter().any(|r| {
                                 r.bold
@@ -857,7 +1077,7 @@ fn parse_shared_strings(xml: &str, theme: &DrawingTheme) -> Vec<SharedStringItem
         }
     }
 
-    out
+    Ok(out)
 }
 
 fn apply_rich_run_tag(
@@ -893,9 +1113,10 @@ fn parse_worksheet_part(
     persons_map: &BTreeMap<String, String>,
     distinct_authors: &mut BTreeSet<String>,
     archive: &mut ZipArchive<Cursor<&[u8]>>,
-    max_bytes: usize,
+    limits: &ExcelParseLimits,
     wb: &mut Workbook,
 ) -> Result<Sheet> {
+    let max_bytes = limits.max_entry_bytes;
     let xml = read_zip_string(archive, part_path, max_bytes)?;
     let rels = parse_part_rels(archive, part_path, max_bytes);
     record_external_rels(&rels, wb);
@@ -1084,6 +1305,14 @@ fn parse_worksheet_part(
                                 attr_val(e, "s").and_then(|v| v.parse::<u32>().ok())
                             && s_idx > 0
                         {
+                            if !sheet.cells.contains_key(&(r, c))
+                                && sheet.cells.len() >= limits.max_cells_per_sheet
+                            {
+                                return Err(Error::MemoryLimitExceeded {
+                                    used: sheet.cells.len() + 1,
+                                    limit: limits.max_cells_per_sheet,
+                                });
+                            }
                             let cell = finalize_cell(CellValue::Empty, None, s_idx, &fmt_opts, wb);
                             sheet.cells.insert((r, c), cell);
                         }
@@ -1186,6 +1415,14 @@ fn parse_worksheet_part(
                             || formula.is_some()
                             || cell_style_idx > 0
                         {
+                            if !sheet.cells.contains_key(&(cur_row_idx, cur_col_idx))
+                                && sheet.cells.len() >= limits.max_cells_per_sheet
+                            {
+                                return Err(Error::MemoryLimitExceeded {
+                                    used: sheet.cells.len() + 1,
+                                    limit: limits.max_cells_per_sheet,
+                                });
+                            }
                             let cell = finalize_cell(val, formula, cell_style_idx, &fmt_opts, wb);
                             sheet.cells.insert((cur_row_idx, cur_col_idx), cell);
                         }

@@ -16,19 +16,21 @@
     clippy::too_many_lines
 )]
 
-use bytes::Bytes;
 use prism_core::Document;
 use prism_core::format::detect_format;
-use prism_core::parser::{ParseContext, ParseOptions};
+use prism_core::metadata::Metadata;
+use prism_core::parser::ParseOptions;
 use prism_core::render::{RenderContext, RenderOptions, Renderer};
-use prism_layout::{LayoutDocument, LayoutOptions, interpret_pdf_bytes, layout_document};
-use prism_parsers::registry::ParserRegistry;
+use prism_layout::{LayoutDocument, LayoutOptions, SearchHit, SearchOptions};
+use prism_parsers::pipeline::{
+    OpenedDocument, open_and_layout, open_and_layout_path, parse_udm_bytes,
+};
 use prism_parsers::review::generate_hidden_content_report;
 use prism_parsers::tree::build_family_tree;
 use prism_render::html::HtmlRenderer;
 use prism_render::pdf::{PdfExportOptions, export_document_pdf};
 use prism_render::raster::{RasterOptions, export_document_tiff, render_page_png};
-use prism_render::svg::render_page_svg;
+use prism_render::svg::{render_page_svg, render_page_viewer_fragment};
 use prism_review::{AnnotationSidecar, RedactedExportFormat, export_redacted_document};
 use serde::{Deserialize, Serialize};
 use std::io::{Read, Write};
@@ -93,7 +95,7 @@ pub enum SandboxError {
     TaskFailed(String),
 }
 
-/// Output format for [`SandboxJob::RenderPage`].
+/// Output format for [`SandboxJob::RenderPage`] and [`SandboxSession::render_page`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RenderOutputFormat {
@@ -101,6 +103,8 @@ pub enum RenderOutputFormat {
     Svg,
     /// Deterministic PNG raster page.
     Png,
+    /// Interactive HTML viewer page fragment (`<div class="prism-page">...</div>`).
+    ViewerFragment,
 }
 
 /// Output format for [`SandboxJob::ExportDocument`].
@@ -294,6 +298,94 @@ pub enum WorkerWireOp {
         /// Hostile behavior variant.
         behavior: HostileBehavior,
     },
+    /// Open a stateful document session inside the worker, caching the parsed [`LayoutDocument`].
+    OpenSession {
+        /// Optional filename hint.
+        filename: Option<String>,
+        /// Optional layout options.
+        options: Option<LayoutOptions>,
+    },
+    /// Open a stateful document session directly from a filesystem path inside the worker
+    /// without serializing raw document bytes over the IPC pipe.
+    OpenSessionFromPath {
+        /// Filesystem path to open inside the worker.
+        path: String,
+        /// Optional layout options.
+        options: Option<LayoutOptions>,
+    },
+    /// Render a single page from the active worker session.
+    RenderSessionPage {
+        /// Zero-based page index.
+        page_index: u32,
+        /// Output format (`Svg`, `Png`, or `ViewerFragment`).
+        format: RenderOutputFormat,
+        /// Rasterization DPI (used for `Png`).
+        dpi: f32,
+    },
+    /// Extract plain UTF-8 text from a single page of the active worker session.
+    ExtractSessionPageText {
+        /// Zero-based page index.
+        page_index: u32,
+    },
+    /// Search all pages of the active worker session and return [`SearchHit`] JSON.
+    SearchSession {
+        /// Query string or regex pattern.
+        query: String,
+        /// Search options.
+        options: SearchOptions,
+    },
+    /// Close and drop the active worker session.
+    CloseSession,
+}
+
+/// Metadata returned when opening a stateful [`SandboxSession`].
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SessionInfo {
+    /// Detected format name (e.g. `"PDF"`, `"Microsoft Word"`).
+    pub format: String,
+    /// Detected MIME type.
+    pub mime_type: String,
+    /// Detected file extension.
+    pub extension: String,
+    /// Total number of laid-out pages.
+    pub page_count: u32,
+    /// Per-page dimensions `(width_pt, height_pt)` in points.
+    pub page_dimensions: Vec<(f32, f32)>,
+}
+
+/// Active document state cached inside a `prism-worker` process during a [`SandboxSession`].
+pub struct WorkerSessionState {
+    opened: OpenedDocument,
+    layout_options: LayoutOptions,
+}
+
+impl Default for WorkerSessionState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl WorkerSessionState {
+    /// Create an empty session state holder.
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            opened: OpenedDocument {
+                format: prism_core::format::Format::pdf(),
+                layout: LayoutDocument {
+                    pages: Vec::new(),
+                    fonts: prism_layout::FontStore::new(),
+                    images: prism_layout::ImageStore::new(),
+                    font_report: prism_layout::FontReport::default(),
+                },
+                metadata: Metadata::default(),
+                workbook: None,
+                presentation: None,
+                word_doc: None,
+            },
+            layout_options: LayoutOptions::default(),
+        }
+    }
 }
 
 /// Wire header returned from `prism-worker` to parent before the raw output byte payload.
@@ -545,6 +637,288 @@ impl SandboxManager {
             }
         }
         worker.kill_and_wait();
+    }
+
+    /// Open a stateful [`SandboxSession`] in a dedicated `prism-worker` process.
+    ///
+    /// The document is parsed and laid out once inside the worker and retained in memory
+    /// for fast subsequent [`SandboxSession::render_page`], [`SandboxSession::extract_page_text`],
+    /// and [`SandboxSession::search`] calls without re-transmitting or re-parsing the file.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SandboxError`] if spawning fails, the document fails to parse, or limits are exceeded.
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn open_session(
+        &self,
+        bytes: Vec<u8>,
+        filename: Option<String>,
+        options: Option<LayoutOptions>,
+    ) -> Result<SandboxSession, SandboxError> {
+        let worker = self.acquire_worker()?;
+        let mut session = SandboxSession {
+            config: self.config.clone(),
+            worker: Some(worker),
+            info: SessionInfo {
+                format: String::new(),
+                mime_type: String::new(),
+                extension: String::new(),
+                page_count: 0,
+                page_dimensions: Vec::new(),
+            },
+        };
+        let out = session.exchange(WorkerWireOp::OpenSession { filename, options }, &bytes)?;
+        let info: SessionInfo = serde_json::from_slice(&out.data).map_err(|e| {
+            SandboxError::ProtocolError(format!("SessionInfo JSON decode error: {e}"))
+        })?;
+        session.info = info;
+        Ok(session)
+    }
+
+    /// Open a stateful [`SandboxSession`] directly from a filesystem path inside a dedicated
+    /// `prism-worker` process without copying the raw file bytes over the IPC pipe.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SandboxError`] if spawning fails, the file cannot be read, or parsing fails.
+    pub fn open_session_from_path(
+        &self,
+        path: impl AsRef<Path>,
+        options: Option<LayoutOptions>,
+    ) -> Result<SandboxSession, SandboxError> {
+        let path_str = path.as_ref().to_string_lossy().into_owned();
+        let worker = self.acquire_worker()?;
+        let mut session = SandboxSession {
+            config: self.config.clone(),
+            worker: Some(worker),
+            info: SessionInfo {
+                format: String::new(),
+                mime_type: String::new(),
+                extension: String::new(),
+                page_count: 0,
+                page_dimensions: Vec::new(),
+            },
+        };
+        let out = session.exchange(
+            WorkerWireOp::OpenSessionFromPath {
+                path: path_str,
+                options,
+            },
+            &[],
+        )?;
+        let info: SessionInfo = serde_json::from_slice(&out.data).map_err(|e| {
+            SandboxError::ProtocolError(format!("SessionInfo JSON decode error: {e}"))
+        })?;
+        session.info = info;
+        Ok(session)
+    }
+}
+
+/// A stateful document viewing session pinned to an isolated `prism-worker` process.
+///
+/// Created via [`SandboxManager::open_session`].
+#[derive(Debug)]
+pub struct SandboxSession {
+    config: SandboxConfig,
+    worker: Option<WorkerProcess>,
+    info: SessionInfo,
+}
+
+impl SandboxSession {
+    /// Return metadata and page dimensions for the opened session.
+    #[must_use]
+    pub fn info(&self) -> &SessionInfo {
+        &self.info
+    }
+
+    /// Return the number of laid-out pages in the session document.
+    #[must_use]
+    pub fn page_count(&self) -> u32 {
+        self.info.page_count
+    }
+
+    /// Return the `(width_pt, height_pt)` dimensions of `page_index` (0-based).
+    #[must_use]
+    pub fn page_dimensions(&self, page_index: u32) -> Option<(f32, f32)> {
+        self.info.page_dimensions.get(page_index as usize).copied()
+    }
+
+    /// Render `page_index` (0-based) from the cached [`LayoutDocument`] inside the worker.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SandboxError`] if `page_index` is out of range or the worker fails/times out.
+    pub fn render_page(
+        &mut self,
+        page_index: u32,
+        format: RenderOutputFormat,
+        dpi: f32,
+    ) -> Result<SandboxOutput, SandboxError> {
+        self.exchange(
+            WorkerWireOp::RenderSessionPage {
+                page_index,
+                format,
+                dpi,
+            },
+            &[],
+        )
+    }
+
+    /// Extract plain UTF-8 text from `page_index` (0-based) of the cached [`LayoutDocument`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SandboxError`] if `page_index` is out of range or the worker fails/times out.
+    pub fn extract_page_text(&mut self, page_index: u32) -> Result<String, SandboxError> {
+        let out = self.exchange(WorkerWireOp::ExtractSessionPageText { page_index }, &[])?;
+        String::from_utf8(out.data)
+            .map_err(|e| SandboxError::ProtocolError(format!("Invalid UTF-8 page text: {e}")))
+    }
+
+    /// Search across all pages of the cached [`LayoutDocument`] inside the worker.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SandboxError`] if the search regex is invalid or the worker fails/times out.
+    pub fn search(
+        &mut self,
+        query: &str,
+        options: SearchOptions,
+    ) -> Result<Vec<SearchHit>, SandboxError> {
+        let out = self.exchange(
+            WorkerWireOp::SearchSession {
+                query: query.to_string(),
+                options,
+            },
+            &[],
+        )?;
+        serde_json::from_slice(&out.data)
+            .map_err(|e| SandboxError::ProtocolError(format!("SearchHit JSON decode error: {e}")))
+    }
+
+    /// Explicitly close the session and terminate its worker process.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SandboxError`] if closing fails.
+    pub fn close(mut self) -> Result<(), SandboxError> {
+        if self.worker.is_some() {
+            let _ = self.exchange(WorkerWireOp::CloseSession, &[]);
+            if let Some(mut w) = self.worker.take() {
+                w.kill_and_wait();
+            }
+        }
+        Ok(())
+    }
+
+    fn exchange(
+        &mut self,
+        op: WorkerWireOp,
+        payload: &[u8],
+    ) -> Result<SandboxOutput, SandboxError> {
+        let Some(mut worker) = self.worker.take() else {
+            return Err(SandboxError::ProtocolError(
+                "SandboxSession worker is already closed".to_string(),
+            ));
+        };
+
+        let req_header = WorkerRequestHeader {
+            max_memory: self.config.max_memory,
+            max_output_bytes: self.config.max_output_bytes,
+            op,
+        };
+        let max_output = self.config.max_output_bytes;
+        let timeout = self.config.max_execution_time;
+        let max_memory = self.config.max_memory;
+
+        let Some(mut stdin) = worker.stdin.take() else {
+            worker.kill_and_wait();
+            return Err(SandboxError::ProtocolError(
+                "Worker stdin missing".to_string(),
+            ));
+        };
+        let Some(mut stdout) = worker.stdout.take() else {
+            worker.kill_and_wait();
+            return Err(SandboxError::ProtocolError(
+                "Worker stdout missing".to_string(),
+            ));
+        };
+
+        let payload_vec = payload.to_vec();
+        let (tx, rx) = mpsc::channel();
+        thread::spawn(move || {
+            if let Err(e) = write_frame(&mut stdin, &req_header, &payload_vec) {
+                let _ = tx.send(Err((e, stdin, stdout)));
+                return;
+            }
+            match read_frame::<WorkerResponseHeader, _>(&mut stdout, max_output) {
+                Ok((resp_hdr, resp_bytes)) => {
+                    let _ = tx.send(Ok((resp_hdr, resp_bytes, stdin, stdout)));
+                }
+                Err(e) => {
+                    let _ = tx.send(Err((e, stdin, stdout)));
+                }
+            }
+        });
+
+        match rx.recv_timeout(timeout) {
+            Ok(Ok((resp_hdr, resp_bytes, stdin_back, stdout_back))) => {
+                worker.stdin = Some(stdin_back);
+                worker.stdout = Some(stdout_back);
+                worker.jobs_completed += 1;
+                self.worker = Some(worker);
+
+                if resp_hdr.ok {
+                    Ok(SandboxOutput {
+                        data: resp_bytes,
+                        content_type: resp_hdr.content_type,
+                        redaction_log_json: resp_hdr.redaction_log_json,
+                    })
+                } else if resp_hdr.memory_limit_exceeded {
+                    Err(SandboxError::MemoryLimit {
+                        limit_bytes: max_memory,
+                    })
+                } else {
+                    Err(SandboxError::TaskFailed(resp_hdr.error.unwrap_or_else(
+                        || "Unknown worker task failure".to_string(),
+                    )))
+                }
+            }
+            Ok(Err((io_err, _stdin_back, _stdout_back))) => {
+                let exit_code = worker.wait_or_kill(Duration::from_millis(250));
+                if matches!(io_err, SandboxError::OutputTooLarge { .. }) {
+                    return Err(io_err);
+                }
+                if is_oom_exit_code(exit_code) {
+                    return Err(SandboxError::MemoryLimit {
+                        limit_bytes: max_memory,
+                    });
+                }
+                Err(SandboxError::Crashed { exit_code })
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                worker.kill_and_wait();
+                Err(SandboxError::Timeout(timeout))
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                let exit_code = worker.wait_or_kill(Duration::from_millis(250));
+                if is_oom_exit_code(exit_code) {
+                    Err(SandboxError::MemoryLimit {
+                        limit_bytes: max_memory,
+                    })
+                } else {
+                    Err(SandboxError::Crashed { exit_code })
+                }
+            }
+        }
+    }
+}
+
+impl Drop for SandboxSession {
+    fn drop(&mut self) {
+        if let Some(mut worker) = self.worker.take() {
+            worker.kill_and_wait();
+        }
     }
 }
 
@@ -884,6 +1258,22 @@ pub fn execute_wire_request(
     req: &WorkerRequestHeader,
     payload: &[u8],
 ) -> Result<SandboxOutput, SandboxError> {
+    let mut temp_session = None;
+    execute_wire_request_with_session(req, payload, &mut temp_session)
+}
+
+/// Execute a decoded [`WorkerRequestHeader`] and binary `payload` inside `prism-worker`,
+/// updating or consulting `session` for stateful session operations (`OpenSession`,
+/// `RenderSessionPage`, `ExtractSessionPageText`, `SearchSession`, `CloseSession`).
+///
+/// # Errors
+///
+/// Returns [`SandboxError`] if the operation fails or exceeds `req.max_output_bytes`.
+pub fn execute_wire_request_with_session(
+    req: &WorkerRequestHeader,
+    payload: &[u8],
+    session: &mut Option<WorkerSessionState>,
+) -> Result<SandboxOutput, SandboxError> {
     let out = match &req.op {
         WorkerWireOp::Detect { filename } => {
             let det = detect_format(payload, filename.as_deref()).ok_or_else(|| {
@@ -904,14 +1294,14 @@ pub fn execute_wire_request(
             }
         }
         WorkerWireOp::Info { filename } => {
-            let (layout, doc_opt) = layout_and_parse_bytes(payload, filename.as_deref())?;
+            let (layout, meta) = layout_and_parse_bytes(payload, filename.as_deref())?;
             let det = detect_format(payload, filename.as_deref());
             let info = serde_json::json!({
                 "engine_version": prism_core::ENGINE_VERSION,
                 "format": det.as_ref().map(|d| &d.format.name),
                 "mime_type": det.as_ref().map(|d| &d.format.mime_type),
                 "page_count": layout.pages.len(),
-                "metadata": doc_opt.as_ref().map(|d| &d.metadata),
+                "metadata": meta,
             });
             let json = serde_json::to_vec_pretty(&info)
                 .map_err(|e| SandboxError::TaskFailed(e.to_string()))?;
@@ -937,7 +1327,7 @@ pub fn execute_wire_request(
             }
         }
         WorkerWireOp::RenderHtml { filename } => {
-            let doc = parse_udm_document(payload, filename.clone())?;
+            let doc = parse_udm_document(payload, filename.as_deref())?;
             let renderer = HtmlRenderer::new();
             let ctx = RenderContext {
                 options: RenderOptions {
@@ -967,46 +1357,10 @@ pub fn execute_wire_request(
             format,
             dpi,
         } => {
-            let (layout, _) = layout_and_parse_bytes(payload, filename.as_deref())?;
-            let page = layout
-                .pages
-                .iter()
-                .find(|p| p.index == *page_index)
-                .ok_or_else(|| {
-                    SandboxError::TaskFailed(format!(
-                        "Page index {page_index} out of range (page_count = {})",
-                        layout.pages.len()
-                    ))
-                })?;
-            match format {
-                RenderOutputFormat::Svg => {
-                    let svg = render_page_svg(
-                        page,
-                        &layout.fonts,
-                        &layout.images,
-                        &LayoutOptions::default(),
-                    )
-                    .map_err(|e| SandboxError::TaskFailed(e.to_string()))?;
-                    SandboxOutput {
-                        data: svg.into_bytes(),
-                        content_type: "image/svg+xml".to_string(),
-                        redaction_log_json: None,
-                    }
-                }
-                RenderOutputFormat::Png => {
-                    let opts = RasterOptions {
-                        dpi: *dpi,
-                        ..RasterOptions::default()
-                    };
-                    let png = render_page_png(page, &layout.fonts, &layout.images, &opts)
-                        .map_err(|e| SandboxError::TaskFailed(e.to_string()))?;
-                    SandboxOutput {
-                        data: png,
-                        content_type: "image/png".to_string(),
-                        redaction_log_json: None,
-                    }
-                }
-            }
+            let layout_opts = LayoutOptions::default();
+            let opened = open_and_layout(payload, filename.as_deref(), &layout_opts)
+                .map_err(|e| SandboxError::TaskFailed(e.to_string()))?;
+            render_opened_page(&opened, &layout_opts, *page_index, *format, *dpi)?
         }
         WorkerWireOp::ExportDocument {
             filename,
@@ -1014,8 +1368,7 @@ pub fn execute_wire_request(
             dpi,
             sidecar_json,
         } => {
-            let (layout, doc_opt) = layout_and_parse_bytes(payload, filename.as_deref())?;
-            let meta = doc_opt.map(|d| d.metadata).unwrap_or_default();
+            let (layout, meta) = layout_and_parse_bytes(payload, filename.as_deref())?;
 
             if let Some(sc_json) = sidecar_json {
                 let sidecar = AnnotationSidecar::from_json(sc_json)
@@ -1096,6 +1449,122 @@ pub fn execute_wire_request(
         WorkerWireOp::HostileTest { behavior } => {
             execute_hostile_behavior(behavior, req.max_memory)?
         }
+        WorkerWireOp::OpenSession { filename, options } => {
+            let layout_options = options.clone().unwrap_or_default();
+            let opened = open_and_layout(payload, filename.as_deref(), &layout_options)
+                .map_err(|e| SandboxError::TaskFailed(e.to_string()))?;
+            let page_dimensions: Vec<(f32, f32)> = opened
+                .layout
+                .pages
+                .iter()
+                .map(|p| (p.size.width, p.size.height))
+                .collect();
+            let info = SessionInfo {
+                format: opened.format.name.clone(),
+                mime_type: opened.format.mime_type.clone(),
+                extension: opened.format.extension.clone(),
+                page_count: opened.layout.pages.len() as u32,
+                page_dimensions,
+            };
+            let json =
+                serde_json::to_vec(&info).map_err(|e| SandboxError::TaskFailed(e.to_string()))?;
+            *session = Some(WorkerSessionState {
+                opened,
+                layout_options,
+            });
+            SandboxOutput {
+                data: json,
+                content_type: "application/json".to_string(),
+                redaction_log_json: None,
+            }
+        }
+        WorkerWireOp::OpenSessionFromPath { path, options } => {
+            let layout_options = options.clone().unwrap_or_default();
+            let opened = open_and_layout_path(path, &layout_options)
+                .map_err(|e| SandboxError::TaskFailed(e.to_string()))?;
+            let page_dimensions: Vec<(f32, f32)> = opened
+                .layout
+                .pages
+                .iter()
+                .map(|p| (p.size.width, p.size.height))
+                .collect();
+            let info = SessionInfo {
+                format: opened.format.name.clone(),
+                mime_type: opened.format.mime_type.clone(),
+                extension: opened.format.extension.clone(),
+                page_count: opened.layout.pages.len() as u32,
+                page_dimensions,
+            };
+            let json =
+                serde_json::to_vec(&info).map_err(|e| SandboxError::TaskFailed(e.to_string()))?;
+            *session = Some(WorkerSessionState {
+                opened,
+                layout_options,
+            });
+            SandboxOutput {
+                data: json,
+                content_type: "application/json".to_string(),
+                redaction_log_json: None,
+            }
+        }
+        WorkerWireOp::RenderSessionPage {
+            page_index,
+            format,
+            dpi,
+        } => {
+            let state = session.as_ref().ok_or_else(|| {
+                SandboxError::TaskFailed("No active session in worker".to_string())
+            })?;
+            render_opened_page(
+                &state.opened,
+                &state.layout_options,
+                *page_index,
+                *format,
+                *dpi,
+            )?
+        }
+        WorkerWireOp::ExtractSessionPageText { page_index } => {
+            let state = session.as_ref().ok_or_else(|| {
+                SandboxError::TaskFailed("No active session in worker".to_string())
+            })?;
+            let page = state
+                .opened
+                .layout
+                .pages
+                .get(*page_index as usize)
+                .ok_or_else(|| {
+                    SandboxError::TaskFailed(format!(
+                        "Page index {page_index} out of range (page_count = {})",
+                        state.opened.layout.pages.len()
+                    ))
+                })?;
+            SandboxOutput {
+                data: page.text().into_bytes(),
+                content_type: "text/plain; charset=utf-8".to_string(),
+                redaction_log_json: None,
+            }
+        }
+        WorkerWireOp::SearchSession { query, options } => {
+            let state = session.as_ref().ok_or_else(|| {
+                SandboxError::TaskFailed("No active session in worker".to_string())
+            })?;
+            let hits = state.opened.layout.find(query, *options);
+            let json =
+                serde_json::to_vec(&hits).map_err(|e| SandboxError::TaskFailed(e.to_string()))?;
+            SandboxOutput {
+                data: json,
+                content_type: "application/json".to_string(),
+                redaction_log_json: None,
+            }
+        }
+        WorkerWireOp::CloseSession => {
+            *session = None;
+            SandboxOutput {
+                data: b"{}".to_vec(),
+                content_type: "application/json".to_string(),
+                redaction_log_json: None,
+            }
+        }
     };
 
     if req.max_output_bytes > 0 && out.data.len() > req.max_output_bytes {
@@ -1105,6 +1574,70 @@ pub fn execute_wire_request(
         });
     }
     Ok(out)
+}
+
+fn render_opened_page(
+    opened: &OpenedDocument,
+    layout_options: &LayoutOptions,
+    page_index: u32,
+    format: RenderOutputFormat,
+    dpi: f32,
+) -> Result<SandboxOutput, SandboxError> {
+    let page = opened
+        .layout
+        .pages
+        .get(page_index as usize)
+        .or_else(|| opened.layout.pages.iter().find(|p| p.index == page_index))
+        .ok_or_else(|| {
+            SandboxError::TaskFailed(format!(
+                "Page index {page_index} out of range (page_count = {})",
+                opened.layout.pages.len()
+            ))
+        })?;
+    match format {
+        RenderOutputFormat::Svg => {
+            let svg = render_page_svg(
+                page,
+                &opened.layout.fonts,
+                &opened.layout.images,
+                layout_options,
+            )
+            .map_err(|e| SandboxError::TaskFailed(e.to_string()))?;
+            Ok(SandboxOutput {
+                data: svg.into_bytes(),
+                content_type: "image/svg+xml".to_string(),
+                redaction_log_json: None,
+            })
+        }
+        RenderOutputFormat::Png => {
+            let opts = RasterOptions {
+                dpi,
+                layout_options: layout_options.clone(),
+                ..RasterOptions::default()
+            };
+            let png = render_page_png(page, &opened.layout.fonts, &opened.layout.images, &opts)
+                .map_err(|e| SandboxError::TaskFailed(e.to_string()))?;
+            Ok(SandboxOutput {
+                data: png,
+                content_type: "image/png".to_string(),
+                redaction_log_json: None,
+            })
+        }
+        RenderOutputFormat::ViewerFragment => {
+            let fragment = render_page_viewer_fragment(
+                page,
+                &opened.layout.fonts,
+                &opened.layout.images,
+                layout_options,
+            )
+            .map_err(|e| SandboxError::TaskFailed(e.to_string()))?;
+            Ok(SandboxOutput {
+                data: fragment.into_bytes(),
+                content_type: "text/html; charset=utf-8".to_string(),
+                redaction_log_json: None,
+            })
+        }
+    }
 }
 
 fn execute_hostile_behavior(
@@ -1224,97 +1757,17 @@ fn split_job(job: SandboxJob) -> (WorkerWireOp, Vec<u8>) {
 fn layout_and_parse_bytes(
     bytes: &[u8],
     filename: Option<&str>,
-) -> Result<(LayoutDocument, Option<Document>), SandboxError> {
+) -> Result<(LayoutDocument, Metadata), SandboxError> {
     let options = LayoutOptions::default();
-
-    if bytes.starts_with(b"%PDF-")
-        && let Ok(layout) = interpret_pdf_bytes(bytes, &options)
-    {
-        let doc = parse_udm_document(bytes, filename.map(str::to_string)).ok();
-        return Ok((layout, doc));
-    }
-
-    if prism_word::is_docx_zip(bytes)
-        && let Ok(word_doc) =
-            prism_word::parse_docx(bytes, filename, options.max_decompressed_stream_bytes)
-    {
-        let layout = prism_word::layout_word_document(&word_doc, &options)
-            .map_err(|e| SandboxError::TaskFailed(e.to_string()))?;
-        let doc = parse_udm_document(bytes, filename.map(str::to_string)).ok();
-        return Ok((layout, doc));
-    }
-
-    if prism_word::is_doc_bytes(bytes)
-        && let Ok(word_doc) = prism_word::parse_doc(bytes, options.max_decompressed_stream_bytes)
-    {
-        let layout = prism_word::layout_word_document(&word_doc, &options)
-            .map_err(|e| SandboxError::TaskFailed(e.to_string()))?;
-        let doc = parse_udm_document(bytes, filename.map(str::to_string)).ok();
-        return Ok((layout, doc));
-    }
-
-    if prism_ppt::is_pptx_zip(bytes)
-        && let Ok(ppt_doc) = prism_ppt::parse_pptx(bytes, options.max_decompressed_stream_bytes)
-    {
-        let layout = prism_ppt::layout_presentation(&ppt_doc, &options)
-            .map_err(|e| SandboxError::TaskFailed(e.to_string()))?;
-        let doc = parse_udm_document(bytes, filename.map(str::to_string)).ok();
-        return Ok((layout, doc));
-    }
-
-    if prism_ppt::is_ppt_bytes(bytes)
-        && let Ok(ppt_doc) = prism_ppt::parse_ppt(bytes, options.max_decompressed_stream_bytes)
-        && !ppt_doc.slides.is_empty()
-    {
-        let layout = prism_ppt::layout_presentation(&ppt_doc, &options)
-            .map_err(|e| SandboxError::TaskFailed(e.to_string()))?;
-        let doc = parse_udm_document(bytes, filename.map(str::to_string)).ok();
-        return Ok((layout, doc));
-    }
-
-    if prism_excel::is_xlsx_zip(bytes)
-        && let Ok(wb) = prism_excel::parse_xlsx(bytes, options.max_decompressed_stream_bytes)
-    {
-        let layout = prism_excel::layout_workbook(&wb, &options)
-            .map_err(|e| SandboxError::TaskFailed(e.to_string()))?;
-        let doc = parse_udm_document(bytes, filename.map(str::to_string)).ok();
-        return Ok((layout, doc));
-    }
-
-    if prism_excel::is_xls_bytes(bytes)
-        && let Ok(wb) = prism_excel::parse_xls(bytes, options.max_decompressed_stream_bytes)
-    {
-        let layout = prism_excel::layout_workbook(&wb, &options)
-            .map_err(|e| SandboxError::TaskFailed(e.to_string()))?;
-        let doc = parse_udm_document(bytes, filename.map(str::to_string)).ok();
-        return Ok((layout, doc));
-    }
-
-    let doc = parse_udm_document(bytes, filename.map(str::to_string))?;
-    let layout =
-        layout_document(&doc, &options).map_err(|e| SandboxError::TaskFailed(e.to_string()))?;
-    Ok((layout, Some(doc)))
+    let opened = open_and_layout(bytes, filename, &options)
+        .map_err(|e| SandboxError::TaskFailed(e.to_string()))?;
+    Ok((opened.layout, opened.metadata))
 }
 
-fn parse_udm_document(bytes: &[u8], filename: Option<String>) -> Result<Document, SandboxError> {
-    let detection = detect_format(bytes, filename.as_deref())
-        .ok_or_else(|| SandboxError::TaskFailed("Unrecognized document format".to_string()))?;
-    let registry = ParserRegistry::with_default_parsers();
-    let parser = registry.get_parser(&detection.format).ok_or_else(|| {
-        SandboxError::TaskFailed(format!("No parser available for {}", detection.format.name))
-    })?;
-    let ctx = ParseContext {
-        format: detection.format,
-        filename,
-        size: bytes.len(),
-        options: ParseOptions::default(),
-    };
-    let rt = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
+fn parse_udm_document(bytes: &[u8], filename: Option<&str>) -> Result<Document, SandboxError> {
+    let (_, doc) = parse_udm_bytes(bytes, filename, ParseOptions::default())
         .map_err(|e| SandboxError::TaskFailed(e.to_string()))?;
-    rt.block_on(parser.parse(Bytes::copy_from_slice(bytes), ctx))
-        .map_err(|e| SandboxError::TaskFailed(e.to_string()))
+    Ok(doc)
 }
 
 #[cfg(windows)]
@@ -1530,7 +1983,9 @@ mod tests {
     fn worker_pool_survives_oom_timeout_stackoverflow_abort_and_network_attempt() {
         let config = SandboxConfig {
             max_memory: 48 * 1024 * 1024, // 48 MiB
-            max_execution_time: Duration::from_millis(600),
+            // Each crash job first spawns a replacement worker, which can take most of a
+            // sub-second budget on a loaded CI machine.
+            max_execution_time: Duration::from_millis(2_000),
             pool_size: 2,
             max_jobs_per_worker: 16,
             ..SandboxConfig::default()

@@ -3,6 +3,207 @@
 (function () {
   "use strict";
 
+  class SpreadsheetCanvasGrid {
+    constructor(canvas, onSelectCell) {
+      this.canvas = canvas;
+      this.onSelectCell = onSelectCell;
+      this.sheetIndex = 0;
+      this.scrollRow = 0;
+      this.scrollCol = 0;
+      this.frozenRows = 0;
+      this.frozenCols = 0;
+      this.selectedRange = { r0: 0, c0: 0, r1: 0, c1: 0 };
+      this.cellMap = new Map();
+      this.bindEvents();
+    }
+
+    static colToLetters(col) {
+      let n = col + 1;
+      let out = "";
+      while (n > 0) {
+        const rem = (n - 1) % 26;
+        out = String.fromCharCode(65 + rem) + out;
+        n = Math.floor((n - 1) / 26);
+      }
+      return out;
+    }
+
+    async loadSheet(sheetIndex) {
+      this.sheetIndex = sheetIndex;
+      this.scrollRow = 0;
+      this.scrollCol = 0;
+      this.cellMap.clear();
+      if (window.PrismHost && window.PrismHost.getWorkbookSheetLayout) {
+        const layout = await window.PrismHost.getWorkbookSheetLayout(sheetIndex);
+        this.frozenRows = (layout && layout.frozen_rows) || 0;
+        this.frozenCols = (layout && layout.frozen_cols) || 0;
+      } else {
+        this.frozenRows = 0;
+        this.frozenCols = 0;
+      }
+      await this.fetchVisibleTile();
+      this.render();
+    }
+
+    async fetchVisibleTile() {
+      if (!window.PrismHost || !window.PrismHost.getWorkbookCells) return;
+      const r0 = Math.max(0, this.scrollRow);
+      const c0 = Math.max(0, this.scrollCol);
+      const res = await window.PrismHost.getWorkbookCells(this.sheetIndex, r0, c0, r0 + 50, c0 + 20);
+      for (const c of (res && res.cells) || []) {
+        this.cellMap.set(`${c.row}:${c.col}`, c);
+      }
+      if (this.frozenRows > 0 || this.frozenCols > 0) {
+        const fRes = await window.PrismHost.getWorkbookCells(
+          this.sheetIndex,
+          0,
+          0,
+          Math.max(0, this.frozenRows - 1),
+          Math.max(0, this.frozenCols - 1)
+        );
+        for (const c of (fRes && fRes.cells) || []) {
+          this.cellMap.set(`${c.row}:${c.col}`, c);
+        }
+      }
+    }
+
+    bindEvents() {
+      this.canvas.addEventListener("wheel", (e) => {
+        e.preventDefault();
+        this.scrollRow = Math.max(0, this.scrollRow + (e.deltaY > 0 ? 3 : -3));
+        this.scrollCol = Math.max(0, this.scrollCol + (e.deltaX > 0 ? 1 : e.deltaX < 0 ? -1 : 0));
+        void this.fetchVisibleTile().then(() => this.render());
+      });
+
+      this.canvas.addEventListener("mousedown", (e) => {
+        const rect = this.canvas.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        if (x < 44 || y < 24) return;
+        const col = this.scrollCol + Math.floor((x - 44) / 96);
+        const row = this.scrollRow + Math.floor((y - 24) / 22);
+        if (e.shiftKey) {
+          this.selectedRange.r1 = row;
+          this.selectedRange.c1 = col;
+        } else {
+          this.selectedRange = { r0: row, c0: col, r1: row, c1: col };
+        }
+        const cell = this.cellMap.get(`${row}:${col}`) || null;
+        const a1Start = `${SpreadsheetCanvasGrid.colToLetters(this.selectedRange.c0)}${this.selectedRange.r0 + 1}`;
+        const a1End = `${SpreadsheetCanvasGrid.colToLetters(this.selectedRange.c1)}${this.selectedRange.r1 + 1}`;
+        const rangeA1 = a1Start === a1End ? a1Start : `${a1Start}:${a1End}`;
+        this.onSelectCell(cell, rangeA1);
+        this.render();
+      });
+    }
+
+    render() {
+      const ctx = this.canvas.getContext("2d");
+      if (!ctx) return;
+      const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
+      const width = this.canvas.clientWidth || 800;
+      const height = this.canvas.clientHeight || 520;
+      this.canvas.width = Math.floor(width * dpr);
+      this.canvas.height = Math.floor(height * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+      const headerW = 44;
+      const headerH = 24;
+      const colW = 96;
+      const rowH = 22;
+      const colsVisible = Math.ceil((width - headerW) / colW);
+      const rowsVisible = Math.ceil((height - headerH) / rowH);
+
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, width, height);
+
+      ctx.fillStyle = "#f1f5f9";
+      ctx.fillRect(0, 0, width, headerH);
+      ctx.fillRect(0, 0, headerW, height);
+      ctx.strokeStyle = "#cbd5e1";
+      ctx.lineWidth = 1;
+      ctx.font = "600 11px sans-serif";
+      ctx.fillStyle = "#334155";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+
+      for (let c = 0; c < colsVisible; c++) {
+        const colIdx = this.scrollCol + c;
+        const x = headerW + c * colW;
+        ctx.strokeRect(x, 0, colW, headerH);
+        ctx.fillText(SpreadsheetCanvasGrid.colToLetters(colIdx), x + colW / 2, headerH / 2);
+      }
+
+      for (let r = 0; r < rowsVisible; r++) {
+        const rowIdx = this.scrollRow + r;
+        const y = headerH + r * rowH;
+        ctx.strokeRect(0, y, headerW, rowH);
+        ctx.fillText(String(rowIdx + 1), headerW / 2, y + rowH / 2);
+      }
+
+      ctx.font = "12px sans-serif";
+      ctx.textAlign = "left";
+      for (let r = 0; r < rowsVisible; r++) {
+        const rowIdx = this.scrollRow + r;
+        const y = headerH + r * rowH;
+        for (let c = 0; c < colsVisible; c++) {
+          const colIdx = this.scrollCol + c;
+          const x = headerW + c * colW;
+          ctx.strokeStyle = "#e2e8f0";
+          ctx.strokeRect(x, y, colW, rowH);
+
+          const cell = this.cellMap.get(`${rowIdx}:${colIdx}`);
+          if (cell) {
+            ctx.fillStyle = cell.is_concealed ? "#b45309" : "#0f172a";
+            const txt = cell.display_text || "";
+            ctx.fillText(txt.slice(0, 14), x + 4, y + rowH / 2);
+            if (cell.has_comment) {
+              ctx.fillStyle = "#dc2626";
+              ctx.beginPath();
+              ctx.moveTo(x + colW - 6, y);
+              ctx.lineTo(x + colW, y);
+              ctx.lineTo(x + colW, y + 6);
+              ctx.closePath();
+              ctx.fill();
+            }
+          }
+
+          const rMin = Math.min(this.selectedRange.r0, this.selectedRange.r1);
+          const rMax = Math.max(this.selectedRange.r0, this.selectedRange.r1);
+          const cMin = Math.min(this.selectedRange.c0, this.selectedRange.c1);
+          const cMax = Math.max(this.selectedRange.c0, this.selectedRange.c1);
+          if (rowIdx >= rMin && rowIdx <= rMax && colIdx >= cMin && colIdx <= cMax) {
+            ctx.strokeStyle = "#2563eb";
+            ctx.lineWidth = 2;
+            ctx.strokeRect(x + 1, y + 1, colW - 2, rowH - 2);
+            ctx.lineWidth = 1;
+          }
+        }
+      }
+
+      if (this.frozenRows > 0) {
+        const fy = headerH + this.frozenRows * rowH;
+        ctx.strokeStyle = "#475569";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(0, fy);
+        ctx.lineTo(width, fy);
+        ctx.stroke();
+        ctx.lineWidth = 1;
+      }
+      if (this.frozenCols > 0) {
+        const fx = headerW + this.frozenCols * colW;
+        ctx.strokeStyle = "#475569";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(fx, 0);
+        ctx.lineTo(fx, height);
+        ctx.stroke();
+        ctx.lineWidth = 1;
+      }
+    }
+  }
+
   class PrismViewerController {
     constructor(root) {
       this.root = root;
@@ -81,6 +282,43 @@
       if (hiddenToggle) hiddenToggle.checked = true;
 
       let activeSheet = 0;
+      const gridContainer = this.root.querySelector("#prism-spreadsheet-grid-container");
+      const gridCanvas = this.root.querySelector("#prism-spreadsheet-canvas");
+      const gridModeBtn = this.root.querySelector("#prism-btn-sheet-grid-mode");
+      let canvasGrid = null;
+      if (gridCanvas) {
+        canvasGrid = new SpreadsheetCanvasGrid(gridCanvas, (cell, rangeA1) => {
+          const refEl = this.root.querySelector("#prism-cell-ref");
+          const exprEl = this.root.querySelector("#prism-formula-expr");
+          const metaEl = this.root.querySelector("#prism-cell-meta");
+          if (refEl) refEl.textContent = rangeA1;
+          if (cell) {
+            if (exprEl) {
+              exprEl.textContent =
+                cell.formula && cell.formula.expression
+                  ? `=${cell.formula.expression}  (cached: ${cell.display_text})`
+                  : cell.display_text;
+            }
+            if (metaEl) {
+              const fmt = cell.num_fmt_code || "General";
+              const conc = cell.is_concealed ? " [concealed ;;;]" : "";
+              metaEl.textContent = `numFmt: ${fmt}${conc}`;
+            }
+          }
+        });
+      }
+      if (gridModeBtn) {
+        gridModeBtn.addEventListener("click", () => {
+          if (!gridContainer) return;
+          const toGrid = gridContainer.hidden;
+          gridContainer.hidden = !toGrid;
+          this.pagesContainer.hidden = toGrid;
+          gridModeBtn.textContent = toGrid ? "Print View" : "Grid View";
+          if (toGrid && canvasGrid) {
+            void canvasGrid.loadSheet(activeSheet);
+          }
+        });
+      }
       const inspectFirstCell = async (sheetIdx) => {
         if (!window.PrismHost || !window.PrismHost.getWorkbookCells) return;
         const res = await window.PrismHost.getWorkbookCells(sheetIdx, 0, 0, 25, 15);

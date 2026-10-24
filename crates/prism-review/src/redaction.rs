@@ -27,7 +27,8 @@ use prism_core::review::ReviewRect;
 use prism_excel::model::{Cell, CellValue, Sheet, Workbook, col_index_to_letters, parse_a1_range};
 use prism_layout::{
     Affine, Cluster, FontSourceKind, FontStore, GlyphRun, GroupItem, ImageEntry, ImageId,
-    ImageItem, ImageStore, Item, LayoutDocument, LayoutOptions, Rect, Rgba, interpret_pdf_bytes,
+    ImageItem, ImageStore, Item, LayoutDocument, LayoutOptions, Point, Rect, Rgba,
+    interpret_pdf_bytes,
 };
 use prism_render::pdf::{PdfExportOptions, export_document_pdf};
 use prism_render::raster::{RasterOptions, export_document_tiff, render_page_png};
@@ -236,9 +237,10 @@ pub fn apply_redactions(
                     page.items =
                         redact_items(std::mem::take(&mut page.items), Affine::IDENTITY, &mut ctx);
 
-                    // If a TextAnchor quoted string still appears on the page (e.g. due to slight font metrics shift),
-                    // also scrub any glyph run containing the exact quoted text.
-                    if let Some(ref ta) = res.annotation.anchor.text_anchor
+                    // For TextRange redactions, also scrub any glyph run containing the exact quoted text
+                    // in case font metric shifts moved the text slightly outside `rects`.
+                    if matches!(res.annotation.anchor.target, RedactionTarget::TextRange)
+                        && let Some(ref ta) = res.annotation.anchor.text_anchor
                         && !ta.quoted_text.trim().is_empty()
                     {
                         scrub_quoted_text_from_items(
@@ -294,10 +296,22 @@ pub fn apply_redactions(
     // Purge any unreferenced images from `doc.images` so original unredacted image bytes cannot survive
     purge_unreferenced_images(doc);
 
+    // Collect text that legitimately survives outside all redaction rectangles so global byte/text
+    // verification does not false-positive when only one occurrence of a repeated term was redacted.
+    let mut surviving_unredacted_text = String::new();
+    for page in &doc.pages {
+        collect_non_label_text(&page.items, &labels_set, &mut surviving_unredacted_text);
+        surviving_unredacted_text.push('\n');
+    }
+    let surviving_norm = normalize_whitespace(&surviving_unredacted_text);
+
     // Scrub any remaining LinkItem or AnchorItem whose target/name contains a redacted string
     let redacted_strings: Vec<String> = redacted_strings_set
         .into_iter()
-        .filter(|s| !labels_set.contains(&s.to_lowercase()))
+        .filter(|s| {
+            !labels_set.contains(&s.to_lowercase())
+                && !contains_case_insensitive(&surviving_norm, s)
+        })
         .collect();
     for page in &mut doc.pages {
         scrub_links_and_anchors(&mut page.items, &redacted_strings);
@@ -854,8 +868,65 @@ pub fn export_redacted_document(
     };
 
     verify_redacted_output(&bytes, Some(hint), &log.redacted_strings)?;
+    verify_redacted_regions(&bytes, Some(hint), &log.entries)?;
 
     Ok(RedactedExportResult { bytes, log })
+}
+
+/// Verify geometrically that no non-label glyph clusters or vector path segments survive inside
+/// any applied redaction rectangle (`entries`) in an exported PDF.
+///
+/// # Errors
+///
+/// Returns [`Error::Internal`] if any non-label glyph cluster intersects an applied redaction box.
+pub fn verify_redacted_regions(
+    exported_bytes: &[u8],
+    format_hint: Option<&str>,
+    entries: &[RedactionLogEntry],
+) -> Result<()> {
+    let is_pdf = exported_bytes.starts_with(b"%PDF-")
+        || format_hint.is_some_and(|h| h.eq_ignore_ascii_case("pdf"));
+    if !is_pdf || entries.is_empty() {
+        return Ok(());
+    }
+
+    let layout = interpret_pdf_bytes(exported_bytes, &LayoutOptions::default())?;
+    for entry in entries {
+        if entry.rects_pt.is_empty() {
+            continue;
+        }
+        let Some(page) = layout.pages.iter().find(|p| p.index == entry.page_index) else {
+            continue;
+        };
+        // Only the characters of a burned-in label may sit inside a box. They are found as
+        // whole occurrences of the label in the page text, so a surviving glyph is not excused
+        // just because its letter also appears in the label.
+        let page_text = page.text();
+        let label_ranges = label_occurrences(&page_text, entry.label.trim());
+        let char_boxes = page.char_boxes();
+        for r in &entry.rects_pt {
+            let red_rect = to_layout_rect(*r);
+            for cb in &char_boxes {
+                if !rects_intersect_shrunk(red_rect, cb.rect) {
+                    continue;
+                }
+                if cb.ch.is_whitespace() {
+                    continue;
+                }
+                if label_ranges.iter().any(|r| r.contains(&cb.byte_offset)) {
+                    continue;
+                }
+                return Err(Error::Internal(format!(
+                    "Redaction region verification failed on page {}: surviving glyph inside redaction '{}' at ({:.1}, {:.1})",
+                    entry.page_index + 1,
+                    entry.annotation_id,
+                    cb.rect.x,
+                    cb.rect.y
+                )));
+            }
+        }
+    }
+    Ok(())
 }
 
 struct PageRedactionContext<'a> {
@@ -889,17 +960,12 @@ fn redact_items(
                 }
             }
             Item::Path(path) => {
-                // Drop vector paths that lie completely inside a redaction rectangle
-                let path_world = parent_transform.then(path.transform);
-                if let Some(bbox) = path_bbox(&path.commands, path_world)
-                    && ctx
-                        .rects
-                        .iter()
-                        .any(|r| rect_contains_rect(to_layout_rect(*r), bbox))
-                {
-                    continue;
-                }
-                out.push(Item::Path(path));
+                // Clip or drop vector paths intersecting any redaction rectangle
+                out.extend(
+                    clip_path_item(path, parent_transform, ctx.rects)
+                        .into_iter()
+                        .map(Item::Path),
+                );
             }
             Item::Group(mut group) => {
                 let group_world = parent_transform.then(group.transform);
@@ -1477,6 +1543,371 @@ fn count_images_in_items(items: &[Item]) -> usize {
     total
 }
 
+/// Byte ranges of every occurrence of `label` in `text` (ASCII case-insensitive).
+fn label_occurrences(text: &str, label: &str) -> Vec<std::ops::Range<usize>> {
+    if label.is_empty() {
+        return Vec::new();
+    }
+    let hay = text.as_bytes();
+    let needle = label.as_bytes();
+    let mut out = Vec::new();
+    let mut start = 0usize;
+    while start + needle.len() <= hay.len() {
+        if hay[start..start + needle.len()].eq_ignore_ascii_case(needle) {
+            out.push(start..start + needle.len());
+            start += needle.len();
+        } else {
+            start += 1;
+        }
+    }
+    out
+}
+
+fn collect_non_label_text(items: &[Item], labels_set: &BTreeSet<String>, out: &mut String) {
+    for item in items {
+        match item {
+            Item::Glyphs(run) => {
+                let norm = run.text.trim().to_lowercase();
+                if !norm.is_empty() && !labels_set.contains(&norm) {
+                    out.push_str(&run.text);
+                    out.push(' ');
+                }
+            }
+            Item::Group(g) => collect_non_label_text(&g.children, labels_set, out),
+            _ => {}
+        }
+    }
+}
+
+/// Destructively clip a [`prism_layout::PathItem`] against `redaction_rects` in world space.
+///
+/// - If the path lies completely outside all redaction rectangles, it is returned unchanged.
+/// - If the path lies completely inside a redaction rectangle, nothing is returned.
+/// - Otherwise the fill and the stroke are clipped separately: the fill as polygons with each
+///   rectangle subtracted (so the filled area stays correct), the stroke as line segments
+///   split at the rectangle edges. Either way no geometry inside a rectangle survives.
+fn clip_path_item(
+    path: prism_layout::PathItem,
+    parent_transform: Affine,
+    redaction_rects: &[ReviewRect],
+) -> Vec<prism_layout::PathItem> {
+    use prism_layout::{PathCommand, PathItem};
+
+    let path_world = parent_transform.then(path.transform);
+    let Some(bbox) = path_bbox(&path.commands, path_world) else {
+        return Vec::new();
+    };
+    let layout_rects: Vec<Rect> = redaction_rects
+        .iter()
+        .map(|r| to_layout_rect(*r))
+        .filter(|r| rects_intersect(*r, bbox))
+        .collect();
+
+    if layout_rects.is_empty() {
+        return vec![path];
+    }
+    if layout_rects.iter().any(|r| rect_contains_rect(*r, bbox)) {
+        return Vec::new();
+    }
+
+    let subpaths = flatten_subpaths(&path.commands);
+    let mut out = Vec::new();
+
+    if path.fill.is_some()
+        && let Some(world_to_parent) = invert_affine(parent_transform)
+    {
+        // Fill polygons in world space, so the item's transform maps world back through the
+        // parent: parent.then(world_to_parent) is the identity.
+        let mut polygons: Vec<Vec<Point>> = subpaths
+            .iter()
+            .filter(|(pts, _)| pts.len() >= 3)
+            .map(|(pts, _)| pts.iter().map(|p| path_world.transform_point(*p)).collect())
+            .collect();
+        for r in &layout_rects {
+            polygons = subtract_rect_from_polygons(polygons, *r);
+        }
+        let mut commands = Vec::new();
+        for poly in polygons.iter().filter(|p| p.len() >= 3) {
+            commands.push(PathCommand::MoveTo(poly[0]));
+            for p in &poly[1..] {
+                commands.push(PathCommand::LineTo(*p));
+            }
+            commands.push(PathCommand::Close);
+        }
+        if !commands.is_empty() {
+            out.push(PathItem {
+                commands,
+                fill: path.fill.clone(),
+                fill_rule: path.fill_rule,
+                stroke: None,
+                transform: world_to_parent,
+            });
+        }
+    }
+
+    if path.stroke.is_some() {
+        let mut clipped_cmds: Vec<PathCommand> = Vec::new();
+        let mut last_pt: Option<Point> = None;
+        for (pts, closed) in &subpaths {
+            let mut segments: Vec<(Point, Point)> = pts.windows(2).map(|w| (w[0], w[1])).collect();
+            if *closed && pts.len() >= 2 {
+                segments.push((pts[pts.len() - 1], pts[0]));
+            }
+            for (p0, p1) in segments {
+                let w0 = path_world.transform_point(p0);
+                let w1 = path_world.transform_point(p1);
+                let mut intervals = vec![(0.0_f32, 1.0_f32)];
+                for r in &layout_rects {
+                    if let Some((t_in, t_out)) = segment_rect_intersection_t(w0, w1, *r) {
+                        let mut next_intervals = Vec::new();
+                        for (a, b) in intervals {
+                            if t_out <= a || t_in >= b {
+                                next_intervals.push((a, b));
+                            } else {
+                                if t_in > a + 1e-4 {
+                                    next_intervals.push((a, t_in));
+                                }
+                                if t_out < b - 1e-4 {
+                                    next_intervals.push((t_out, b));
+                                }
+                            }
+                        }
+                        intervals = next_intervals;
+                        if intervals.is_empty() {
+                            break;
+                        }
+                    }
+                }
+                for (t0, t1) in intervals {
+                    let s0 = Point::new(p0.x + t0 * (p1.x - p0.x), p0.y + t0 * (p1.y - p0.y));
+                    let s1 = Point::new(p0.x + t1 * (p1.x - p0.x), p0.y + t1 * (p1.y - p0.y));
+                    let needs_move = last_pt
+                        .is_none_or(|lp| (lp.x - s0.x).abs() > 1e-3 || (lp.y - s0.y).abs() > 1e-3);
+                    if needs_move {
+                        clipped_cmds.push(PathCommand::MoveTo(s0));
+                    }
+                    clipped_cmds.push(PathCommand::LineTo(s1));
+                    last_pt = Some(s1);
+                }
+            }
+        }
+        if clipped_cmds
+            .iter()
+            .any(|c| matches!(c, PathCommand::LineTo(_)))
+        {
+            out.push(PathItem {
+                commands: clipped_cmds,
+                fill: None,
+                fill_rule: path.fill_rule,
+                stroke: path.stroke,
+                transform: path.transform,
+            });
+        }
+    }
+
+    out
+}
+
+/// Flatten path commands into polylines (local coordinates), one per subpath, with whether
+/// the subpath was explicitly closed.
+fn flatten_subpaths(commands: &[prism_layout::PathCommand]) -> Vec<(Vec<Point>, bool)> {
+    use prism_layout::PathCommand;
+
+    let mut subpaths: Vec<(Vec<Point>, bool)> = Vec::new();
+    let mut current: Vec<Point> = Vec::new();
+    let mut cur = Point::new(0.0, 0.0);
+    let flush = |current: &mut Vec<Point>, subpaths: &mut Vec<(Vec<Point>, bool)>, closed| {
+        if current.len() >= 2 {
+            subpaths.push((std::mem::take(current), closed));
+        } else {
+            current.clear();
+        }
+    };
+
+    for cmd in commands {
+        match *cmd {
+            PathCommand::MoveTo(p) => {
+                flush(&mut current, &mut subpaths, false);
+                cur = p;
+                current.push(p);
+            }
+            PathCommand::LineTo(to) => {
+                if current.is_empty() {
+                    current.push(cur);
+                }
+                current.push(to);
+                cur = to;
+            }
+            PathCommand::QuadTo { ctrl, to } => {
+                if current.is_empty() {
+                    current.push(cur);
+                }
+                let steps = 12usize;
+                for i in 1..=steps {
+                    #[allow(clippy::cast_precision_loss)]
+                    let t = (i as f32) / (steps as f32);
+                    let u = 1.0 - t;
+                    current.push(Point::new(
+                        u * u * cur.x + 2.0 * u * t * ctrl.x + t * t * to.x,
+                        u * u * cur.y + 2.0 * u * t * ctrl.y + t * t * to.y,
+                    ));
+                }
+                cur = to;
+            }
+            PathCommand::CurveTo { ctrl1, ctrl2, to } => {
+                if current.is_empty() {
+                    current.push(cur);
+                }
+                let steps = 16usize;
+                for i in 1..=steps {
+                    #[allow(clippy::cast_precision_loss)]
+                    let t = (i as f32) / (steps as f32);
+                    let u = 1.0 - t;
+                    current.push(Point::new(
+                        u * u * u * cur.x
+                            + 3.0 * u * u * t * ctrl1.x
+                            + 3.0 * u * t * t * ctrl2.x
+                            + t * t * t * to.x,
+                        u * u * u * cur.y
+                            + 3.0 * u * u * t * ctrl1.y
+                            + 3.0 * u * t * t * ctrl2.y
+                            + t * t * t * to.y,
+                    ));
+                }
+                cur = to;
+            }
+            PathCommand::Close => {
+                let start = current.first().copied();
+                flush(&mut current, &mut subpaths, true);
+                if let Some(s) = start {
+                    cur = s;
+                }
+            }
+        }
+    }
+    flush(&mut current, &mut subpaths, false);
+    subpaths
+}
+
+/// Subtract the axis-aligned `r` from each polygon by clipping it to the four bands around `r`
+/// (above, below, left and right of it). Clipping every contour to the same convex band keeps
+/// its winding numbers inside that band, so the result fills exactly the original area minus `r`
+/// under either fill rule.
+fn subtract_rect_from_polygons(polygons: Vec<Vec<Point>>, r: Rect) -> Vec<Vec<Point>> {
+    const INF: f32 = f32::INFINITY;
+    let bands = [
+        [-INF, INF, -INF, r.y],
+        [-INF, INF, r.bottom(), INF],
+        [-INF, r.x, r.y, r.bottom()],
+        [r.right(), INF, r.y, r.bottom()],
+    ];
+    let mut out = Vec::new();
+    for poly in polygons {
+        let (mut x0, mut y0, mut x1, mut y1) = (INF, INF, -INF, -INF);
+        for p in &poly {
+            x0 = x0.min(p.x);
+            y0 = y0.min(p.y);
+            x1 = x1.max(p.x);
+            y1 = y1.max(p.y);
+        }
+        if !rects_intersect(r, Rect::new(x0, y0, x1 - x0, y1 - y0)) {
+            out.push(poly);
+            continue;
+        }
+        for band in &bands {
+            let clipped = clip_polygon_to_box(&poly, *band);
+            if clipped.len() >= 3 {
+                out.push(clipped);
+            }
+        }
+    }
+    out
+}
+
+/// Sutherland–Hodgman clip of `poly` to the box `[x_min, x_max, y_min, y_max]` (infinite
+/// bounds are skipped).
+fn clip_polygon_to_box(poly: &[Point], bounds: [f32; 4]) -> Vec<Point> {
+    let [x_min, x_max, y_min, y_max] = bounds;
+    let mut current = poly.to_vec();
+    for (bound, is_x, keep_greater) in [
+        (x_min, true, true),
+        (x_max, true, false),
+        (y_min, false, true),
+        (y_max, false, false),
+    ] {
+        if !bound.is_finite() || current.is_empty() {
+            continue;
+        }
+        let coord = |p: Point| if is_x { p.x } else { p.y };
+        let inside = |p: Point| {
+            if keep_greater {
+                coord(p) >= bound
+            } else {
+                coord(p) <= bound
+            }
+        };
+        let cross = |a: Point, b: Point| {
+            let t = (bound - coord(a)) / (coord(b) - coord(a));
+            Point::new(a.x + t * (b.x - a.x), a.y + t * (b.y - a.y))
+        };
+        let input = std::mem::take(&mut current);
+        for i in 0..input.len() {
+            let a = input[i];
+            let b = input[(i + 1) % input.len()];
+            match (inside(a), inside(b)) {
+                (true, true) => current.push(b),
+                (true, false) => current.push(cross(a, b)),
+                (false, true) => {
+                    current.push(cross(a, b));
+                    current.push(b);
+                }
+                (false, false) => {}
+            }
+        }
+    }
+    current
+}
+
+/// Liang-Barsky parametric intersection `[t_enter, t_exit] \subseteq [0, 1]` of segment `w0 -> w1`
+/// with axis-aligned rectangle `r`.
+fn segment_rect_intersection_t(
+    w0: prism_layout::Point,
+    w1: prism_layout::Point,
+    r: Rect,
+) -> Option<(f32, f32)> {
+    let dx = w1.x - w0.x;
+    let dy = w1.y - w0.y;
+    let p = [-dx, dx, -dy, dy];
+    let q = [w0.x - r.x, r.right() - w0.x, w0.y - r.y, r.bottom() - w0.y];
+    let mut t0 = 0.0_f32;
+    let mut t1 = 1.0_f32;
+    for (&pi, &qi) in p.iter().zip(&q) {
+        if pi.abs() < 1e-7 {
+            if qi < 0.0 {
+                return None;
+            }
+        } else {
+            let t = qi / pi;
+            if pi < 0.0 {
+                if t > t1 {
+                    return None;
+                }
+                if t > t0 {
+                    t0 = t;
+                }
+            } else {
+                if t < t0 {
+                    return None;
+                }
+                if t < t1 {
+                    t1 = t;
+                }
+            }
+        }
+    }
+    (t0 < t1).then_some((t0, t1))
+}
+
 fn path_bbox(commands: &[prism_layout::PathCommand], transform: Affine) -> Option<Rect> {
     let mut pts = Vec::new();
     for cmd in commands {
@@ -1601,4 +2032,66 @@ fn find_subslice(haystack: &[u8], needle: &[u8]) -> bool {
     haystack
         .windows(needle.len())
         .any(|w| w.eq_ignore_ascii_case(needle))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use prism_layout::{FillPaint, FillRule, PathCommand, PathItem};
+
+    fn polygon_area(cmds: &[PathCommand]) -> f32 {
+        let mut area = 0.0;
+        let mut poly: Vec<Point> = Vec::new();
+        let close = |poly: &mut Vec<Point>, area: &mut f32| {
+            for i in 0..poly.len() {
+                let (a, b) = (poly[i], poly[(i + 1) % poly.len()]);
+                *area += a.x * b.y - b.x * a.y;
+            }
+            poly.clear();
+        };
+        for c in cmds {
+            match *c {
+                PathCommand::MoveTo(p) => {
+                    close(&mut poly, &mut area);
+                    poly.push(p);
+                }
+                PathCommand::LineTo(p) => poly.push(p),
+                _ => {}
+            }
+        }
+        close(&mut poly, &mut area);
+        area.abs() * 0.5
+    }
+
+    #[test]
+    fn filled_path_partly_under_a_box_keeps_only_the_outside_area() {
+        // A 100x20 bar crossing a 20x40 box in its middle: 2000 - 400 = 1600 stays filled.
+        let bar = PathItem {
+            commands: vec![
+                PathCommand::MoveTo(Point::new(0.0, 0.0)),
+                PathCommand::LineTo(Point::new(100.0, 0.0)),
+                PathCommand::LineTo(Point::new(100.0, 20.0)),
+                PathCommand::LineTo(Point::new(0.0, 20.0)),
+                PathCommand::Close,
+            ],
+            fill: Some(FillPaint::Solid(Rgba::BLACK)),
+            fill_rule: FillRule::NonZero,
+            stroke: None,
+            transform: Affine::translate(10.0, 10.0),
+        };
+        let boxes = [ReviewRect::new(50.0, 0.0, 20.0, 40.0)];
+        let out = clip_path_item(bar, Affine::IDENTITY, &boxes);
+        assert_eq!(out.len(), 1);
+        let fill = &out[0];
+        assert!((polygon_area(&fill.commands) - 1600.0).abs() < 0.5);
+        for c in &fill.commands {
+            if let PathCommand::MoveTo(p) | PathCommand::LineTo(p) = *c {
+                let world = fill.transform.transform_point(p);
+                assert!(
+                    !(world.x > 50.01 && world.x < 69.99 && world.y > 0.01 && world.y < 39.99),
+                    "point {world:?} inside the box"
+                );
+            }
+        }
+    }
 }

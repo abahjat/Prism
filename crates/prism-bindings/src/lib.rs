@@ -17,9 +17,9 @@ use prism_core::Document;
 use prism_core::format::{DetectionResult, detect_format};
 use prism_core::parser::{ParseContext, ParseOptions};
 use prism_core::render::{RenderContext, Renderer};
-use prism_layout::{
-    LayoutDocument, LayoutOptions, MarkupMode, SearchOptions, interpret_pdf_bytes, layout_document,
-};
+use prism_core::source::DocumentSource;
+use prism_layout::{LayoutDocument, LayoutOptions, MarkupMode, SearchOptions};
+use prism_parsers::pipeline::open_and_layout;
 use prism_parsers::registry::ParserRegistry;
 use prism_render::html::HtmlRenderer;
 use prism_render::pdf::{PdfExportOptions, export_document_pdf};
@@ -27,11 +27,13 @@ use prism_render::raster::{RasterOptions, export_document_tiff, render_page_png}
 use prism_render::svg::{
     SvgViewerOptions, render_document_viewer_html, render_page_svg, render_page_viewer_fragment,
 };
+use prism_sandbox::{RenderOutputFormat, SandboxConfig, SandboxManager, SandboxSession};
 use std::cell::RefCell;
 use std::ffi::{CStr, CString};
 use std::ptr;
 use std::slice;
-use std::sync::{LazyLock, OnceLock};
+use std::sync::{LazyLock, Mutex, OnceLock};
+use std::time::Duration;
 use tokio::runtime::Runtime;
 
 static RUNTIME: LazyLock<Runtime> = LazyLock::new(|| {
@@ -388,7 +390,7 @@ pub const PRISM_MARKUP_NONE: u32 = 2;
 /// Tracked-changes markup mode: original text as if all revisions were rejected (`Original`).
 pub const PRISM_MARKUP_ORIGINAL: u32 = 3;
 
-/// Opaque handle to a parsed and positioned Prism document (`LayoutDocument`).
+/// Opaque handle to a parsed and positioned Prism document (`LayoutDocument` or isolated [`SandboxSession`]).
 pub struct PrismDocument {
     raw_bytes: Vec<u8>,
     filename: Option<String>,
@@ -399,6 +401,7 @@ pub struct PrismDocument {
     excel_doc: Option<prism_excel::Workbook>,
     sidecar: prism_review::AnnotationSidecar,
     options: LayoutOptions,
+    sandbox_session: Option<Mutex<SandboxSession>>,
 }
 
 /// Opaque handle to a parsed Excel workbook (`prism_excel::Workbook`) for grid-mode inspection.
@@ -483,6 +486,103 @@ pub unsafe extern "C" fn prism_document_open(
     }
 }
 
+/// Open a document inside an isolated `prism-worker` sandbox session and return a [`PrismDocument`] handle.
+///
+/// Subsequent [`prism_document_page_count`], [`prism_document_page_size`],
+/// [`prism_document_render_page`], [`prism_document_page_text`], and [`prism_document_search`]
+/// calls execute against the cached `LayoutDocument` inside the pinned worker process without
+/// re-transmitting or re-parsing the document bytes.
+///
+/// - `max_memory_bytes`: maximum worker heap memory in bytes (`0` uses the default `256 MiB`).
+/// - `timeout_ms`: maximum wall-clock execution time per request in milliseconds (`0` uses `30,000 ms`).
+///
+/// Free the returned handle with [`prism_document_close`].
+///
+/// # Safety
+///
+/// `data` must point to `len` readable bytes; `filename` must be null or a valid
+/// NUL-terminated UTF-8 string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn prism_document_open_sandboxed(
+    data: *const u8,
+    len: size_t,
+    filename: *const c_char,
+    max_memory_bytes: size_t,
+    timeout_ms: u64,
+) -> *mut PrismDocument {
+    clear_last_error();
+    let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(
+        || -> Result<PrismDocument, String> {
+            // SAFETY: forwarded caller guarantees
+            let (bytes, filename_opt) = unsafe { (input(data, len)?, filename_hint(filename)) };
+            let config = SandboxConfig {
+                max_memory: if max_memory_bytes > 0 {
+                    max_memory_bytes
+                } else {
+                    256 * 1024 * 1024
+                },
+                max_execution_time: Duration::from_millis(if timeout_ms > 0 {
+                    timeout_ms
+                } else {
+                    30_000
+                }),
+                ..SandboxConfig::default()
+            };
+            let manager = SandboxManager::new(config);
+            let session = manager
+                .open_session(bytes.to_vec(), filename_opt.clone(), None)
+                .map_err(|e| format!("sandboxed open failed: {e}"))?;
+            let sidecar = prism_review::AnnotationSidecar::new(bytes);
+            Ok(PrismDocument {
+                raw_bytes: bytes.to_vec(),
+                filename: filename_opt.clone(),
+                layout: LayoutDocument {
+                    pages: Vec::new(),
+                    fonts: prism_layout::FontStore::new(),
+                    images: prism_layout::ImageStore::new(),
+                    font_report: prism_layout::FontReport::default(),
+                },
+                title: filename_opt,
+                word_doc: None,
+                ppt_doc: None,
+                excel_doc: None,
+                sidecar,
+                options: LayoutOptions::default(),
+                sandbox_session: Some(Mutex::new(session)),
+            })
+        },
+    ));
+
+    match res {
+        Ok(Ok(doc)) => Box::into_raw(Box::new(doc)),
+        Ok(Err(message)) => {
+            set_last_error(&message);
+            ptr::null_mut()
+        }
+        Err(payload) => {
+            let message = payload
+                .downcast_ref::<String>()
+                .map(String::as_str)
+                .or_else(|| payload.downcast_ref::<&str>().copied())
+                .unwrap_or("unknown panic");
+            set_last_error(&format!("internal error: {message}"));
+            ptr::null_mut()
+        }
+    }
+}
+
+/// Fails for a handle opened in a sandbox session: its pages, bytes and models live in the
+/// worker, so functions that need them locally would otherwise run on an empty document.
+fn require_local_document(doc: &PrismDocument, what: &str) -> Result<(), String> {
+    if doc.sandbox_session.is_some() {
+        return Err(format!(
+            "{what} is not available for a sandboxed document handle; \
+             open the document with prism_document_open or prism_document_open_path"
+        ));
+    }
+    Ok(())
+}
+
 fn open_prism_document_from_slice(
     bytes: &[u8],
     filename_opt: Option<String>,
@@ -492,175 +592,172 @@ fn open_prism_document_from_slice(
     let filename = filename_opt.clone();
     let sidecar = prism_review::AnnotationSidecar::new(bytes);
 
-    // Fast path for PDF buffers
-    if bytes.starts_with(b"%PDF-")
-        && let Ok(layout) = interpret_pdf_bytes(bytes, &options)
-    {
-        return Ok(PrismDocument {
-            raw_bytes,
-            filename,
-            layout,
-            title: filename_opt,
-            word_doc: None,
-            ppt_doc: None,
-            excel_doc: None,
-            sidecar,
-            options,
-        });
-    }
+    let opened = open_and_layout(bytes, filename_opt.as_deref(), &options)
+        .map_err(|e| format!("open_and_layout failed: {e}"))?;
+    let title = opened.metadata.title.clone().or(filename_opt);
 
-    // Native prism-word layout path for DOCX and legacy binary DOC buffers
-    if prism_word::is_docx_zip(bytes)
-        && let Ok(word_doc) = prism_word::parse_docx(
-            bytes,
-            filename_opt.as_deref(),
-            options.max_decompressed_stream_bytes,
-        )
-    {
-        let layout = prism_word::layout_word_document(&word_doc, &options)
-            .map_err(|e| format!("Word layout failed: {e}"))?;
-        let title = word_doc.title.clone().or(filename_opt);
-        return Ok(PrismDocument {
-            raw_bytes,
-            filename,
-            layout,
-            title,
-            word_doc: Some(word_doc),
-            ppt_doc: None,
-            excel_doc: None,
-            sidecar,
-            options,
-        });
-    }
-
-    if prism_word::is_doc_bytes(bytes)
-        && let Ok(word_doc) = prism_word::parse_doc(bytes, options.max_decompressed_stream_bytes)
-    {
-        let layout = prism_word::layout_word_document(&word_doc, &options)
-            .map_err(|e| format!("Word DOC layout failed: {e}"))?;
-        let title = word_doc.title.clone().or(filename_opt);
-        return Ok(PrismDocument {
-            raw_bytes,
-            filename,
-            layout,
-            title,
-            word_doc: Some(word_doc),
-            ppt_doc: None,
-            excel_doc: None,
-            sidecar,
-            options,
-        });
-    }
-
-    // Native prism-ppt layout path for PPTX/PPSX/POTX and legacy binary PPT buffers
-    if prism_ppt::is_pptx_zip(bytes)
-        && let Ok(ppt_doc) = prism_ppt::parse_pptx(bytes, options.max_decompressed_stream_bytes)
-    {
-        let layout = prism_ppt::layout_presentation(&ppt_doc, &options)
-            .map_err(|e| format!("PowerPoint layout failed: {e}"))?;
-        let title = ppt_doc.title.clone().or(filename_opt);
-        return Ok(PrismDocument {
-            raw_bytes,
-            filename,
-            layout,
-            title,
-            word_doc: None,
-            ppt_doc: Some(ppt_doc),
-            excel_doc: None,
-            sidecar,
-            options,
-        });
-    }
-
-    if prism_ppt::is_ppt_bytes(bytes) {
-        match prism_ppt::parse_ppt(bytes, options.max_decompressed_stream_bytes) {
-            Ok(ppt_doc) if !ppt_doc.slides.is_empty() => {
-                let layout = prism_ppt::layout_presentation(&ppt_doc, &options)
-                    .map_err(|e| format!("PowerPoint PPT layout failed: {e}"))?;
-                let title = ppt_doc.title.clone().or(filename_opt);
-                return Ok(PrismDocument {
-                    raw_bytes,
-                    filename,
-                    layout,
-                    title,
-                    word_doc: None,
-                    ppt_doc: Some(ppt_doc),
-                    excel_doc: None,
-                    sidecar,
-                    options,
-                });
-            }
-            Err(prism_core::Error::Encrypted(msg)) => {
-                return Err(format!("Encrypted PPT document: {msg}"));
-            }
-            _ => {}
-        }
-    }
-
-    // Native prism-excel layout path for XLSX/XLSM and legacy BIFF8 XLS buffers
-    if prism_excel::is_xlsx_zip(bytes)
-        && let Ok(excel_doc) = prism_excel::parse_xlsx(bytes, options.max_decompressed_stream_bytes)
-    {
-        let layout = prism_excel::layout_workbook(&excel_doc, &options)
-            .map_err(|e| format!("Excel layout failed: {e}"))?;
-        let title = excel_doc.title.clone().or(filename_opt);
-        return Ok(PrismDocument {
-            raw_bytes,
-            filename,
-            layout,
-            title,
-            word_doc: None,
-            ppt_doc: None,
-            excel_doc: Some(excel_doc),
-            sidecar,
-            options,
-        });
-    }
-
-    if prism_excel::is_xls_bytes(bytes) {
-        match prism_excel::parse_xls(bytes, options.max_decompressed_stream_bytes) {
-            Ok(excel_doc) if !excel_doc.sheets.is_empty() => {
-                let layout = prism_excel::layout_workbook(&excel_doc, &options)
-                    .map_err(|e| format!("Excel XLS layout failed: {e}"))?;
-                let title = excel_doc.title.clone().or(filename_opt);
-                return Ok(PrismDocument {
-                    raw_bytes,
-                    filename,
-                    layout,
-                    title,
-                    word_doc: None,
-                    ppt_doc: None,
-                    excel_doc: Some(excel_doc),
-                    sidecar,
-                    options,
-                });
-            }
-            Err(prism_core::Error::Encrypted(msg)) => {
-                return Err(format!("Encrypted XLS workbook: {msg}"));
-            }
-            _ => {}
-        }
-    }
-
-    let udm = parse(bytes, filename_opt.clone())?;
-    let title = udm.metadata.title.clone().or(filename_opt);
-    let layout = layout_document(&udm, &options).map_err(|e| match e {
-        prism_core::Error::UnsupportedFormat(_) => {
-            format!("layout failed: {e}; use prism_convert_to_html for this document")
-        }
-        _ => format!("layout failed: {e}"),
-    })?;
     Ok(PrismDocument {
         raw_bytes,
         filename,
-        layout,
+        layout: opened.layout,
         title,
-        word_doc: None,
-        ppt_doc: None,
-        excel_doc: None,
+        word_doc: opened.word_doc,
+        ppt_doc: opened.presentation,
+        excel_doc: opened.workbook,
         sidecar,
         options,
+        sandbox_session: None,
     })
+}
+
+/// Open a document directly from a UTF-8 filesystem `path` (`Read + Seek` [`DocumentSource`])
+/// and lay out its pages into a [`PrismDocument`].
+///
+/// Returns a non-null handle on success, or null on failure (check [`prism_last_error`]).
+/// Free the returned handle with [`prism_document_close`].
+///
+/// # Safety
+///
+/// `path` must be a valid non-null NUL-terminated UTF-8 string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn prism_document_open_path(path: *const c_char) -> *mut PrismDocument {
+    clear_last_error();
+    let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(
+        || -> Result<PrismDocument, String> {
+            // SAFETY: forwarded caller guarantees
+            let path_str = unsafe { filename_hint(path) }
+                .ok_or_else(|| "path is null or empty".to_string())?;
+            let source = DocumentSource::from_path(&path_str)
+                .map_err(|e| format!("failed to open path '{path_str}': {e}"))?;
+            let options = LayoutOptions::default();
+            let max_bytes = options
+                .max_decompressed_stream_bytes
+                .saturating_mul(2)
+                .max(options.max_decompressed_stream_bytes);
+            // Read once, so the layout and the sidecar's document hash describe the same bytes
+            // even if the file changes while it is opened.
+            let raw_bytes = source
+                .to_bytes_bounded(max_bytes)
+                .map_err(|e| e.to_string())?
+                .to_vec();
+            let filename = source.filename().map(str::to_string);
+            let opened = open_and_layout(&raw_bytes, filename.as_deref(), &options)
+                .map_err(|e| format!("open_and_layout failed: {e}"))?;
+            let sidecar = prism_review::AnnotationSidecar::new(&raw_bytes);
+            let title = opened.metadata.title.clone().or_else(|| filename.clone());
+            Ok(PrismDocument {
+                raw_bytes,
+                filename,
+                layout: opened.layout,
+                title,
+                word_doc: opened.word_doc,
+                ppt_doc: opened.presentation,
+                excel_doc: opened.workbook,
+                sidecar,
+                options,
+                sandbox_session: None,
+            })
+        },
+    ));
+
+    match res {
+        Ok(Ok(doc)) => Box::into_raw(Box::new(doc)),
+        Ok(Err(message)) => {
+            set_last_error(&message);
+            ptr::null_mut()
+        }
+        Err(payload) => {
+            let message = payload
+                .downcast_ref::<String>()
+                .map(String::as_str)
+                .or_else(|| payload.downcast_ref::<&str>().copied())
+                .unwrap_or("unknown panic");
+            set_last_error(&format!("internal error: {message}"));
+            ptr::null_mut()
+        }
+    }
+}
+
+/// Open a document directly from a UTF-8 filesystem `path` inside an isolated `prism-worker`
+/// sandbox session without copying the raw file bytes over the IPC pipe.
+///
+/// - `max_memory_bytes`: maximum worker heap memory in bytes (`0` uses the default `256 MiB`).
+/// - `timeout_ms`: maximum wall-clock execution time per request in milliseconds (`0` uses `30,000 ms`).
+///
+/// Free the returned handle with [`prism_document_close`].
+///
+/// # Safety
+///
+/// `path` must be a valid non-null NUL-terminated UTF-8 string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn prism_document_open_path_sandboxed(
+    path: *const c_char,
+    max_memory_bytes: size_t,
+    timeout_ms: u64,
+) -> *mut PrismDocument {
+    clear_last_error();
+    let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(
+        || -> Result<PrismDocument, String> {
+            // SAFETY: forwarded caller guarantees
+            let path_str = unsafe { filename_hint(path) }
+                .ok_or_else(|| "path is null or empty".to_string())?;
+            let config = SandboxConfig {
+                max_memory: if max_memory_bytes > 0 {
+                    max_memory_bytes
+                } else {
+                    256 * 1024 * 1024
+                },
+                max_execution_time: Duration::from_millis(if timeout_ms > 0 {
+                    timeout_ms
+                } else {
+                    30_000
+                }),
+                ..SandboxConfig::default()
+            };
+            let manager = SandboxManager::new(config);
+            let session = manager
+                .open_session_from_path(&path_str, None)
+                .map_err(|e| format!("sandboxed path open failed: {e}"))?;
+            let filename_opt = std::path::Path::new(&path_str)
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned());
+            let sidecar = prism_review::AnnotationSidecar::new(b"");
+            Ok(PrismDocument {
+                raw_bytes: Vec::new(),
+                filename: filename_opt.clone(),
+                layout: LayoutDocument {
+                    pages: Vec::new(),
+                    fonts: prism_layout::FontStore::new(),
+                    images: prism_layout::ImageStore::new(),
+                    font_report: prism_layout::FontReport::default(),
+                },
+                title: filename_opt,
+                word_doc: None,
+                ppt_doc: None,
+                excel_doc: None,
+                sidecar,
+                options: LayoutOptions::default(),
+                sandbox_session: Some(Mutex::new(session)),
+            })
+        },
+    ));
+
+    match res {
+        Ok(Ok(doc)) => Box::into_raw(Box::new(doc)),
+        Ok(Err(message)) => {
+            set_last_error(&message);
+            ptr::null_mut()
+        }
+        Err(payload) => {
+            let message = payload
+                .downcast_ref::<String>()
+                .map(String::as_str)
+                .or_else(|| payload.downcast_ref::<&str>().copied())
+                .unwrap_or("unknown panic");
+            set_last_error(&format!("internal error: {message}"));
+            ptr::null_mut()
+        }
+    }
 }
 
 /// Close and free a [`PrismDocument`] handle returned by [`prism_document_open`].
@@ -692,6 +789,12 @@ pub unsafe extern "C" fn prism_document_page_count(doc: *const PrismDocument) ->
     }
     // SAFETY: guaranteed by caller
     let doc_ref = unsafe { &*doc };
+    if let Some(ref session_mutex) = doc_ref.sandbox_session {
+        if let Ok(guard) = session_mutex.lock() {
+            return guard.page_count();
+        }
+        return 0;
+    }
     u32::try_from(doc_ref.layout.pages.len()).unwrap_or(0)
 }
 
@@ -720,6 +823,23 @@ pub unsafe extern "C" fn prism_document_page_size(
         }
         // SAFETY: guaranteed by caller
         let doc_ref = unsafe { &*doc };
+        if let Some(ref session_mutex) = doc_ref.sandbox_session {
+            let guard = session_mutex
+                .lock()
+                .map_err(|_| "sandbox session mutex poisoned".to_string())?;
+            let (w, h) = guard.page_dimensions(page).ok_or_else(|| {
+                format!(
+                    "page index {page} out of range (page_count = {})",
+                    guard.page_count()
+                )
+            })?;
+            // SAFETY: checked non-null above
+            unsafe {
+                *w_pt = w;
+                *h_pt = h;
+            }
+            return Ok(());
+        }
         let layout_page = doc_ref.layout.pages.get(page as usize).ok_or_else(|| {
             format!(
                 "page index {page} out of range (page_count = {})",
@@ -763,6 +883,29 @@ pub unsafe extern "C" fn prism_document_render_page(
         }
         // SAFETY: guaranteed by caller
         let doc_ref = unsafe { &*doc };
+        if let Some(ref session_mutex) = doc_ref.sandbox_session {
+            let mut guard = session_mutex
+                .lock()
+                .map_err(|_| "sandbox session mutex poisoned".to_string())?;
+            let fmt = match format {
+                PRISM_PAGE_FORMAT_SVG => RenderOutputFormat::Svg,
+                PRISM_PAGE_FORMAT_PNG => RenderOutputFormat::Png,
+                PRISM_PAGE_FORMAT_VIEWER_FRAGMENT => RenderOutputFormat::ViewerFragment,
+                other => return Err(format!("unsupported page render format: {other}")),
+            };
+            let eff_dpi = if dpi > 0.0 { dpi } else { 150.0 };
+            let out = guard
+                .render_page(page, fmt, eff_dpi)
+                .map_err(|e| format!("sandboxed page render failed: {e}"))?;
+            let (ptr, len) = into_raw_buffer(out.data);
+            // SAFETY: checked non-null above
+            unsafe {
+                *out_buf = ptr;
+                *out_len = len;
+            }
+            return Ok(());
+        }
+
         let layout_page = doc_ref.layout.pages.get(page as usize).ok_or_else(|| {
             format!(
                 "page index {page} out of range (page_count = {})",
@@ -834,6 +977,14 @@ pub unsafe extern "C" fn prism_document_page_text(
         }
         // SAFETY: guaranteed by caller
         let doc_ref = unsafe { &*doc };
+        if let Some(ref session_mutex) = doc_ref.sandbox_session {
+            let mut guard = session_mutex
+                .lock()
+                .map_err(|_| "sandbox session mutex poisoned".to_string())?;
+            return guard
+                .extract_page_text(page)
+                .map_err(|e| format!("sandboxed page text extraction failed: {e}"));
+        }
         let layout_page = doc_ref.layout.pages.get(page as usize).ok_or_else(|| {
             format!(
                 "page index {page} out of range (page_count = {})",
@@ -875,6 +1026,16 @@ pub unsafe extern "C" fn prism_document_search(
             ignore_diacritics: (flags & PRISM_SEARCH_IGNORE_DIACRITICS) != 0,
             whole_word: (flags & PRISM_SEARCH_WHOLE_WORD) != 0,
         };
+        if let Some(ref session_mutex) = doc_ref.sandbox_session {
+            let mut guard = session_mutex
+                .lock()
+                .map_err(|_| "sandbox session mutex poisoned".to_string())?;
+            let hits = guard
+                .search(&query_str, options)
+                .map_err(|e| format!("sandboxed search failed: {e}"))?;
+            return serde_json::to_string(&hits)
+                .map_err(|e| format!("failed to serialize search hits: {e}"));
+        }
         let hits = doc_ref.layout.find(&query_str, options);
         serde_json::to_string(&hits).map_err(|e| format!("failed to serialize search hits: {e}"))
     })
@@ -905,6 +1066,7 @@ pub unsafe extern "C" fn prism_document_export(
         }
         // SAFETY: guaranteed by caller
         let doc_ref = unsafe { &*doc };
+        require_local_document(doc_ref, "export")?;
         let bytes = match format {
             PRISM_EXPORT_FORMAT_PDF => {
                 export_document_pdf(&doc_ref.layout, &PdfExportOptions::default())
@@ -952,6 +1114,7 @@ pub unsafe extern "C" fn prism_document_font_report(doc: *const PrismDocument) -
         }
         // SAFETY: guaranteed by caller
         let doc_ref = unsafe { &*doc };
+        require_local_document(doc_ref, "the font report")?;
         serde_json::to_string(&doc_ref.layout.font_report)
             .map_err(|e| format!("failed to serialize font report: {e}"))
     })
@@ -981,6 +1144,7 @@ pub unsafe extern "C" fn prism_document_set_markup_mode(doc: *mut PrismDocument,
         };
         // SAFETY: guaranteed by caller
         let doc_mut = unsafe { &mut *doc };
+        require_local_document(doc_mut, "changing the markup mode")?;
         doc_mut.options.markup_mode = markup_mode;
         // For slides and sheets the non-review modes are the "as presented" view, which
         // leaves out hidden slides, sheets, rows and columns. Word hidden text keeps its own
@@ -1017,6 +1181,7 @@ pub unsafe extern "C" fn prism_document_forensic_facts(doc: *const PrismDocument
         }
         // SAFETY: guaranteed by caller
         let doc_ref = unsafe { &*doc };
+        require_local_document(doc_ref, "forensic facts")?;
         if let Some(ref w) = doc_ref.word_doc {
             return serde_json::to_string(&w.forensic)
                 .map_err(|e| format!("failed to serialize Word forensic facts: {e}"));
@@ -1593,6 +1758,7 @@ pub unsafe extern "C" fn prism_document_hidden_content(doc: *const PrismDocument
         }
         // SAFETY: guaranteed by caller
         let doc_ref = unsafe { &*doc };
+        require_local_document(doc_ref, "the hidden-content report")?;
         let report = prism_parsers::review::generate_hidden_content_report(
             &doc_ref.raw_bytes,
             doc_ref.filename.as_deref(),
@@ -1618,6 +1784,7 @@ pub unsafe extern "C" fn prism_document_children(doc: *const PrismDocument) -> *
         }
         // SAFETY: guaranteed by caller
         let doc_ref = unsafe { &*doc };
+        require_local_document(doc_ref, "listing children")?;
         let tree = prism_parsers::tree::build_family_tree(
             &doc_ref.raw_bytes,
             doc_ref.filename.as_deref(),
@@ -1650,6 +1817,7 @@ pub unsafe extern "C" fn prism_document_open_child(
             }
             // SAFETY: guaranteed by caller
             let doc_ref = unsafe { &*doc };
+            require_local_document(doc_ref, "opening a child")?;
             let id_str = unsafe { CStr::from_ptr(node_id) }
                 .to_string_lossy()
                 .into_owned();
@@ -1697,6 +1865,7 @@ pub unsafe extern "C" fn prism_document_load_annotations(
         }
         // SAFETY: guaranteed by caller
         let doc_ref = unsafe { &mut *doc };
+        require_local_document(doc_ref, "loading annotations")?;
         let json_str = unsafe { CStr::from_ptr(sidecar_json) }.to_string_lossy();
         let sidecar = prism_review::AnnotationSidecar::from_json(&json_str)
             .map_err(|e| format!("invalid sidecar JSON: {e}"))?;
@@ -1727,6 +1896,7 @@ pub unsafe extern "C" fn prism_document_save_annotations(doc: *const PrismDocume
         }
         // SAFETY: guaranteed by caller
         let doc_ref = unsafe { &*doc };
+        require_local_document(doc_ref, "saving annotations")?;
         doc_ref
             .sidecar
             .to_json_deterministic()
@@ -1755,6 +1925,7 @@ pub unsafe extern "C" fn prism_document_add_annotation(
         }
         // SAFETY: guaranteed by caller
         let doc_ref = unsafe { &mut *doc };
+        require_local_document(doc_ref, "adding an annotation")?;
         let json_str = unsafe { CStr::from_ptr(annotation_json) }.to_string_lossy();
         let ann: prism_review::Annotation =
             serde_json::from_str(&json_str).map_err(|e| format!("invalid annotation JSON: {e}"))?;
@@ -1784,6 +1955,7 @@ pub unsafe extern "C" fn prism_document_remove_annotation(
         }
         // SAFETY: guaranteed by caller
         let doc_ref = unsafe { &mut *doc };
+        require_local_document(doc_ref, "removing an annotation")?;
         let id_str = unsafe { CStr::from_ptr(annotation_id) }.to_string_lossy();
         if doc_ref.sidecar.remove(&id_str) {
             Ok(())
@@ -1809,6 +1981,7 @@ pub unsafe extern "C" fn prism_document_annotations(doc: *const PrismDocument) -
         }
         // SAFETY: guaranteed by caller
         let doc_ref = unsafe { &*doc };
+        require_local_document(doc_ref, "resolving annotations")?;
         let resolved = doc_ref
             .sidecar
             .resolve_against(
@@ -1851,6 +2024,7 @@ pub unsafe extern "C" fn prism_document_export_redacted(
         }
         // SAFETY: guaranteed by caller
         let doc_ref = unsafe { &*doc };
+        require_local_document(doc_ref, "redacted export")?;
         let red_fmt = match format {
             PRISM_EXPORT_FORMAT_PDF => prism_review::RedactedExportFormat::Pdf,
             PRISM_EXPORT_FORMAT_TIFF => prism_review::RedactedExportFormat::Tiff,
@@ -2067,6 +2241,70 @@ mod tests {
         unsafe { prism_buffer_free(red_buf, red_len) };
         let log_json = take(log_ptr).expect("redaction log json");
         assert!(log_json.contains("\"total_applied\": 1"));
+
+        unsafe { prism_document_close(doc) };
+    }
+
+    #[test]
+    fn document_open_sandboxed_and_paginated_email_html() {
+        let html_bytes = b"<!DOCTYPE html><html><body><h1>Discovery Memo</h1><p>Confidential token ALPHA-9001 in HTML body.</p><table><tr><th>Item</th><th>Amount</th></tr><tr><td>Consulting</td><td>$15,000</td></tr></table></body></html>";
+        let fname = CString::new("memo.html").unwrap();
+        let doc = unsafe {
+            prism_document_open_sandboxed(
+                html_bytes.as_ptr(),
+                html_bytes.len(),
+                fname.as_ptr(),
+                256 * 1024 * 1024,
+                30_000,
+            )
+        };
+        assert!(
+            !doc.is_null(),
+            "prism_document_open_sandboxed failed: {:?}",
+            last_error()
+        );
+        assert!(unsafe { prism_document_page_count(doc) } >= 1);
+
+        let mut w_pt = 0.0_f32;
+        let mut h_pt = 0.0_f32;
+        assert_eq!(
+            unsafe { prism_document_page_size(doc, 0, &raw mut w_pt, &raw mut h_pt) },
+            0
+        );
+        assert!(w_pt > 100.0 && h_pt > 100.0);
+
+        let page_text =
+            take(unsafe { prism_document_page_text(doc, 0) }).expect("sandboxed page text");
+        assert!(page_text.contains("Discovery Memo"));
+        assert!(page_text.contains("ALPHA-9001"));
+        assert!(page_text.contains("Consulting"));
+
+        let query = CString::new("ALPHA-9001").unwrap();
+        let hits_json =
+            take(unsafe { prism_document_search(doc, query.as_ptr(), 0) }).expect("search json");
+        assert!(hits_json.contains("\"page\":0"));
+
+        let mut svg_buf: *mut u8 = ptr::null_mut();
+        let mut svg_len: size_t = 0;
+        assert_eq!(
+            unsafe {
+                prism_document_render_page(
+                    doc,
+                    0,
+                    PRISM_PAGE_FORMAT_SVG,
+                    96.0,
+                    &raw mut svg_buf,
+                    &raw mut svg_len,
+                )
+            },
+            0
+        );
+        assert!(!svg_buf.is_null() && svg_len > 0);
+        unsafe { prism_buffer_free(svg_buf, svg_len) };
+
+        // Functions that need the document locally refuse instead of reading an empty layout.
+        assert!(unsafe { prism_document_hidden_content(doc) }.is_null());
+        assert!(last_error().unwrap_or_default().contains("sandboxed"));
 
         unsafe { prism_document_close(doc) };
     }

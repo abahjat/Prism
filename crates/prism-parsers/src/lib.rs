@@ -3,18 +3,20 @@
 //!
 //! Format parser implementations for the Prism document processing SDK.
 //!
-//! This crate contains parsers for various document formats. Each parser
-//! implements the `Parser` trait from `prism-core` and converts format-specific
-//! documents into the Unified Document Model (UDM).
+//! This crate contains parsers for various document formats, cross-format hidden-content
+//! report providers ([`review`]), and the unified container family-tree walker ([`tree`]).
+//! Each parser implements the [`prism_core::parser::Parser`] trait and converts format-specific
+//! documents into the Unified Document Model (UDM) or format-specific native models.
 //!
 //! ## Supported Format Families
 //!
-//! - **Office**: DOCX, XLSX, PPTX, DOC, XLS, PPT (planned)
-//! - **PDF**: PDF 1.x-2.0, PDF/A (planned)
-//! - **Email**: MSG, EML, PST (planned)
-//! - **Images**: JPEG, PNG, TIFF, GIF, BMP (planned)
-//! - **Archives**: ZIP, RAR, 7z, TAR (planned)
-//! - **CAD**: DWG, DXF (planned)
+//! - **Office**: DOCX, XLSX, PPTX, DOC, XLS, PPT, ODT, ODS, ODP, ODG, ONE, VSDX, MPP, XPS
+//! - **PDF**: PDF 1.x–2.0, PDF/A
+//! - **Email & Calendar**: MSG, EML, MBOX, MHT, VCF, ICS
+//! - **Images & Vector**: JPEG, JPEG 2000, PNG, TIFF, GIF, WebP, BMP, ICO, TGA, PSD, PCX, WBMP, SVG, SVGZ, EMF, EMZ, WMF, EPS, AI
+//! - **Archives**: ZIP, TAR, GZIP, Bzip2, 7z, UNIX Compress (`.Z`)
+//! - **CAD & Database**: DXF, SQLite, DBF
+//! - **Text & Code**: TXT, RTF, HTML, EPUB, JSON, XML, CSV, Markdown, LOG, source code
 //!
 //! ## Usage
 //!
@@ -60,12 +62,16 @@
 pub mod email;
 /// Image format parsers
 pub mod image;
+/// Legacy and regional format parsers (`.wpd`, `.hwp`, `.hwpx`)
+pub mod legacy;
 /// Bounded decompression helpers
 pub mod limits;
 /// Office format parsers
 pub mod office;
 /// PDF format parsers
 pub mod pdf;
+/// Unified document detection, parsing, and paginated layout pipeline
+pub mod pipeline;
 /// Parser registry
 pub mod registry;
 /// Cross-format hidden-content report providers
@@ -77,11 +83,15 @@ pub mod tree;
 
 // Re-export commonly used types
 pub use archive::ArchiveParser;
-pub use email::{EmlParser, IcsParser, MboxParser, MhtParser, MsgParser, VcfParser};
+pub use email::{
+    EmlParser, IcsParser, MboxParser, MhtParser, MsgParser, PstParser, RsmfParser, SlackParser,
+    TeamsParser, VcfParser, WhatsAppParser,
+};
 pub use image::{
     BmpParser, EmfParser, EmzParser, EpsParser, GifParser, IcoParser, JpegParser, PngParser,
     SvgParser, SvgzParser, TgaParser, TiffParser, WebpParser, WmfParser,
 };
+pub use legacy::{HwpParser, HwpxParser, WpdParser};
 pub use office::{
     DocParser, DocxParser, MppParser, OdgParser, OdpParser, OdsParser, OdtParser, OneNoteParser,
     PptParser, PptxParser, VsdxParser, XlsParser, XlsxParser, XpsParser,

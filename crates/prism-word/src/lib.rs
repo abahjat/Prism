@@ -19,7 +19,7 @@ pub use doc::{DEFAULT_MAX_DOC_STREAM_BYTES, is_doc_bytes, parse_doc};
 pub use docx::{DEFAULT_MAX_ENTRY_BYTES, is_docx_zip, parse_docx};
 pub use emf::{is_emf, is_metafile, is_wmf, render_metafile};
 pub use inheritance::{MAX_STYLE_DEPTH, resolve_font_slots, resolve_word_color};
-pub use layout::layout_word_document;
+pub use layout::{carve_wrap_polygon_interval, layout_word_document, layout_word_document_range};
 pub use model::{ForensicFacts, WordDocument};
 pub use numbering::{FormattedListMarker, NumberingTracker, format_number, map_symbol_char};
 pub use udm::word_to_udm;

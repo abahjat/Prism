@@ -247,7 +247,11 @@ impl TextLayoutEngine {
 
         for span in &spec.spans {
             let start = full_text.len();
-            full_text.push_str(&span.text);
+            if span.text.contains('\r') {
+                full_text.push_str(&span.text.replace('\r', ""));
+            } else {
+                full_text.push_str(&span.text);
+            }
             let end = full_text.len();
             span_ranges.push(start..end);
             resolved_families.push(font_sys.resolve_family(&span.family));

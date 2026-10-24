@@ -40,6 +40,7 @@ struct UdmLayoutContext<'a> {
     images: ImageStore,
     image_id_map: BTreeMap<String, ImageId>,
     named_para_styles: BTreeMap<String, &'a ParagraphStyle>,
+    page_range: Option<std::ops::Range<usize>>,
 }
 
 /// Lay out a UDM [`Document`] into a positioned [`LayoutDocument`].
@@ -52,6 +53,14 @@ struct UdmLayoutContext<'a> {
 /// Returns an [`Error`] if resource limits (`max_pages`, `max_glyphs_per_page`, `max_image_pixels`,
 /// `max_recursion_depth`) are exceeded.
 pub fn layout_document(doc: &Document, options: &LayoutOptions) -> Result<LayoutDocument> {
+    layout_document_inner(doc, options, None)
+}
+
+fn layout_document_inner(
+    doc: &Document,
+    options: &LayoutOptions,
+    page_range: Option<std::ops::Range<usize>>,
+) -> Result<LayoutDocument> {
     // If the document is a PDF (single EmbeddedBlock::pdf), interpret it directly via hayro
     for page in &doc.pages {
         for block in &page.content {
@@ -105,10 +114,15 @@ pub fn layout_document(doc: &Document, options: &LayoutOptions) -> Result<Layout
         images,
         image_id_map,
         named_para_styles,
+        page_range,
     };
 
     let pages = if is_fixed_layout_document(doc) {
-        layout_fixed_pages(&mut ctx)?
+        let mut all_pages = layout_fixed_pages(&mut ctx)?;
+        if let Some(ref r) = ctx.page_range {
+            all_pages.retain(|p| (p.index as usize) >= r.start && (p.index as usize) < r.end);
+        }
+        all_pages
     } else {
         layout_flow_pages(&mut ctx)?
     };
@@ -127,6 +141,80 @@ pub fn layout_document(doc: &Document, options: &LayoutOptions) -> Result<Layout
         images: ctx.images,
         font_report: ctx.font_sys.report,
     })
+}
+
+/// Lay out a UDM [`Document`] into a paginated [`LayoutDocument`], converting any
+/// embedded HTML, generated HTML, or SVG blocks (`MSG`, `HTML`, `MHT`, `EPUB`, `MD`, `SVG`)
+/// into native flow-layout paragraphs, tables, rules, and inline images.
+///
+/// Unlike [`layout_document`], which returns [`Error::UnsupportedFormat`] on
+/// [`ContentBlock::Embedded`] so [`prism_render::HtmlRenderer`] can fall back to raw HTML,
+/// `layout_document_paginated` always produces a positioned [`LayoutDocument`] suitable for
+/// page-by-page raster/SVG viewing, text search with character bounding boxes, destructive
+/// redaction, and Bates-numbered PDF/TIFF production.
+///
+/// # Errors
+///
+/// Returns an [`Error`] if resource limits (`max_pages`, `max_glyphs_per_page`, `max_image_pixels`,
+/// `max_recursion_depth`) are exceeded.
+pub fn layout_document_paginated(
+    doc: &Document,
+    options: &LayoutOptions,
+) -> Result<LayoutDocument> {
+    for page in &doc.pages {
+        for block in &page.content {
+            if let ContentBlock::Embedded(eb) = block
+                && eb.kind == prism_core::document::EmbeddedKind::Pdf
+            {
+                return crate::pdf_input::interpret_pdf_bytes(&eb.data, options);
+            }
+        }
+    }
+
+    if first_embedded_kind(&doc.pages).is_none() {
+        return layout_document_inner(doc, options, None);
+    }
+
+    let normalized = expand_embedded_blocks_to_flow(doc);
+    layout_document_inner(&normalized, options, None)
+}
+
+/// Lay out only the requested 0-based `page_range` (`start_page..end_page`) of a UDM [`Document`].
+///
+/// Stops flow pagination as soon as `page_range.end` pages have been produced and discards
+/// item buffers for pages preceding `page_range.start`.
+///
+/// # Errors
+///
+/// Returns an [`Error`] if resource limits in `options` are exceeded.
+pub fn layout_document_paginated_range(
+    doc: &Document,
+    options: &LayoutOptions,
+    page_range: std::ops::Range<usize>,
+) -> Result<LayoutDocument> {
+    if page_range.start >= page_range.end {
+        return Ok(LayoutDocument::new());
+    }
+    for page in &doc.pages {
+        for block in &page.content {
+            if let ContentBlock::Embedded(eb) = block
+                && eb.kind == prism_core::document::EmbeddedKind::Pdf
+            {
+                let mut pdf_doc = crate::pdf_input::interpret_pdf_bytes(&eb.data, options)?;
+                pdf_doc.pages.retain(|p| {
+                    (p.index as usize) >= page_range.start && (p.index as usize) < page_range.end
+                });
+                return Ok(pdf_doc);
+            }
+        }
+    }
+
+    if first_embedded_kind(&doc.pages).is_none() {
+        return layout_document_inner(doc, options, Some(page_range));
+    }
+
+    let normalized = expand_embedded_blocks_to_flow(doc);
+    layout_document_inner(&normalized, options, Some(page_range))
 }
 
 /// Kind of the first [`ContentBlock::Embedded`] block in `pages`, including inside containers.
@@ -157,7 +245,29 @@ fn is_fixed_layout_document(doc: &Document) -> bool {
         if matches!(upper.as_str(), "PPTX" | "PPSX" | "POTX" | "ODP" | "XPS") {
             return true;
         }
-        if matches!(upper.as_str(), "DOCX" | "ODT" | "TXT" | "RTF" | "CSV") {
+        if matches!(
+            upper.as_str(),
+            "DOCX"
+                | "ODT"
+                | "TXT"
+                | "RTF"
+                | "CSV"
+                | "EML"
+                | "MSG"
+                | "MBOX"
+                | "PST"
+                | "OST"
+                | "RSMF"
+                | "SLACK"
+                | "TEAMS"
+                | "WHATSAPP"
+                | "HTML"
+                | "MHT"
+                | "EPUB"
+                | "MD"
+                | "MARKDOWN"
+                | "SVG"
+        ) {
             return false;
         }
     }
@@ -166,7 +276,32 @@ fn is_fixed_layout_document(doc: &Document) -> bool {
         if matches!(ext.as_str(), "pptx" | "ppsx" | "potx" | "odp" | "xps") {
             return true;
         }
-        if matches!(ext.as_str(), "docx" | "odt" | "txt" | "rtf" | "csv" | "log") {
+        if matches!(
+            ext.as_str(),
+            "docx"
+                | "odt"
+                | "txt"
+                | "rtf"
+                | "csv"
+                | "log"
+                | "eml"
+                | "msg"
+                | "mbox"
+                | "pst"
+                | "ost"
+                | "rsmf"
+                | "slack"
+                | "teams"
+                | "whatsapp"
+                | "html"
+                | "htm"
+                | "mht"
+                | "mhtml"
+                | "epub"
+                | "md"
+                | "markdown"
+                | "svg"
+        ) {
             return false;
         }
     }
@@ -527,6 +662,7 @@ struct FlowPaginator {
     page_size: Size,
     margins: PageMargins,
     max_pages: usize,
+    page_range: Option<std::ops::Range<usize>>,
     pages: Vec<LayoutPage>,
     current_page: LayoutPage,
     cursor_y: f32,
@@ -538,6 +674,7 @@ impl FlowPaginator {
         margins: PageMargins,
         first_label: Option<String>,
         max_pages: usize,
+        page_range: Option<std::ops::Range<usize>>,
     ) -> Self {
         let mut first = LayoutPage::new(0, page_size);
         first.label = first_label;
@@ -546,10 +683,17 @@ impl FlowPaginator {
             page_size,
             margins,
             max_pages,
+            page_range,
             pages: Vec::new(),
             current_page: first,
             cursor_y: top,
         }
+    }
+
+    fn reached_limit(&self) -> bool {
+        self.page_range
+            .as_ref()
+            .is_some_and(|r| self.pages.len() >= r.end)
     }
 
     fn content_left(&self) -> f32 {
@@ -579,7 +723,12 @@ impl FlowPaginator {
         }
         #[allow(clippy::cast_possible_truncation)]
         let next_page = LayoutPage::new(next_idx as u32, self.page_size);
-        let completed = std::mem::replace(&mut self.current_page, next_page);
+        let mut completed = std::mem::replace(&mut self.current_page, next_page);
+        if let Some(ref r) = self.page_range
+            && (completed.index as usize) < r.start
+        {
+            completed.items.clear();
+        }
         self.pages.push(completed);
         self.cursor_y = self.content_top();
         Ok(())
@@ -596,6 +745,10 @@ impl FlowPaginator {
         if !self.current_page.items.is_empty() || self.pages.is_empty() {
             self.pages.push(self.current_page);
         }
+        if let Some(ref r) = self.page_range {
+            self.pages
+                .retain(|p| (p.index as usize) >= r.start && (p.index as usize) < r.end);
+        }
         self.pages
     }
 }
@@ -608,17 +761,31 @@ fn layout_flow_pages(ctx: &mut UdmLayoutContext<'_>) -> Result<Vec<LayoutPage>> 
         .unwrap_or(PageMargins::ONE_INCH);
     let first_label = first_page.and_then(|p| p.metadata.label.clone());
 
-    let mut paginator = FlowPaginator::new(page_size, margins, first_label, ctx.options.max_pages);
+    let mut paginator = FlowPaginator::new(
+        page_size,
+        margins,
+        first_label,
+        ctx.options.max_pages,
+        ctx.page_range.clone(),
+    );
     let mut global_block_idx = 0u32;
 
     for page in &ctx.doc.pages {
+        if paginator.reached_limit() {
+            break;
+        }
         for block in &page.content {
+            if paginator.reached_limit() {
+                break;
+            }
             #[allow(clippy::cast_possible_truncation)]
             let cur_page_idx = paginator.current_page.index;
             layout_flow_block(ctx, &mut paginator, block, cur_page_idx, global_block_idx)?;
             global_block_idx = global_block_idx.saturating_add(1);
         }
-        append_page_annotations(page, &mut paginator.current_page.items);
+        if !paginator.reached_limit() {
+            append_page_annotations(page, &mut paginator.current_page.items);
+        }
     }
 
     Ok(paginator.finish())
@@ -1485,6 +1652,866 @@ fn f32_from_f64(val: f64) -> f32 {
     normalize_zero(val as f32)
 }
 
+// ============================================================================
+// Embedded HTML / SVG -> Flow Blocks Converter (Phase 5 M5.2)
+// ============================================================================
+
+fn expand_embedded_blocks_to_flow(doc: &Document) -> Document {
+    let mut normalized = doc.clone();
+    if !normalized.metadata.custom.contains_key("format") {
+        normalized.metadata.add_custom("format", "HTML");
+    }
+
+    let mut next_img_id = normalized.resources.images.len();
+    for page in &mut normalized.pages {
+        let old_blocks = std::mem::take(&mut page.content);
+        let mut new_blocks = Vec::with_capacity(old_blocks.len());
+        for block in old_blocks {
+            expand_block_into_flow(
+                block,
+                &mut normalized.resources.images,
+                &mut next_img_id,
+                &mut new_blocks,
+            );
+        }
+        page.content = new_blocks;
+    }
+
+    normalized
+}
+
+fn expand_block_into_flow(
+    block: ContentBlock,
+    images: &mut Vec<prism_core::document::ImageResource>,
+    next_img_id: &mut usize,
+    out: &mut Vec<ContentBlock>,
+) {
+    match block {
+        ContentBlock::Embedded(eb) => {
+            let markup = std::str::from_utf8(&eb.data).unwrap_or("");
+            let fallback = eb.text.as_deref();
+            let mut converted = convert_html_to_flow_blocks(markup, fallback, images, next_img_id);
+            if converted.is_empty()
+                && let Some(fb) = fallback
+                && !fb.trim().is_empty()
+            {
+                let mut tb = TextBlock::new(prism_core::document::Rect::default());
+                tb.add_run(TextRun::new(fb.trim()));
+                converted.push(ContentBlock::Text(tb));
+            }
+            out.append(&mut converted);
+        }
+        ContentBlock::Container(mut container) => {
+            let old_children = std::mem::take(&mut container.children);
+            let mut new_children = Vec::with_capacity(old_children.len());
+            for child in old_children {
+                expand_block_into_flow(child, images, next_img_id, &mut new_children);
+            }
+            if container.bounds.width > 0.0 && container.bounds.height > 0.0 {
+                container.children = new_children;
+                out.push(ContentBlock::Container(container));
+            } else {
+                out.append(&mut new_children);
+            }
+        }
+        mut other => {
+            // Ensure flow-compatible bounds on top-level text/table blocks when expanding embedded docs
+            if let ContentBlock::Text(ref mut tb) = other
+                && tb.bounds.x == 0.0
+                && tb.bounds.y == 0.0
+            {
+                tb.bounds = prism_core::document::Rect::default();
+            }
+            out.push(other);
+        }
+    }
+}
+
+#[derive(Debug)]
+enum HtmlToken {
+    Tag {
+        name: String,
+        is_end: bool,
+        attrs: Vec<(String, String)>,
+    },
+    Text(String),
+}
+
+fn tokenize_html(input: &str) -> Vec<HtmlToken> {
+    let mut tokens = Vec::new();
+    let bytes = input.as_bytes();
+    let len = bytes.len();
+    let mut i = 0;
+
+    while i < len {
+        if bytes[i] == b'<' {
+            if input[i..].starts_with("<!--") {
+                if let Some(end) = input[i + 4..].find("-->") {
+                    i += 4 + end + 3;
+                } else {
+                    break;
+                }
+                continue;
+            }
+            if input[i..].starts_with("<!") || input[i..].starts_with("<?") {
+                if let Some(end) = input[i + 2..].find('>') {
+                    i += 2 + end + 1;
+                } else {
+                    break;
+                }
+                continue;
+            }
+
+            // Scan to matching '>' respecting quotes
+            let mut j = i + 1;
+            let mut quote: Option<u8> = None;
+            while j < len {
+                let b = bytes[j];
+                if let Some(q) = quote {
+                    if b == q {
+                        quote = None;
+                    }
+                } else if b == b'"' || b == b'\'' {
+                    quote = Some(b);
+                } else if b == b'>' {
+                    break;
+                }
+                j += 1;
+            }
+
+            if j < len && bytes[j] == b'>' {
+                let raw_tag = input[i + 1..j].trim();
+                if let Some(tok) = parse_html_tag(raw_tag) {
+                    tokens.push(tok);
+                }
+                i = j + 1;
+                continue;
+            }
+        }
+
+        let next_lt = input[i..].find('<').map_or(len, |off| i + off);
+        if next_lt > i {
+            tokens.push(HtmlToken::Text(input[i..next_lt].to_string()));
+            i = next_lt;
+        } else {
+            i += 1;
+        }
+    }
+
+    tokens
+}
+
+fn parse_html_tag(raw: &str) -> Option<HtmlToken> {
+    let mut s = raw.trim();
+    if s.is_empty() {
+        return None;
+    }
+    let is_end = if let Some(rest) = s.strip_prefix('/') {
+        s = rest.trim_start();
+        true
+    } else {
+        false
+    };
+    if let Some(rest) = s.strip_suffix('/') {
+        s = rest.trim_end();
+    }
+
+    let name_end = s
+        .find(|c: char| c.is_ascii_whitespace() || c == '/')
+        .unwrap_or(s.len());
+    let name = s[..name_end].to_ascii_lowercase();
+    if name.is_empty() {
+        return None;
+    }
+
+    let mut attrs = Vec::new();
+    let mut rest = s[name_end..].trim();
+    while !rest.is_empty() {
+        let key_end = rest
+            .find(|c: char| c.is_ascii_whitespace() || c == '=')
+            .unwrap_or(rest.len());
+        let key = rest[..key_end].to_ascii_lowercase();
+        rest = rest[key_end..].trim_start();
+        if let Some(after_eq) = rest.strip_prefix('=') {
+            rest = after_eq.trim_start();
+            let val = if let Some(q) = rest.chars().next().filter(|&c| c == '"' || c == '\'') {
+                let inner = &rest[1..];
+                if let Some(end_q) = inner.find(q) {
+                    let v = &inner[..end_q];
+                    rest = inner[end_q + 1..].trim_start();
+                    v
+                } else {
+                    let v = inner;
+                    rest = "";
+                    v
+                }
+            } else {
+                let val_end = rest
+                    .find(|c: char| c.is_ascii_whitespace())
+                    .unwrap_or(rest.len());
+                let v = &rest[..val_end];
+                rest = rest[val_end..].trim_start();
+                v
+            };
+            if !key.is_empty() {
+                attrs.push((key, decode_html_entities(val)));
+            }
+        } else if !key.is_empty() {
+            attrs.push((key, String::new()));
+        } else {
+            break;
+        }
+    }
+
+    Some(HtmlToken::Tag {
+        name,
+        is_end,
+        attrs,
+    })
+}
+
+fn decode_html_entities(s: &str) -> String {
+    if !s.contains('&') {
+        return s.to_string();
+    }
+    let mut out = String::with_capacity(s.len());
+    let mut rest = s;
+    while let Some(amp) = rest.find('&') {
+        out.push_str(&rest[..amp]);
+        let after = &rest[amp + 1..];
+        if let Some(semi) = after.find(';').filter(|&pos| pos <= 12) {
+            let entity = &after[..semi];
+            let decoded = match entity {
+                "amp" => Some('&'),
+                "lt" => Some('<'),
+                "gt" => Some('>'),
+                "quot" => Some('"'),
+                "apos" | "#39" => Some('\''),
+                "nbsp" => Some(' '),
+                "ndash" => Some('\u{2013}'),
+                "mdash" => Some('\u{2014}'),
+                "bull" => Some('\u{2022}'),
+                "copy" => Some('\u{00A9}'),
+                "reg" => Some('\u{00AE}'),
+                _ if entity.starts_with("#x") || entity.starts_with("#X") => {
+                    u32::from_str_radix(&entity[2..], 16)
+                        .ok()
+                        .and_then(char::from_u32)
+                }
+                _ if entity.starts_with('#') => {
+                    entity[1..].parse::<u32>().ok().and_then(char::from_u32)
+                }
+                _ => None,
+            };
+            if let Some(ch) = decoded {
+                out.push(ch);
+                rest = &after[semi + 1..];
+                continue;
+            }
+        }
+        out.push('&');
+        rest = after;
+    }
+    out.push_str(rest);
+    out
+}
+
+fn collapse_html_whitespace(text: &str, trim_start: bool) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut prev_space = trim_start;
+    for ch in text.chars() {
+        if ch.is_ascii_whitespace() {
+            if !prev_space {
+                out.push(' ');
+                prev_space = true;
+            }
+        } else {
+            out.push(ch);
+            prev_space = false;
+        }
+    }
+    out
+}
+
+fn decode_base64_bytes(b64: &str) -> Option<Vec<u8>> {
+    let mut out = Vec::with_capacity(b64.len() * 3 / 4);
+    let mut buf = 0u32;
+    let mut bits = 0u8;
+    for byte in b64.bytes() {
+        if byte.is_ascii_whitespace() {
+            continue;
+        }
+        if byte == b'=' {
+            break;
+        }
+        let val = match byte {
+            b'A'..=b'Z' => byte - b'A',
+            b'a'..=b'z' => byte - b'a' + 26,
+            b'0'..=b'9' => byte - b'0' + 52,
+            b'+' | b'-' => 62,
+            b'/' | b'_' => 63,
+            _ => return None,
+        };
+        buf = (buf << 6) | u32::from(val);
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            #[allow(clippy::cast_possible_truncation)]
+            out.push((buf >> bits) as u8);
+            buf &= (1 << bits) - 1;
+        }
+    }
+    Some(out)
+}
+
+#[allow(clippy::too_many_lines)]
+fn convert_html_to_flow_blocks(
+    html: &str,
+    fallback_text: Option<&str>,
+    images: &mut Vec<prism_core::document::ImageResource>,
+    next_img_id: &mut usize,
+) -> Vec<ContentBlock> {
+    let tokens = tokenize_html(html);
+    let mut blocks: Vec<ContentBlock> = Vec::new();
+    let mut current_runs: Vec<TextRun> = Vec::new();
+
+    let mut ignore_depth = 0u32;
+    let mut bold_depth = 0u32;
+    let mut italic_depth = 0u32;
+    let mut underline_depth = 0u32;
+    let mut strike_depth = 0u32;
+    let mut code_depth = 0u32;
+    let mut pre_depth = 0u32;
+    let mut blockquote_depth = 0u32;
+    let mut heading_level: Option<u8> = None;
+    let mut list_stack: Vec<Option<u32>> = Vec::new();
+
+    // Table state (for depth 1 tables)
+    let mut table_depth = 0u32;
+    let mut table_rows: Vec<prism_core::document::TableRow> = Vec::new();
+    let mut current_row: Vec<prism_core::document::TableCell> = Vec::new();
+    let mut in_cell = false;
+    let mut cell_is_header = false;
+    let mut cell_col_span = 1usize;
+    let mut cell_row_span = 1usize;
+    let mut cell_runs: Vec<TextRun> = Vec::new();
+
+    let flush_paragraph = |runs: &mut Vec<TextRun>, out: &mut Vec<ContentBlock>| {
+        if runs.is_empty() {
+            return;
+        }
+        let combined: String = runs.iter().map(|r| r.text.as_str()).collect();
+        if combined.trim().is_empty() {
+            runs.clear();
+            return;
+        }
+        let mut tb = TextBlock::new(prism_core::document::Rect::default());
+        tb.runs = std::mem::take(runs);
+        out.push(ContentBlock::Text(tb));
+    };
+
+    let flush_cell = |cell_runs: &mut Vec<TextRun>,
+                      in_cell: &mut bool,
+                      is_header: bool,
+                      col_span: usize,
+                      row_span: usize,
+                      current_row: &mut Vec<prism_core::document::TableCell>| {
+        if !*in_cell {
+            return;
+        }
+        *in_cell = false;
+        let mut tb = TextBlock::new(prism_core::document::Rect::default());
+        if cell_runs.is_empty() {
+            tb.add_run(TextRun::new(""));
+        } else {
+            tb.runs = std::mem::take(cell_runs);
+        }
+        let border_color = Some("#CBD5E1".to_string());
+        current_row.push(prism_core::document::TableCell {
+            content: vec![ContentBlock::Text(tb)],
+            col_span: col_span.max(1),
+            row_span: row_span.max(1),
+            background_color: is_header.then(|| "#F1F5F9".to_string()),
+            borders: Some(CellBorders {
+                top_color: border_color.clone(),
+                top_width: Some(0.5),
+                bottom_color: border_color.clone(),
+                bottom_width: Some(0.5),
+                left_color: border_color.clone(),
+                left_width: Some(0.5),
+                right_color: border_color,
+                right_width: Some(0.5),
+            }),
+        });
+    };
+
+    for token in tokens {
+        match token {
+            HtmlToken::Tag {
+                name,
+                is_end,
+                attrs,
+            } => {
+                // `</head>` is optional in HTML, so `<head>` itself is not skipped (its `title`,
+                // `style` and `script` children are), and `<body>` ends any element left open.
+                if name == "body" && !is_end {
+                    ignore_depth = 0;
+                    continue;
+                }
+                if matches!(
+                    name.as_str(),
+                    "script" | "style" | "title" | "noscript" | "template"
+                ) {
+                    if is_end {
+                        ignore_depth = ignore_depth.saturating_sub(1);
+                    } else {
+                        ignore_depth += 1;
+                    }
+                    continue;
+                }
+                if ignore_depth > 0 {
+                    continue;
+                }
+
+                match name.as_str() {
+                    "b" | "strong" => {
+                        if is_end {
+                            bold_depth = bold_depth.saturating_sub(1);
+                        } else {
+                            bold_depth += 1;
+                        }
+                    }
+                    "i" | "em" | "cite" | "dfn" => {
+                        if is_end {
+                            italic_depth = italic_depth.saturating_sub(1);
+                        } else {
+                            italic_depth += 1;
+                        }
+                    }
+                    "u" | "ins" | "a" => {
+                        if is_end {
+                            underline_depth = underline_depth.saturating_sub(1);
+                        } else {
+                            underline_depth += 1;
+                        }
+                    }
+                    "s" | "strike" | "del" => {
+                        if is_end {
+                            strike_depth = strike_depth.saturating_sub(1);
+                        } else {
+                            strike_depth += 1;
+                        }
+                    }
+                    "code" | "kbd" | "samp" | "tt" => {
+                        if is_end {
+                            code_depth = code_depth.saturating_sub(1);
+                        } else {
+                            code_depth += 1;
+                        }
+                    }
+                    "pre" => {
+                        if table_depth == 0 {
+                            flush_paragraph(&mut current_runs, &mut blocks);
+                        }
+                        if is_end {
+                            pre_depth = pre_depth.saturating_sub(1);
+                            code_depth = code_depth.saturating_sub(1);
+                        } else {
+                            pre_depth += 1;
+                            code_depth += 1;
+                        }
+                    }
+                    "blockquote" => {
+                        if table_depth == 0 {
+                            flush_paragraph(&mut current_runs, &mut blocks);
+                        }
+                        if is_end {
+                            blockquote_depth = blockquote_depth.saturating_sub(1);
+                            italic_depth = italic_depth.saturating_sub(1);
+                        } else {
+                            blockquote_depth += 1;
+                            italic_depth += 1;
+                        }
+                    }
+                    "h1" | "h2" | "h3" | "h4" | "h5" | "h6" => {
+                        if table_depth == 0 {
+                            flush_paragraph(&mut current_runs, &mut blocks);
+                        }
+                        if is_end {
+                            heading_level = None;
+                            bold_depth = bold_depth.saturating_sub(1);
+                        } else {
+                            let lvl = name.as_bytes()[1] - b'0';
+                            heading_level = Some(lvl);
+                            bold_depth += 1;
+                        }
+                    }
+                    "ul" => {
+                        if table_depth == 0 {
+                            flush_paragraph(&mut current_runs, &mut blocks);
+                        }
+                        if is_end {
+                            list_stack.pop();
+                        } else {
+                            list_stack.push(None);
+                        }
+                    }
+                    "ol" => {
+                        if table_depth == 0 {
+                            flush_paragraph(&mut current_runs, &mut blocks);
+                        }
+                        if is_end {
+                            list_stack.pop();
+                        } else {
+                            list_stack.push(Some(0));
+                        }
+                    }
+                    "li" => {
+                        if table_depth == 0 {
+                            flush_paragraph(&mut current_runs, &mut blocks);
+                        } else if in_cell && !cell_runs.is_empty() {
+                            cell_runs.push(TextRun::new("\n"));
+                        }
+                        if !is_end {
+                            let indent = "  ".repeat(list_stack.len().saturating_sub(1));
+                            let prefix = match list_stack.last_mut() {
+                                Some(Some(n)) => {
+                                    *n += 1;
+                                    format!("{indent}{n}. ")
+                                }
+                                _ => format!("{indent}\u{2022} "),
+                            };
+                            let target = if table_depth > 0 && in_cell {
+                                &mut cell_runs
+                            } else {
+                                &mut current_runs
+                            };
+                            target.push(TextRun::new(prefix));
+                        }
+                    }
+                    "br" if !is_end => {
+                        let target = if table_depth > 0 && in_cell {
+                            &mut cell_runs
+                        } else {
+                            &mut current_runs
+                        };
+                        target.push(TextRun::new("\n"));
+                    }
+                    "hr" if !is_end => {
+                        if table_depth == 0 {
+                            flush_paragraph(&mut current_runs, &mut blocks);
+                            blocks.push(ContentBlock::Vector(VectorBlock {
+                                bounds: prism_core::document::Rect::new(0.0, 0.0, 468.0, 8.0),
+                                paths: vec![prism_core::document::VectorPath {
+                                    commands: vec![
+                                        prism_core::document::PathCommand::MoveTo(
+                                            prism_core::document::Point::new(0.0, 4.0),
+                                        ),
+                                        prism_core::document::PathCommand::LineTo(
+                                            prism_core::document::Point::new(468.0, 4.0),
+                                        ),
+                                    ],
+                                    fill: None,
+                                    stroke: Some("#CBD5E1".to_string()),
+                                    stroke_width: Some(1.0),
+                                }],
+                            }));
+                        }
+                    }
+                    "img" if !is_end => {
+                        let src = attrs
+                            .iter()
+                            .find(|(k, _)| k == "src")
+                            .map(|(_, v)| v.as_str());
+                        let alt = attrs
+                            .iter()
+                            .find(|(k, _)| k == "alt")
+                            .map(|(_, v)| v.clone());
+                        if let Some(src_val) = src
+                            && let Some(rest) = src_val.strip_prefix("data:image/")
+                            && let Some((mime_sub, b64_part)) = rest.split_once(";base64,")
+                            && let Some(raw_bytes) = decode_base64_bytes(b64_part)
+                            && !raw_bytes.is_empty()
+                        {
+                            if table_depth == 0 {
+                                flush_paragraph(&mut current_runs, &mut blocks);
+                            }
+                            let mime_type = format!("image/{mime_sub}");
+                            // Header-only probe: decoding the pixels just for the size would let
+                            // a small data URI allocate a huge buffer.
+                            let (px_w, px_h) =
+                                image::ImageReader::new(std::io::Cursor::new(&raw_bytes))
+                                    .with_guessed_format()
+                                    .ok()
+                                    .and_then(|r| r.into_dimensions().ok())
+                                    .map_or((120, 80), |(w, h)| (w.max(1), h.max(1)));
+                            let res_id = format!("html_img_{}", *next_img_id);
+                            *next_img_id += 1;
+                            images.push(prism_core::document::ImageResource {
+                                id: res_id.clone(),
+                                mime_type,
+                                width: px_w,
+                                height: px_h,
+                                data: Some(raw_bytes),
+                                url: None,
+                            });
+                            let disp_w = f64::from(px_w).min(420.0);
+                            let disp_h =
+                                (f64::from(px_h) * (disp_w / f64::from(px_w))).clamp(12.0, 480.0);
+                            blocks.push(ContentBlock::Image(ImageBlock {
+                                bounds: prism_core::document::Rect::new(0.0, 0.0, disp_w, disp_h),
+                                resource_id: res_id,
+                                alt_text: alt,
+                                format: None,
+                                original_size: Some(prism_core::document::Dimensions::new(
+                                    disp_w, disp_h,
+                                )),
+                                style: ShapeStyle::default(),
+                                rotation: 0.0,
+                            }));
+                        } else if let Some(alt_str) = alt.filter(|a| !a.trim().is_empty()) {
+                            let target = if table_depth > 0 && in_cell {
+                                &mut cell_runs
+                            } else {
+                                &mut current_runs
+                            };
+                            target.push(TextRun::new(format!("[Image: {}]", alt_str.trim())));
+                        }
+                    }
+                    "table" => {
+                        if is_end {
+                            if table_depth == 1 {
+                                flush_cell(
+                                    &mut cell_runs,
+                                    &mut in_cell,
+                                    cell_is_header,
+                                    cell_col_span,
+                                    cell_row_span,
+                                    &mut current_row,
+                                );
+                                if !current_row.is_empty() {
+                                    table_rows.push(prism_core::document::TableRow {
+                                        cells: std::mem::take(&mut current_row),
+                                        height: None,
+                                    });
+                                }
+                                let col_count = table_rows
+                                    .iter()
+                                    .map(|r| r.cells.iter().map(|c| c.col_span).sum())
+                                    .max()
+                                    .unwrap_or(0);
+                                if col_count > 0 && !table_rows.is_empty() {
+                                    let mut tb = TableBlock::new(
+                                        prism_core::document::Rect::default(),
+                                        col_count,
+                                    );
+                                    tb.rows = std::mem::take(&mut table_rows);
+                                    blocks.push(ContentBlock::Table(tb));
+                                } else {
+                                    table_rows.clear();
+                                }
+                            }
+                            table_depth = table_depth.saturating_sub(1);
+                        } else {
+                            if table_depth == 0 {
+                                flush_paragraph(&mut current_runs, &mut blocks);
+                                table_rows.clear();
+                                current_row.clear();
+                                in_cell = false;
+                                cell_runs.clear();
+                            }
+                            table_depth += 1;
+                        }
+                    }
+                    "tr" => {
+                        if table_depth == 1 {
+                            flush_cell(
+                                &mut cell_runs,
+                                &mut in_cell,
+                                cell_is_header,
+                                cell_col_span,
+                                cell_row_span,
+                                &mut current_row,
+                            );
+                            if is_end && !current_row.is_empty() {
+                                table_rows.push(prism_core::document::TableRow {
+                                    cells: std::mem::take(&mut current_row),
+                                    height: None,
+                                });
+                            }
+                        } else if table_depth > 1 && in_cell && is_end && !cell_runs.is_empty() {
+                            cell_runs.push(TextRun::new("\n"));
+                        } else if table_depth == 0 {
+                            flush_paragraph(&mut current_runs, &mut blocks);
+                        }
+                    }
+                    "td" | "th" => {
+                        let is_th = name == "th";
+                        if table_depth == 1 {
+                            if is_end {
+                                if is_th {
+                                    bold_depth = bold_depth.saturating_sub(1);
+                                }
+                                flush_cell(
+                                    &mut cell_runs,
+                                    &mut in_cell,
+                                    cell_is_header,
+                                    cell_col_span,
+                                    cell_row_span,
+                                    &mut current_row,
+                                );
+                            } else {
+                                flush_cell(
+                                    &mut cell_runs,
+                                    &mut in_cell,
+                                    cell_is_header,
+                                    cell_col_span,
+                                    cell_row_span,
+                                    &mut current_row,
+                                );
+                                in_cell = true;
+                                cell_is_header = is_th;
+                                if is_th {
+                                    bold_depth += 1;
+                                }
+                                cell_col_span = attrs
+                                    .iter()
+                                    .find(|(k, _)| k == "colspan")
+                                    .and_then(|(_, v)| v.trim().parse::<usize>().ok())
+                                    .unwrap_or(1)
+                                    .clamp(1, 64);
+                                cell_row_span = attrs
+                                    .iter()
+                                    .find(|(k, _)| k == "rowspan")
+                                    .and_then(|(_, v)| v.trim().parse::<usize>().ok())
+                                    .unwrap_or(1)
+                                    .clamp(1, 256);
+                            }
+                        } else if table_depth > 1 && in_cell && is_end {
+                            cell_runs.push(TextRun::new("  "));
+                        }
+                    }
+                    "p" | "div" | "section" | "article" | "header" | "footer" | "main"
+                    | "aside" | "dl" | "dt" | "dd" => {
+                        if table_depth == 0 {
+                            flush_paragraph(&mut current_runs, &mut blocks);
+                        } else if in_cell && is_end && !cell_runs.is_empty() {
+                            cell_runs.push(TextRun::new("\n"));
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            HtmlToken::Text(raw) => {
+                if ignore_depth > 0 {
+                    continue;
+                }
+                let decoded = decode_html_entities(&raw);
+                let target = if table_depth > 0 && in_cell {
+                    &mut cell_runs
+                } else {
+                    &mut current_runs
+                };
+
+                let text = if pre_depth > 0 {
+                    decoded
+                } else {
+                    let trim_start =
+                        target.is_empty() || target.last().is_some_and(|r| r.text.ends_with('\n'));
+                    collapse_html_whitespace(&decoded, trim_start)
+                };
+                if text.is_empty() {
+                    continue;
+                }
+
+                if blockquote_depth > 0
+                    && (target.is_empty() || target.last().is_some_and(|r| r.text.ends_with('\n')))
+                {
+                    target.push(TextRun::new("    "));
+                }
+
+                let font_size = match heading_level {
+                    Some(1) => Some(20.0),
+                    Some(2) => Some(16.5),
+                    Some(3) => Some(14.0),
+                    Some(4) => Some(12.5),
+                    Some(5) => Some(11.5),
+                    Some(6) => Some(10.5),
+                    _ => Some(11.0),
+                };
+                let font_family = if code_depth > 0 {
+                    Some("Courier New".to_string())
+                } else {
+                    None
+                };
+                let color = if underline_depth > 0 && bold_depth == 0 {
+                    Some("#1D4ED8".to_string())
+                } else {
+                    None
+                };
+
+                let style = prism_core::document::TextStyle {
+                    font_family,
+                    font_size,
+                    bold: bold_depth > 0,
+                    italic: italic_depth > 0,
+                    underline: underline_depth > 0,
+                    strikethrough: strike_depth > 0,
+                    color,
+                    ..prism_core::document::TextStyle::default()
+                };
+
+                target.push(TextRun::with_style(text, style));
+            }
+        }
+    }
+
+    // Malformed markup can end inside a table; keep what it held.
+    if table_depth > 0 {
+        flush_cell(
+            &mut cell_runs,
+            &mut in_cell,
+            cell_is_header,
+            cell_col_span,
+            cell_row_span,
+            &mut current_row,
+        );
+        if !current_row.is_empty() {
+            table_rows.push(prism_core::document::TableRow {
+                cells: std::mem::take(&mut current_row),
+                height: None,
+            });
+        }
+        let col_count = table_rows
+            .iter()
+            .map(|r| r.cells.iter().map(|c| c.col_span).sum())
+            .max()
+            .unwrap_or(0);
+        if col_count > 0 {
+            let mut tb = TableBlock::new(prism_core::document::Rect::default(), col_count);
+            tb.rows = std::mem::take(&mut table_rows);
+            blocks.push(ContentBlock::Table(tb));
+        }
+    }
+    flush_paragraph(&mut current_runs, &mut blocks);
+
+    if blocks.is_empty()
+        && let Some(fb) = fallback_text
+        && !fb.trim().is_empty()
+    {
+        for para in fb.split("\n\n") {
+            let trimmed = para.trim();
+            if !trimmed.is_empty() {
+                let mut tb = TextBlock::new(prism_core::document::Rect::default());
+                tb.add_run(TextRun::new(trimmed));
+                blocks.push(ContentBlock::Text(tb));
+            }
+        }
+    }
+
+    blocks
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1554,6 +2581,37 @@ mod tests {
         let err = layout_document(&doc, &LayoutOptions::default())
             .expect_err("embedded HTML must not be laid out as a blank page");
         assert!(matches!(err, Error::UnsupportedFormat(_)), "{err}");
+
+        // And verify `layout_document_paginated` expands the embedded HTML into flow layout
+        let paginated = layout_document_paginated(&doc, &LayoutOptions::default())
+            .expect("layout_document_paginated must expand embedded HTML");
+        assert_eq!(paginated.pages.len(), 1);
+        let text = paginated.pages[0].text();
+        assert!(text.contains("From: someone@example.invalid"));
+        assert!(text.contains("The body a reviewer must not miss"));
+    }
+
+    #[test]
+    fn test_malformed_html_keeps_body_and_unclosed_tables() {
+        use prism_core::document::{EmbeddedBlock, EmbeddedKind};
+
+        // `</head>` is optional, the `<title>` is never closed, and the table never ends.
+        let html = "<html><head><meta charset=utf-8><title>Subject<body>\
+                    <p>Body after an open head</p>\
+                    <table><tr><td>Last cell</td><td>kept</td>";
+        let mut page = Page::new(1, Dimensions::LETTER);
+        page.add_content(ContentBlock::Embedded(EmbeddedBlock::markup(
+            EmbeddedKind::Html,
+            html,
+        )));
+        let mut doc = Document::new();
+        doc.pages.push(page);
+
+        let laid_out = layout_document_paginated(&doc, &LayoutOptions::default()).unwrap();
+        let text = laid_out.pages[0].text();
+        assert!(text.contains("Body after an open head"), "{text}");
+        assert!(text.contains("Last cell"), "{text}");
+        assert!(text.contains("kept"), "{text}");
     }
 
     #[test]

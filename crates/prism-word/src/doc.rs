@@ -9,13 +9,16 @@
 
 use crate::docx::classify_field_instruction;
 use crate::model::{
-    ExternalReference, FieldKind, ParagraphContent, ParagraphProperties, RevisionKind, RunItem,
-    RunProperties, SectionProperties, TableProperties, ToggleProp, UnderlineKind, VerticalRunAlign,
-    WordAlignment, WordBlock, WordDocument, WordField, WordHyperlink, WordLineSpacing,
-    WordParagraph, WordRevisionMeta, WordRun, WordSection, WordStory, WordTable, WordTableCell,
-    WordTableRow,
+    AbstractNum, DrawingPayload, ExternalReference, FieldKind, HeaderFooterKind, LevelDef,
+    LevelSuffix, NumInstance, NumberFormat, NumberingRef, ParagraphContent, ParagraphProperties,
+    RevisionKind, RunItem, RunProperties, SectionProperties, StyleType, TableProperties,
+    ToggleProp, UnderlineKind, VerticalRunAlign, WordAlignment, WordBlock, WordDocument,
+    WordDrawing, WordField, WordHyperlink, WordLineSpacing, WordNumbering, WordParagraph,
+    WordRevisionMeta, WordRun, WordSection, WordStory, WordStyle, WordStyleSheet, WordTable,
+    WordTableCell, WordTableRow, WrapMode,
 };
 use cfb::CompoundFile;
+use prism_core::document::ImageResource;
 use prism_core::error::{Error, Result};
 use std::collections::BTreeMap;
 use std::io::{Cursor, Read};
@@ -111,11 +114,17 @@ pub fn parse_doc(data: &[u8], max_stream_bytes: usize) -> Result<WordDocument> {
     let table_stream = read_cfb_stream(&mut comp, table_name, max_stream_bytes)
         .or_else(|_| read_cfb_stream(&mut comp, alt_table_name, max_stream_bytes))
         .unwrap_or_default();
+    let data_stream = read_cfb_stream(&mut comp, "Data", max_stream_bytes).unwrap_or_default();
+
+    doc.settings.compatibility_mode = 11;
 
     let fib = parse_fib(&word_stream);
     if fib.ccp_mcr > 0 {
         doc.forensic.vba_project_present = true;
     }
+
+    decode_stsh(&table_stream, &fib, &mut doc.styles);
+    decode_lists(&table_stream, &fib, &mut doc.numbering);
 
     // Decode pieces (either from Clx in table stream or from FIB fcMin..fcMac)
     let pieces = decode_pieces(&word_stream, &table_stream, &fib);
@@ -142,7 +151,18 @@ pub fn parse_doc(data: &[u8], max_stream_bytes: usize) -> Result<WordDocument> {
         &char_fcs[..]
     };
 
-    let blocks = build_blocks_from_cp_slice(main_chars, main_fcs, &chpx_runs, &papx_runs, &mut doc);
+    // Footnote reference marks are numbered in CP order across the whole main text, which is
+    // the order of the footnote texts in `PlcffndTxt`.
+    let mut next_footnote = 1i32;
+    let blocks = build_blocks_from_cp_slice(
+        main_chars,
+        main_fcs,
+        &chpx_runs,
+        &papx_runs,
+        &data_stream,
+        &mut doc,
+        &mut next_footnote,
+    );
 
     doc.sections.push(WordSection {
         props: SectionProperties::default(),
@@ -153,6 +173,8 @@ pub fn parse_doc(data: &[u8], max_stream_bytes: usize) -> Result<WordDocument> {
         push_unplaced_stories(
             &mut doc,
             &fib,
+            &table_stream,
+            &data_stream,
             &chars,
             &char_fcs,
             main_cp_end,
@@ -164,12 +186,15 @@ pub fn parse_doc(data: &[u8], max_stream_bytes: usize) -> Result<WordDocument> {
     Ok(doc)
 }
 
-/// Keep the stories that follow the main text, in this CP order ([MS-DOC] 2.4.1). Where their
-/// text belongs (note references, header kinds, comment anchors) is not decoded yet, so it is
-/// kept as unplaced stories rather than dropped.
+/// Keep the stories that follow the main text, in this CP order ([MS-DOC] 2.4.1), while also
+/// placing footnotes (`PlcfFndTxt`) and header/footer stories (`PlcfHdd`) into `doc.footnotes`,
+/// `doc.headers`, and `doc.footers` for paginated layout.
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 fn push_unplaced_stories(
     doc: &mut WordDocument,
     fib: &FibInfo,
+    table_stream: &[u8],
+    data_stream: &[u8],
     chars: &[char],
     char_fcs: &[u32],
     main_cp_end: usize,
@@ -189,14 +214,42 @@ fn push_unplaced_stories(
     for (id, len) in stories {
         let end = cp.saturating_add(len as usize).min(chars.len());
         if end > cp {
+            let mut next_note = 1i32;
             let blocks = build_blocks_from_cp_slice(
                 &chars[cp..end],
                 &char_fcs[cp..end],
                 chpx_runs,
                 papx_runs,
+                data_stream,
                 doc,
+                &mut next_note,
             );
             if !blocks.is_empty() {
+                if id == "footnotes" {
+                    place_doc_footnotes(
+                        doc,
+                        fib,
+                        table_stream,
+                        data_stream,
+                        &chars[cp..end],
+                        &char_fcs[cp..end],
+                        chpx_runs,
+                        papx_runs,
+                        &blocks,
+                    );
+                } else if id == "headers" {
+                    place_doc_headers_footers(
+                        doc,
+                        fib,
+                        table_stream,
+                        data_stream,
+                        &chars[cp..end],
+                        &char_fcs[cp..end],
+                        chpx_runs,
+                        papx_runs,
+                        &blocks,
+                    );
+                }
                 doc.unplaced_stories.push(WordStory {
                     id: id.to_string(),
                     blocks,
@@ -204,6 +257,148 @@ fn push_unplaced_stories(
             }
         }
         cp = end;
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn place_doc_footnotes(
+    doc: &mut WordDocument,
+    fib: &FibInfo,
+    table_stream: &[u8],
+    data_stream: &[u8],
+    ftn_chars: &[char],
+    ftn_fcs: &[u32],
+    chpx_runs: &[ChpxInterval],
+    papx_runs: &[PapxInterval],
+    fallback_blocks: &[WordBlock],
+) {
+    let fc = fib.fc_plcffnd_txt as usize;
+    let lcb = fib.lcb_plcffnd_txt as usize;
+    if lcb >= 8 && fc + lcb <= table_stream.len() {
+        let plc = &table_stream[fc..fc + lcb];
+        let count = lcb / 4;
+        if count >= 2 {
+            for i in 0..count - 1 {
+                // The i-th text belongs to the i-th reference, so an empty text still uses
+                // its number.
+                #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
+                let note_id = (i + 1) as i32;
+                let s = (read_u32(plc, i * 4) as usize).min(ftn_chars.len());
+                let e = (read_u32(plc, (i + 1) * 4) as usize).min(ftn_chars.len());
+                if e > s {
+                    // The note's own mark (0x02) at the start of its text shows its number.
+                    let mut own_mark = note_id;
+                    let blocks = build_blocks_from_cp_slice(
+                        &ftn_chars[s..e],
+                        &ftn_fcs[s..e],
+                        chpx_runs,
+                        papx_runs,
+                        data_stream,
+                        doc,
+                        &mut own_mark,
+                    );
+                    if !blocks.is_empty() {
+                        doc.footnotes.insert(
+                            note_id,
+                            WordStory {
+                                id: note_id.to_string(),
+                                blocks,
+                            },
+                        );
+                    }
+                }
+            }
+        }
+    }
+    if doc.footnotes.is_empty() && !fallback_blocks.is_empty() {
+        doc.footnotes.insert(
+            1,
+            WordStory {
+                id: "1".to_string(),
+                blocks: fallback_blocks.to_vec(),
+            },
+        );
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn place_doc_headers_footers(
+    doc: &mut WordDocument,
+    fib: &FibInfo,
+    table_stream: &[u8],
+    data_stream: &[u8],
+    hdd_chars: &[char],
+    hdd_fcs: &[u32],
+    chpx_runs: &[ChpxInterval],
+    papx_runs: &[PapxInterval],
+    fallback_blocks: &[WordBlock],
+) {
+    let fc = fib.fc_plcfhdd as usize;
+    let lcb = fib.lcb_plcfhdd as usize;
+    let mut placed_any = false;
+    if lcb >= 32 && fc + lcb <= table_stream.len() {
+        let plc = &table_stream[fc..fc + lcb];
+        let cp_count = lcb / 4;
+        // [MS-DOC] §2.8.17 PlcfHdd: stories 6..11 are First section Even Hdr, Odd/Default Hdr,
+        // Even Ftr, Odd/Default Ftr, First Hdr, First Ftr.
+        let slot_map: [(usize, bool, HeaderFooterKind, &str); 6] = [
+            (6, true, HeaderFooterKind::Even, "rId_doc_hdr_even"),
+            (7, true, HeaderFooterKind::Default, "rId_doc_hdr_default"),
+            (8, false, HeaderFooterKind::Even, "rId_doc_ftr_even"),
+            (9, false, HeaderFooterKind::Default, "rId_doc_ftr_default"),
+            (10, true, HeaderFooterKind::First, "rId_doc_hdr_first"),
+            (11, false, HeaderFooterKind::First, "rId_doc_ftr_first"),
+        ];
+        for (story_idx, is_header, kind, rel_id) in slot_map {
+            if story_idx + 1 >= cp_count {
+                continue;
+            }
+            let s = (read_u32(plc, story_idx * 4) as usize).min(hdd_chars.len());
+            let e = (read_u32(plc, (story_idx + 1) * 4) as usize).min(hdd_chars.len());
+            if e > s {
+                let mut no_notes = 1i32;
+                let blocks = build_blocks_from_cp_slice(
+                    &hdd_chars[s..e],
+                    &hdd_fcs[s..e],
+                    chpx_runs,
+                    papx_runs,
+                    data_stream,
+                    doc,
+                    &mut no_notes,
+                );
+                if !blocks.is_empty() {
+                    placed_any = true;
+                    let story = WordStory {
+                        id: rel_id.to_string(),
+                        blocks,
+                    };
+                    if is_header {
+                        doc.headers.insert(rel_id.to_string(), story);
+                        if let Some(sec) = doc.sections.first_mut() {
+                            sec.props.headers.insert(kind, rel_id.to_string());
+                        }
+                    } else {
+                        doc.footers.insert(rel_id.to_string(), story);
+                        if let Some(sec) = doc.sections.first_mut() {
+                            sec.props.footers.insert(kind, rel_id.to_string());
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if !placed_any && !fallback_blocks.is_empty() {
+        let rel_id = "rId_doc_hdr_default".to_string();
+        doc.headers.insert(
+            rel_id.clone(),
+            WordStory {
+                id: rel_id.clone(),
+                blocks: fallback_blocks.to_vec(),
+            },
+        );
+        if let Some(sec) = doc.sections.first_mut() {
+            sec.props.headers.insert(HeaderFooterKind::Default, rel_id);
+        }
     }
 }
 
@@ -219,12 +414,24 @@ struct FibInfo {
     ccp_edn: u32,
     ccp_txbx: u32,
     ccp_hdr_txbx: u32,
+    fc_stshf: u32,
+    lcb_stshf: u32,
+    fc_plcffnd_ref: u32,
+    lcb_plcffnd_ref: u32,
+    fc_plcffnd_txt: u32,
+    lcb_plcffnd_txt: u32,
+    fc_plcfhdd: u32,
+    lcb_plcfhdd: u32,
     fc_clx: u32,
     lcb_clx: u32,
     fc_plcfbte_chpx: u32,
     lcb_plcfbte_chpx: u32,
     fc_plcfbte_papx: u32,
     lcb_plcfbte_papx: u32,
+    fc_plcf_lst: u32,
+    lcb_plcf_lst: u32,
+    fc_plf_lfo: u32,
+    lcb_plf_lfo: u32,
 }
 
 fn parse_fib(ws: &[u8]) -> FibInfo {
@@ -273,11 +480,311 @@ fn parse_fib(ws: &[u8]) -> FibInfo {
         }
     };
 
+    (fib.fc_stshf, fib.lcb_stshf) = read_pair(1);
+    (fib.fc_plcffnd_ref, fib.lcb_plcffnd_ref) = read_pair(2);
+    (fib.fc_plcffnd_txt, fib.lcb_plcffnd_txt) = read_pair(3);
+    (fib.fc_plcfhdd, fib.lcb_plcfhdd) = read_pair(11);
     (fib.fc_plcfbte_chpx, fib.lcb_plcfbte_chpx) = read_pair(12);
     (fib.fc_plcfbte_papx, fib.lcb_plcfbte_papx) = read_pair(13);
     (fib.fc_clx, fib.lcb_clx) = read_pair(33);
+    (fib.fc_plcf_lst, fib.lcb_plcf_lst) = read_pair(73);
+    (fib.fc_plf_lfo, fib.lcb_plf_lfo) = read_pair(74);
 
     fib
+}
+
+/// Decode the `[MS-DOC]` §2.9.271 `STSH` style sheet from the Table stream.
+#[allow(clippy::too_many_lines)]
+fn decode_stsh(table: &[u8], fib: &FibInfo, styles: &mut WordStyleSheet) {
+    let fc = fib.fc_stshf as usize;
+    let lcb = fib.lcb_stshf as usize;
+    if lcb < 4 || fc + lcb > table.len() {
+        return;
+    }
+    let stsh = &table[fc..fc + lcb];
+    let cb_stshi = usize::from(read_u16(stsh, 0));
+    if 2 + cb_stshi > stsh.len() {
+        return;
+    }
+    let cb_base = if cb_stshi >= 4 {
+        usize::from(read_u16(stsh, 4)).max(10)
+    } else {
+        10
+    };
+
+    let mut pos = 2 + cb_stshi;
+    let mut istd = 0usize;
+    while pos + 2 <= stsh.len() && istd < 4096 {
+        let cb_std = usize::from(read_u16(stsh, pos));
+        pos += 2;
+        if cb_std == 0 {
+            istd += 1;
+            continue;
+        }
+        if pos + cb_std > stsh.len() {
+            break;
+        }
+        let std = &stsh[pos..pos + cb_std];
+        pos += cb_std;
+
+        if std.len() < cb_base + 2 {
+            istd += 1;
+            continue;
+        }
+        let word1 = read_u16(std, 2);
+        let sgc = word1 & 0x000F;
+        let istd_base = (word1 >> 4) & 0x0FFF;
+        let word2 = read_u16(std, 4);
+        let cupx = usize::from(word2 & 0x000F);
+        let istd_next = (word2 >> 4) & 0x0FFF;
+
+        let style_type = match sgc {
+            1 => StyleType::Paragraph,
+            2 => StyleType::Character,
+            3 => StyleType::Table,
+            4 => StyleType::Numbering,
+            _ => {
+                istd += 1;
+                continue;
+            }
+        };
+
+        // Read `Xstz` UTF-16LE style name at `cb_base`
+        let cch = usize::from(read_u16(std, cb_base));
+        let name_byte_len = cch.saturating_mul(2);
+        let name_start = cb_base + 2;
+        if name_start + name_byte_len > std.len() {
+            istd += 1;
+            continue;
+        }
+        let mut units = Vec::with_capacity(cch);
+        for i in 0..cch {
+            units.push(read_u16(std, name_start + i * 2));
+        }
+        let name = String::from_utf16_lossy(&units);
+        // Skip name + 2-byte null terminator, aligned to even offset
+        let mut upx_pos = name_start + name_byte_len + 2;
+        if upx_pos % 2 != 0 {
+            upx_pos += 1;
+        }
+
+        let mut para_props = ParagraphProperties::default();
+        let mut run_props = RunProperties::default();
+
+        for u_idx in 0..cupx {
+            if upx_pos + 2 > std.len() {
+                break;
+            }
+            let cb_upx = usize::from(read_u16(std, upx_pos));
+            upx_pos += 2;
+            if upx_pos + cb_upx > std.len() {
+                break;
+            }
+            let upx = &std[upx_pos..upx_pos + cb_upx];
+            upx_pos += (cb_upx + 1) & !1;
+
+            match (style_type, u_idx) {
+                (StyleType::Paragraph, 0) if upx.len() >= 2 => {
+                    let (ppr, _, _) = parse_papx_grpprl(&upx[2..]);
+                    para_props = ppr;
+                }
+                (StyleType::Paragraph, 1) | (StyleType::Character, 0) => {
+                    let (rpr, _, _, _, _) = parse_chpx_grpprl(upx);
+                    run_props = rpr;
+                }
+                _ => {}
+            }
+        }
+
+        let style_id = format!("s{istd}");
+        styles.styles.insert(
+            style_id.clone(),
+            WordStyle {
+                id: style_id,
+                name: (!name.is_empty()).then_some(name),
+                style_type,
+                is_default: istd == 0 || (style_type == StyleType::Character && istd == 10),
+                based_on: (istd_base != 0x0FFF && usize::from(istd_base) != istd)
+                    .then(|| format!("s{istd_base}")),
+                next: (istd_next != 0x0FFF).then(|| format!("s{istd_next}")),
+                link: None,
+                para_props,
+                run_props,
+                table_borders: crate::model::WordBorders::default(),
+                table_conditionals: BTreeMap::new(),
+            },
+        );
+
+        istd += 1;
+    }
+}
+
+/// Decode `[MS-DOC]` §2.8.12 `PlfLst` and §2.8.13 `PlfLfo` numbering tables.
+#[allow(clippy::too_many_lines)]
+fn decode_lists(table: &[u8], fib: &FibInfo, numbering: &mut WordNumbering) {
+    let fc_lst = fib.fc_plcf_lst as usize;
+    let lcb_lst = fib.lcb_plcf_lst as usize;
+    if lcb_lst < 2 || fc_lst + lcb_lst > table.len() {
+        return;
+    }
+    let c_lst = usize::from(read_u16(table, fc_lst)).min(512);
+    let lstf_end = fc_lst + 2 + c_lst * 28;
+    if lstf_end > table.len() {
+        return;
+    }
+
+    let mut abstract_ids = Vec::with_capacity(c_lst);
+    let mut lvl_pos = lstf_end;
+
+    for i in 0..c_lst {
+        let off = fc_lst + 2 + i * 28;
+        let lsid = read_u32(table, off);
+        let flags = table[off + 26];
+        let simple_list = (flags & 0x01) != 0;
+        let num_levels: u8 = if simple_list { 1 } else { 9 };
+        let abs_id = if lsid == 0 {
+            #[allow(clippy::cast_possible_truncation)]
+            let id = (i + 1) as u32;
+            id
+        } else {
+            lsid
+        };
+        abstract_ids.push(abs_id);
+
+        let mut levels = BTreeMap::new();
+        for ilvl in 0..num_levels {
+            if lvl_pos + 28 > table.len() {
+                break;
+            }
+            let lvlf = &table[lvl_pos..lvl_pos + 28];
+            #[allow(clippy::cast_possible_wrap)]
+            let start = read_u32(lvlf, 0) as i32;
+            let nfc = lvlf[4];
+            let jc_flags = lvlf[5];
+            let ixch_follow = lvlf[15];
+            let cb_chpx = usize::from(lvlf[24]);
+            let cb_papx = usize::from(lvlf[25]);
+            lvl_pos += 28;
+
+            if lvl_pos + cb_papx + cb_chpx + 2 > table.len() {
+                break;
+            }
+            let (para_props, _, _) = parse_papx_grpprl(&table[lvl_pos..lvl_pos + cb_papx]);
+            lvl_pos += cb_papx;
+            let (run_props, _, _, _, _) = parse_chpx_grpprl(&table[lvl_pos..lvl_pos + cb_chpx]);
+            lvl_pos += cb_chpx;
+
+            let cch = usize::from(read_u16(table, lvl_pos));
+            lvl_pos += 2;
+            let str_bytes = cch.saturating_mul(2);
+            if lvl_pos + str_bytes > table.len() {
+                break;
+            }
+            let mut lvl_text = String::new();
+            for c_idx in 0..cch {
+                let u = read_u16(table, lvl_pos + c_idx * 2);
+                if u <= 8 {
+                    let _ = std::fmt::Write::write_fmt(&mut lvl_text, format_args!("%{}", u + 1));
+                } else if let Some(ch) = char::from_u32(u32::from(u)) {
+                    lvl_text.push(ch);
+                }
+            }
+            lvl_pos += str_bytes;
+
+            let num_fmt = match nfc {
+                1 => NumberFormat::UpperRoman,
+                2 => NumberFormat::LowerRoman,
+                3 => NumberFormat::UpperLetter,
+                4 => NumberFormat::LowerLetter,
+                5 => NumberFormat::Ordinal,
+                22 => NumberFormat::DecimalZero,
+                23 => NumberFormat::Bullet,
+                255 => NumberFormat::None,
+                _ => NumberFormat::Decimal,
+            };
+            if lvl_text.is_empty() {
+                lvl_text = if num_fmt == NumberFormat::Bullet {
+                    "\u{2022}".to_string()
+                } else {
+                    format!("%{}.", ilvl + 1)
+                };
+            }
+            let alignment = match jc_flags & 0x03 {
+                1 => WordAlignment::Center,
+                2 => WordAlignment::Right,
+                _ => WordAlignment::Left,
+            };
+            let suffix = match ixch_follow {
+                1 => LevelSuffix::Space,
+                2 => LevelSuffix::Nothing,
+                _ => LevelSuffix::Tab,
+            };
+
+            levels.insert(
+                ilvl,
+                LevelDef {
+                    ilvl,
+                    start: start.max(0),
+                    num_fmt,
+                    lvl_text,
+                    alignment,
+                    suffix,
+                    is_legal: (jc_flags & 0x04) != 0,
+                    restart_after_level: None,
+                    para_style_id: None,
+                    para_props,
+                    run_props,
+                },
+            );
+        }
+
+        numbering.abstract_nums.insert(
+            abs_id,
+            AbstractNum {
+                id: abs_id,
+                num_style_link: None,
+                levels,
+            },
+        );
+    }
+
+    let fc_lfo = fib.fc_plf_lfo as usize;
+    let lcb_lfo = fib.lcb_plf_lfo as usize;
+    if lcb_lfo >= 4 && fc_lfo + lcb_lfo <= table.len() {
+        let lfo_mac = (read_u32(table, fc_lfo) as usize).min(1024);
+        for i in 0..lfo_mac {
+            let off = fc_lfo + 4 + i * 16;
+            if off + 16 > fc_lfo + lcb_lfo {
+                break;
+            }
+            let lsid = read_u32(table, off);
+            #[allow(clippy::cast_possible_truncation)]
+            let num_id = (i + 1) as u32;
+            numbering.nums.insert(
+                num_id,
+                NumInstance {
+                    num_id,
+                    abstract_num_id: lsid,
+                    overrides: BTreeMap::new(),
+                },
+            );
+        }
+    }
+
+    if numbering.nums.is_empty() {
+        for (i, &abs_id) in abstract_ids.iter().enumerate() {
+            #[allow(clippy::cast_possible_truncation)]
+            let num_id = (i + 1) as u32;
+            numbering.nums.insert(
+                num_id,
+                NumInstance {
+                    num_id,
+                    abstract_num_id: abs_id,
+                    overrides: BTreeMap::new(),
+                },
+            );
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -417,6 +924,8 @@ struct ChpxInterval {
     props: RunProperties,
     is_deleted: bool,
     is_inserted: bool,
+    is_special: bool,
+    pic_location: Option<u32>,
 }
 
 #[derive(Debug, Clone)]
@@ -466,13 +975,16 @@ fn decode_chpx_bte(ws: &[u8], table: &[u8], fib: &FibInfo) -> Vec<ChpxInterval> 
                 continue;
             }
             let grpprl = &fkp[b_off + 1..b_off + 1 + cb];
-            let (props, is_deleted, is_inserted) = parse_chpx_grpprl(grpprl);
+            let (props, is_deleted, is_inserted, is_special, pic_location) =
+                parse_chpx_grpprl(grpprl);
             out.push(ChpxInterval {
                 fc_start,
                 fc_end,
                 props,
                 is_deleted,
                 is_inserted,
+                is_special,
+                pic_location,
             });
         }
     }
@@ -514,20 +1026,28 @@ fn decode_papx_bte(ws: &[u8], table: &[u8], fib: &FibInfo) -> Vec<PapxInterval> 
                 continue;
             }
             let cw = usize::from(fkp[prop_offset]);
-            let (grpprl_start, grpprl_len) = if cw == 0 {
+            let (istd_off, grpprl_start, grpprl_len) = if cw == 0 {
                 if prop_offset + 1 >= 511 {
                     continue;
                 }
                 let cb2 = usize::from(fkp[prop_offset + 1]) * 2;
-                (prop_offset + 4, cb2.saturating_sub(2))
+                (prop_offset + 2, prop_offset + 4, cb2.saturating_sub(2))
             } else {
-                (prop_offset + 3, (cw * 2).saturating_sub(2))
+                (prop_offset + 1, prop_offset + 3, (cw * 2).saturating_sub(2))
             };
             if grpprl_start + grpprl_len > 511 {
                 continue;
             }
+            let istd = if istd_off + 2 <= 511 {
+                read_u16(fkp, istd_off)
+            } else {
+                0
+            };
             let grpprl = &fkp[grpprl_start..grpprl_start + grpprl_len];
-            let (props, in_table, is_row_end) = parse_papx_grpprl(grpprl);
+            let (mut props, in_table, is_row_end) = parse_papx_grpprl(grpprl);
+            if props.style_id.is_none() && istd != 0x0FFF {
+                props.style_id = Some(format!("s{istd}"));
+            }
             out.push(PapxInterval {
                 fc_start,
                 fc_end,
@@ -542,10 +1062,12 @@ fn decode_papx_bte(ws: &[u8], table: &[u8], fib: &FibInfo) -> Vec<PapxInterval> 
 
 /// Parse a `grpprl` byte array of Character SPRMs (`[MS-DOC]` §2.6.1).
 #[allow(clippy::similar_names)]
-fn parse_chpx_grpprl(grpprl: &[u8]) -> (RunProperties, bool, bool) {
+fn parse_chpx_grpprl(grpprl: &[u8]) -> (RunProperties, bool, bool, bool, Option<u32>) {
     let mut rpr = RunProperties::default();
     let mut is_deleted = false;
     let mut is_inserted = false;
+    let mut is_special = false;
+    let mut pic_location = None;
     let mut pos = 0usize;
 
     while pos + 2 <= grpprl.len() {
@@ -576,6 +1098,15 @@ fn parse_chpx_grpprl(grpprl: &[u8]) -> (RunProperties, bool, bool) {
         match sprm {
             0x0800 => is_deleted = op[0] != 0,
             0x0801 => is_inserted = op[0] != 0,
+            0x0855 => is_special = op[0] != 0,
+            0x6A03 if op.len() >= 4 => {
+                is_special = true;
+                pic_location = Some(read_u32(op, 0));
+            }
+            0x4A30 if op.len() >= 2 => {
+                let istd = read_u16(op, 0);
+                rpr.style_id = Some(format!("s{istd}"));
+            }
             0x0835 => rpr.bold = Some(toggle_from_sprm_byte(op[0])),
             0x0836 => rpr.italic = Some(toggle_from_sprm_byte(op[0])),
             0x0837 => rpr.strike = Some(toggle_from_sprm_byte(op[0])),
@@ -619,15 +1150,17 @@ fn parse_chpx_grpprl(grpprl: &[u8]) -> (RunProperties, bool, bool) {
         }
     }
 
-    (rpr, is_deleted, is_inserted)
+    (rpr, is_deleted, is_inserted, is_special, pic_location)
 }
 
 /// Parse a `grpprl` byte array of Paragraph SPRMs (`[MS-DOC]` §2.6.2).
-#[allow(clippy::similar_names)]
+#[allow(clippy::similar_names, clippy::too_many_lines)]
 fn parse_papx_grpprl(grpprl: &[u8]) -> (ParagraphProperties, bool, bool) {
     let mut ppr = ParagraphProperties::default();
     let mut in_table = false;
     let mut is_row_end = false;
+    let mut ilvl: u8 = 0;
+    let mut ilfo: u16 = 0;
     let mut pos = 0usize;
 
     while pos + 2 <= grpprl.len() {
@@ -656,6 +1189,19 @@ fn parse_papx_grpprl(grpprl: &[u8]) -> (ParagraphProperties, bool, bool) {
         pos += op_len;
 
         match sprm {
+            0x4600 if op.len() >= 2 => {
+                let istd = read_u16(op, 0);
+                ppr.style_id = Some(format!("s{istd}"));
+            }
+            0x260A => {
+                ilvl = op[0].min(8);
+            }
+            0x460B if op.len() >= 2 => {
+                ilfo = read_u16(op, 0);
+            }
+            0x2640 => {
+                ppr.outline_level = Some(op[0]);
+            }
             0x2403 | 0x2461 => {
                 ppr.alignment = Some(match op[0] {
                     1 => WordAlignment::Center,
@@ -705,6 +1251,13 @@ fn parse_papx_grpprl(grpprl: &[u8]) -> (ParagraphProperties, bool, bool) {
             }
             _ => {}
         }
+    }
+
+    if ilfo > 0 && ilfo != 0xFFFF {
+        ppr.numbering = Some(NumberingRef {
+            num_id: u32::from(ilfo),
+            ilvl,
+        });
     }
 
     (ppr, in_table, is_row_end)
@@ -766,7 +1319,9 @@ fn build_blocks_from_cp_slice(
     char_fcs: &[u32],
     chpx_runs: &[ChpxInterval],
     papx_runs: &[PapxInterval],
+    data_stream: &[u8],
     doc: &mut WordDocument,
+    next_footnote: &mut i32,
 ) -> Vec<WordBlock> {
     let mut blocks = Vec::new();
     let mut pending_table_rows: Vec<WordTableRow> = Vec::new();
@@ -790,7 +1345,15 @@ fn build_blocks_from_cp_slice(
         let in_table = papx.is_some_and(|p| p.in_table) || ch == '\u{0007}';
         let is_row_end = papx.is_some_and(|p| p.is_row_end);
 
-        let mut content = build_paragraph_contents(para_chars, para_fcs, chpx_runs, doc, 0);
+        let mut content = build_paragraph_contents(
+            para_chars,
+            para_fcs,
+            chpx_runs,
+            data_stream,
+            doc,
+            next_footnote,
+            0,
+        );
         if ch == '\u{000C}' {
             content.push(ParagraphContent::Run(WordRun {
                 props: RunProperties::default(),
@@ -888,7 +1451,9 @@ fn build_paragraph_contents(
     chars: &[char],
     fcs: &[u32],
     chpx_runs: &[ChpxInterval],
+    data_stream: &[u8],
     doc: &mut WordDocument,
+    next_footnote: &mut i32,
     depth: usize,
 ) -> Vec<ParagraphContent> {
     let mut out = Vec::new();
@@ -917,7 +1482,9 @@ fn build_paragraph_contents(
                     &chars[s_idx + 1..e_idx],
                     &fcs[s_idx + 1..e_idx],
                     chpx_runs,
+                    data_stream,
                     doc,
+                    next_footnote,
                     depth + 1,
                 )
             } else {
@@ -952,14 +1519,43 @@ fn build_paragraph_contents(
             continue;
         }
 
+        let fc = fcs.get(i).copied().unwrap_or(0);
+        let chpx = find_interval(chpx_runs, fc);
+
+        // Inline Picf image (`0x01` with `sprmCFSpec` / `sprmCPicLocation`)
+        if ch == '\u{0001}'
+            && chpx.is_some_and(|c| c.is_special || c.pic_location.is_some())
+            && let Some(pic_off) = chpx.and_then(|c| c.pic_location)
+            && let Some(drawing) = extract_picf_image(data_stream, pic_off as usize, doc)
+        {
+            out.push(ParagraphContent::Run(WordRun {
+                props: chpx.map(|c| c.props.clone()).unwrap_or_default(),
+                items: vec![RunItem::Drawing(drawing)],
+                revision: None,
+            }));
+            i += 1;
+            continue;
+        }
+
+        // Inline Footnote reference mark (`0x02`)
+        if ch == '\u{0002}' {
+            let fn_id = *next_footnote;
+            *next_footnote += 1;
+            out.push(ParagraphContent::Run(WordRun {
+                props: chpx.map(|c| c.props.clone()).unwrap_or_default(),
+                items: vec![RunItem::FootnoteRef(fn_id)],
+                revision: None,
+            }));
+            i += 1;
+            continue;
+        }
+
         // Skip stray control characters (< 0x20 except \t and \x0B soft line break)
         if (ch as u32) < 0x20 && ch != '\t' && ch != '\u{000B}' {
             i += 1;
             continue;
         }
 
-        let fc = fcs.get(i).copied().unwrap_or(0);
-        let chpx = find_interval(chpx_runs, fc);
         let r_props = chpx.map(|c| c.props.clone()).unwrap_or_default();
         let is_del = chpx.is_some_and(|c| c.is_deleted);
         let is_ins = chpx.is_some_and(|c| c.is_inserted);
@@ -1025,6 +1621,75 @@ fn build_paragraph_contents(
     }
 
     out
+}
+
+/// Extract an inline `[MS-DOC]` §2.9.193 `PICFAndOfficeArtData` image from the `Data` stream.
+fn extract_picf_image(
+    data_stream: &[u8],
+    offset: usize,
+    doc: &mut WordDocument,
+) -> Option<WordDrawing> {
+    if offset + 68 > data_stream.len() {
+        return None;
+    }
+    let lcb =
+        (read_u32(data_stream, offset) as usize).min(data_stream.len().saturating_sub(offset));
+    if lcb < 68 {
+        return None;
+    }
+    let picf = &data_stream[offset..offset + lcb];
+    let cb_header = usize::from(read_u16(picf, 4)).clamp(44, lcb);
+    let goal_w = f32::from(read_u16(picf, 28));
+    let goal_h = f32::from(read_u16(picf, 30));
+    let mx = read_u16(picf, 32);
+    let my = read_u16(picf, 34);
+    let scale_x = if mx > 0 { f32::from(mx) / 1000.0 } else { 1.0 };
+    let scale_y = if my > 0 { f32::from(my) / 1000.0 } else { 1.0 };
+    let width_pt = if goal_w > 0.0 {
+        (goal_w / 20.0 * scale_x).clamp(8.0, 540.0)
+    } else {
+        120.0
+    };
+    let height_pt = if goal_h > 0.0 {
+        (goal_h / 20.0 * scale_y).clamp(8.0, 720.0)
+    } else {
+        90.0
+    };
+
+    let body = &picf[cb_header..];
+    // Locate PNG (`\x89PNG\r\n\x1A\n`) or JPEG (`\xFF\xD8\xFF`) bytes inside the OfficeArt BLIP payload
+    let png_magic = b"\x89PNG\r\n\x1a\n";
+    let jpg_magic = b"\xFF\xD8\xFF";
+    let (img_bytes, mime) = if let Some(pos) = body.windows(8).position(|w| w == png_magic) {
+        (body[pos..].to_vec(), "image/png")
+    } else {
+        let pos = body.windows(3).position(|w| w == jpg_magic)?;
+        (body[pos..].to_vec(), "image/jpeg")
+    };
+
+    let resource_id = format!("doc_img_{}", doc.images.len() + 1);
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    doc.images.push(ImageResource {
+        id: resource_id.clone(),
+        data: Some(img_bytes),
+        url: None,
+        mime_type: mime.to_string(),
+        width: width_pt.round() as u32,
+        height: height_pt.round() as u32,
+    });
+
+    Some(WordDrawing {
+        width_pt,
+        height_pt,
+        alt_text: None,
+        rotation_deg: 0.0,
+        wrap: WrapMode::Inline,
+        anchor: None,
+        payload: DrawingPayload::Image {
+            resource_id,
+            crop: None,
+        },
+    })
 }
 
 #[allow(clippy::if_not_else)]
@@ -1337,5 +2002,97 @@ mod tests {
         let raw = build_synthetic_doc(true, "Secret text\r");
         let err = parse_doc(&raw, DEFAULT_MAX_DOC_STREAM_BYTES).unwrap_err();
         assert!(matches!(err, Error::Encrypted(_)));
+    }
+
+    #[test]
+    fn decodes_stsh_lists_picf_and_placed_stories() {
+        let mut stsh = Vec::new();
+        stsh.extend_from_slice(&10u16.to_le_bytes()); // cbStshi = 10
+        stsh.extend_from_slice(&1u16.to_le_bytes()); // cstd
+        stsh.extend_from_slice(&10u16.to_le_bytes()); // cbSTDBaseInFile = 10
+        stsh.extend_from_slice(&[0u8; 6]);
+
+        let mut std0 = vec![0u8; 10];
+        let word1 = 1u16 | (0x0FFFu16 << 4); // sgc=1 (Paragraph), istdBase=0xFFF
+        let word2 = 2u16; // cupx=2
+        std0[2..4].copy_from_slice(&word1.to_le_bytes());
+        std0[4..6].copy_from_slice(&word2.to_le_bytes());
+        let style_name: Vec<u16> = "Normal".encode_utf16().collect();
+        #[allow(clippy::cast_possible_truncation)]
+        std0.extend_from_slice(&(style_name.len() as u16).to_le_bytes());
+        for u in style_name {
+            std0.extend_from_slice(&u.to_le_bytes());
+        }
+        std0.extend_from_slice(&0u16.to_le_bytes()); // null terminator
+        // UpxPapx (istd=0 + sprmPJc=Center)
+        std0.extend_from_slice(&5u16.to_le_bytes()); // cbUpx = 5
+        std0.extend_from_slice(&0u16.to_le_bytes()); // istd = 0
+        std0.extend_from_slice(&0x2403u16.to_le_bytes()); // sprmPJc
+        std0.push(1u8); // Center
+        std0.push(0u8); // pad to even
+        // UpxChpx (sprmCHps = 28 -> 14pt)
+        std0.extend_from_slice(&4u16.to_le_bytes()); // cbUpx = 4
+        std0.extend_from_slice(&0x4A43u16.to_le_bytes());
+        std0.extend_from_slice(&28u16.to_le_bytes());
+
+        #[allow(clippy::cast_possible_truncation)]
+        stsh.extend_from_slice(&(std0.len() as u16).to_le_bytes());
+        stsh.extend_from_slice(&std0);
+
+        let mut fib = FibInfo {
+            fc_stshf: 0,
+            #[allow(clippy::cast_possible_truncation)]
+            lcb_stshf: stsh.len() as u32,
+            ..FibInfo::default()
+        };
+        let mut styles = WordStyleSheet::default();
+        decode_stsh(&stsh, &fib, &mut styles);
+        let s0 = styles.styles.get("s0").expect("s0 style");
+        assert_eq!(s0.name.as_deref(), Some("Normal"));
+        assert_eq!(s0.para_props.alignment, Some(WordAlignment::Center));
+        assert_eq!(s0.run_props.font_size_pt, Some(14.0));
+
+        // Build PlfLst (1 simple list, 1 LVL)
+        let mut lst = Vec::new();
+        lst.extend_from_slice(&1u16.to_le_bytes()); // cLst = 1
+        let mut lstf = vec![0u8; 28];
+        lstf[0..4].copy_from_slice(&42u32.to_le_bytes()); // lsid = 42
+        lstf[26] = 0x01; // fSimpleList = 1
+        lst.extend_from_slice(&lstf);
+        let mut lvlf = vec![0u8; 28];
+        lvlf[0..4].copy_from_slice(&1u32.to_le_bytes()); // iStartAt = 1
+        lvlf[4] = 0; // Decimal
+        lst.extend_from_slice(&lvlf);
+        lst.extend_from_slice(&2u16.to_le_bytes()); // cch = 2: '\x00' + '.'
+        lst.extend_from_slice(&0u16.to_le_bytes());
+        lst.extend_from_slice(&(u16::from(b'.')).to_le_bytes());
+
+        fib.fc_plcf_lst = 0;
+        #[allow(clippy::cast_possible_truncation)]
+        {
+            fib.lcb_plcf_lst = lst.len() as u32;
+        }
+        let mut numbering = WordNumbering::default();
+        decode_lists(&lst, &fib, &mut numbering);
+        assert!(numbering.abstract_nums.contains_key(&42));
+        assert_eq!(numbering.nums.get(&1).unwrap().abstract_num_id, 42);
+
+        // Verify Picf extraction
+        let mut data_stream = vec![0u8; 68];
+        data_stream[4..6].copy_from_slice(&68u16.to_le_bytes()); // cbHeader = 68
+        data_stream[28..30].copy_from_slice(&2400u16.to_le_bytes()); // dxaGoal = 120pt
+        data_stream[30..32].copy_from_slice(&1800u16.to_le_bytes()); // dyaGoal = 90pt
+        data_stream[32..34].copy_from_slice(&1000u16.to_le_bytes()); // mx = 1000
+        data_stream[34..36].copy_from_slice(&1000u16.to_le_bytes()); // my = 1000
+        data_stream.extend_from_slice(b"\x89PNG\r\n\x1a\nFAKE_PNG");
+        #[allow(clippy::cast_possible_truncation)]
+        let total_lcb = data_stream.len() as u32;
+        data_stream[0..4].copy_from_slice(&total_lcb.to_le_bytes());
+
+        let mut doc = WordDocument::default();
+        let drawing = extract_picf_image(&data_stream, 0, &mut doc).expect("Picf drawing");
+        assert!((drawing.width_pt - 120.0).abs() < 0.01);
+        assert!((drawing.height_pt - 90.0).abs() < 0.01);
+        assert_eq!(doc.images.len(), 1);
     }
 }

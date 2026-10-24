@@ -90,11 +90,17 @@ impl ParserRegistry {
         // Register PDF parsers
         registry.register(Arc::new(crate::pdf::PdfParser::new()));
 
-        // Register email parsers
+        // Register email & short-message parsers
         registry.register(Arc::new(crate::email::MsgParser::new()));
         registry.register(Arc::new(crate::email::EmlParser::new()));
         registry.register(Arc::new(crate::email::MboxParser::new()));
         registry.register(Arc::new(crate::email::MhtParser::new()));
+        registry.register(Arc::new(crate::email::PstParser::new()));
+        registry.register(Arc::new(crate::email::PstParser::new_ost()));
+        registry.register(Arc::new(crate::email::RsmfParser::new()));
+        registry.register(Arc::new(crate::email::SlackParser::new()));
+        registry.register(Arc::new(crate::email::TeamsParser::new()));
+        registry.register(Arc::new(crate::email::WhatsAppParser::new()));
         // IcsParser and VcfParser are also available in lib.rs
         registry.register(Arc::new(crate::email::IcsParser::new()));
         registry.register(Arc::new(crate::email::VcfParser::new()));
@@ -131,6 +137,11 @@ impl ParserRegistry {
         registry.register(Arc::new(crate::archive::ArchiveParser::new(
             Format::unix_compress(),
         )));
+
+        // Register legacy & regional parsers (.wpd, .hwp, .hwpx)
+        registry.register(Arc::new(crate::legacy::WpdParser::new()));
+        registry.register(Arc::new(crate::legacy::HwpParser::new()));
+        registry.register(Arc::new(crate::legacy::HwpxParser::new()));
 
         registry
     }

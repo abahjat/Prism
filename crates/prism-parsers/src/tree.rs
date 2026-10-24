@@ -722,6 +722,69 @@ fn extract_direct_children(
                 }
             }
         }
+        "pst" | "ost" => {
+            if let Ok(archive) = crate::email::pst::PstArchive::parse(bytes) {
+                for (idx, msg) in archive.messages.iter().enumerate() {
+                    let eml_bytes = msg.to_eml_bytes();
+                    let safe_subj: String = msg
+                        .subject
+                        .chars()
+                        .map(|c| {
+                            if c.is_ascii_alphanumeric() || matches!(c, '-' | '_') {
+                                c
+                            } else {
+                                '_'
+                            }
+                        })
+                        .take(40)
+                        .collect();
+                    let fname = format!("message_{}_{}.eml", idx + 1, safe_subj);
+                    let rel_path = format!("{}/{fname}", msg.folder_path);
+                    let declared_size = eml_bytes.len() as u64;
+                    if !budget.admit(&mut out, &rel_path, declared_size) {
+                        break;
+                    }
+                    let payload = budget.charge(Ok(eml_bytes));
+                    out.push(RawChildEntry {
+                        rel_path,
+                        name: fname,
+                        listed_only: false,
+                        declared_size,
+                        payload,
+                    });
+                }
+            }
+        }
+        "rsmf" => {
+            if let Some(zip_bytes) = crate::email::chat::extract_rsmf_zip_bytes(bytes)
+                && let Ok(mut zip) = zip::ZipArchive::new(Cursor::new(&zip_bytes))
+            {
+                for i in 0..zip.len() {
+                    let Ok(file) = zip.by_index(i) else {
+                        continue;
+                    };
+                    if file.is_dir() {
+                        continue;
+                    }
+                    let name = file.name().to_string();
+                    let declared_size = file.size();
+                    if !budget.admit(&mut out, &name, declared_size) {
+                        break;
+                    }
+                    let basename = name.rsplit(['/', '\\']).next().unwrap_or(&name).to_string();
+                    let payload = budget.charge(
+                        read_bounded(file, budget.entry_limit()).map_err(|e| e.to_string()),
+                    );
+                    out.push(RawChildEntry {
+                        rel_path: name,
+                        name: basename,
+                        listed_only: false,
+                        declared_size,
+                        payload,
+                    });
+                }
+            }
+        }
         _ => {}
     }
 

@@ -140,6 +140,33 @@ pub fn generate_hidden_content_report(
     if matches!(ext.as_deref(), Some("msg")) || mime == "application/vnd.ms-outlook" {
         return msg_hidden_content_report(bytes);
     }
+    if matches!(ext.as_deref(), Some("pst" | "ost"))
+        || mime == "application/vnd.ms-outlook-pst"
+        || mime == "application/vnd.ms-outlook-ost"
+    {
+        let fmt_id = if ext.as_deref() == Some("ost") || mime == "application/vnd.ms-outlook-ost" {
+            "ost"
+        } else {
+            "pst"
+        };
+        return pst_hidden_content_report(bytes, fmt_id);
+    }
+    if matches!(ext.as_deref(), Some("rsmf")) || mime == "application/vnd.relativity.rsmf" {
+        return chat_hidden_content_report(bytes, "rsmf", crate::email::chat::ChatPlatform::Rsmf);
+    }
+    if matches!(ext.as_deref(), Some("slack")) || mime == "application/vnd.slack.chat+json" {
+        return chat_hidden_content_report(bytes, "slack", crate::email::chat::ChatPlatform::Slack);
+    }
+    if matches!(ext.as_deref(), Some("teams")) || mime == "application/vnd.ms-teams.chat+json" {
+        return chat_hidden_content_report(bytes, "teams", crate::email::chat::ChatPlatform::Teams);
+    }
+    if matches!(ext.as_deref(), Some("whatsapp")) || mime == "text/vnd.whatsapp" {
+        return chat_hidden_content_report(
+            bytes,
+            "whatsapp",
+            crate::email::chat::ChatPlatform::WhatsApp,
+        );
+    }
     if mime == "application/zip" || matches!(ext.as_deref(), Some("zip")) {
         return archive_hidden_content_report(bytes, "zip");
     }
@@ -149,7 +176,34 @@ pub fn generate_hidden_content_report(
     if mime == "application/x-7z-compressed" || matches!(ext.as_deref(), Some("7z")) {
         return archive_hidden_content_report(bytes, "7z");
     }
-
+    if mime == "application/vnd.wordperfect" || matches!(ext.as_deref(), Some("wpd" | "wp")) {
+        let mut report = HiddenContentReport::for_format("wpd");
+        if let Ok(doc) = crate::legacy::parse_wpd_bytes(bytes) {
+            if let Some(prism_core::metadata::MetadataValue::String(hidden)) =
+                doc.metadata.custom.get("hidden_text")
+            {
+                report.push(Finding::new(
+                    FindingKind::HiddenText,
+                    Severity::Notable,
+                    Location::Document,
+                    None,
+                    Some(hidden.clone()),
+                    serde_json::json!({ "source": "WP6 0xD8 function group" }),
+                ));
+            }
+            if let Some(ref author) = doc.metadata.author {
+                report.push(Finding::new(
+                    FindingKind::AuthorAndModificationHistory,
+                    Severity::Info,
+                    Location::Document,
+                    None,
+                    Some(format!("Author: {author}")),
+                    serde_json::json!({ "author": author }),
+                ));
+            }
+        }
+        return report;
+    }
     // Generic fallback
     let fmt_id = ext.as_deref().unwrap_or("txt");
     let mut report = HiddenContentReport::for_format(fmt_id);
@@ -963,6 +1017,82 @@ fn record_archive_member_finding(name: &str, size: u64, report: &mut HiddenConte
             "hidden_dotfile": is_hidden_dotfile,
         }),
     ));
+}
+
+/// Generate a [`HiddenContentReport`] for an Outlook `PST` or `OST` mailbox archive.
+#[must_use]
+pub fn pst_hidden_content_report(bytes: &[u8], format_id: &str) -> HiddenContentReport {
+    let mut report = HiddenContentReport::for_format(format_id);
+    if let Ok(archive) = crate::email::pst::PstArchive::parse(bytes) {
+        for msg in &archive.messages {
+            report.push(Finding::new(
+                FindingKind::AuthorAndModificationHistory,
+                Severity::Info,
+                Location::PartPath {
+                    path: format!("{}/{}", msg.folder_path, msg.subject),
+                },
+                None,
+                Some(format!(
+                    "From: {} | Subject: {}",
+                    msg.formatted_from(),
+                    msg.subject
+                )),
+                serde_json::json!({
+                    "folder": msg.folder_path,
+                    "subject": msg.subject,
+                    "from": msg.formatted_from(),
+                    "to": msg.display_to,
+                    "cc": msg.display_cc,
+                    "bcc": msg.display_bcc,
+                }),
+            ));
+            for att in &msg.attachments {
+                report.push(Finding::new(
+                    FindingKind::EmbeddedFile,
+                    Severity::Notable,
+                    Location::PartPath {
+                        path: format!("{}/{}", msg.folder_path, att.filename),
+                    },
+                    None,
+                    Some(format!("PST attachment: {}", att.filename)),
+                    serde_json::json!({
+                        "filename": att.filename,
+                        "size": att.data.len(),
+                    }),
+                ));
+            }
+        }
+    }
+    report
+}
+
+/// Generate a [`HiddenContentReport`] for an eDiscovery chat transcript (`RSMF`, Slack, Teams, `WhatsApp`).
+#[must_use]
+pub fn chat_hidden_content_report(
+    bytes: &[u8],
+    format_id: &str,
+    platform: crate::email::chat::ChatPlatform,
+) -> HiddenContentReport {
+    let mut report = HiddenContentReport::for_format(format_id);
+    if let Ok(transcript) = crate::email::chat::ChatTranscript::parse(bytes, platform) {
+        for finding in transcript.collect_forensic_findings() {
+            report.push(finding);
+        }
+        for (name, data) in &transcript.media_files {
+            report.push(Finding::new(
+                FindingKind::EmbeddedFile,
+                Severity::Notable,
+                Location::PartPath { path: name.clone() },
+                None,
+                Some(format!("Chat media attachment: {name}")),
+                serde_json::json!({
+                    "filename": name,
+                    "size": data.len(),
+                }),
+            ));
+        }
+    }
+    report
 }
 
 /// Convenience helper to layout a UDM document when no native layout exists.

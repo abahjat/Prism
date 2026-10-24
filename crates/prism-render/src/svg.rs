@@ -398,6 +398,34 @@ body {{
   color: #475569;
   font-size: 11px;
 }}
+.prism-sheet-mode-btn {{
+  background: #0f172a;
+  color: #f8fafc;
+  border: 1px solid #334155;
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 11px;
+  cursor: pointer;
+}}
+.prism-spreadsheet-grid-container {{
+  width: 100%;
+  height: 100%;
+  min-height: 480px;
+  position: relative;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  overflow: hidden;
+}}
+.prism-spreadsheet-grid-container[hidden] {{
+  display: none;
+}}
+.prism-spreadsheet-canvas {{
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: cell;
+  outline: none;
+}}
 .prism-sheet-tabs {{
   display: flex;
   align-items: center;
@@ -575,6 +603,7 @@ body {{
   </div>
 </header>
 <div class="prism-formula-bar" id="prism-formula-bar" role="region" aria-label="Formula and cell inspector" hidden>
+  <button type="button" class="prism-sheet-mode-btn" id="prism-btn-sheet-grid-mode" aria-label="Toggle interactive canvas grid mode">Grid View</button>
   <span class="prism-cell-ref" id="prism-cell-ref">A1</span>
   <span class="prism-formula-expr" id="prism-formula-expr"></span>
   <span class="prism-cell-meta" id="prism-cell-meta"></span>
@@ -582,6 +611,9 @@ body {{
 <div class="prism-body">
 <aside class="prism-thumbs-sidebar" role="navigation" aria-label="Page thumbnails" hidden></aside>
 <div class="prism-viewport">
+<div class="prism-spreadsheet-grid-container" id="prism-spreadsheet-grid-container" hidden>
+  <canvas id="prism-spreadsheet-canvas" class="prism-spreadsheet-canvas" aria-label="Interactive spreadsheet grid" tabindex="0"></canvas>
+</div>
 <main class="prism-viewer">
 "#
     );

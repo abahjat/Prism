@@ -662,6 +662,85 @@ impl FormatCoverage {
                 ],
                 notes: Some("7z archive member and hidden/dot-file inspection".to_string()),
             },
+            Self {
+                format: "pst".to_string(),
+                supported_kinds: vec![
+                    FindingKind::EmbeddedFile,
+                    FindingKind::AuthorAndModificationHistory,
+                ],
+                notes: Some("MS-PST mailbox message and attachment inspection".to_string()),
+            },
+            Self {
+                format: "ost".to_string(),
+                supported_kinds: vec![
+                    FindingKind::EmbeddedFile,
+                    FindingKind::AuthorAndModificationHistory,
+                ],
+                notes: Some("MS-OST offline mailbox message and attachment inspection".to_string()),
+            },
+            Self {
+                format: "rsmf".to_string(),
+                supported_kinds: vec![
+                    FindingKind::TrackedDeletion,
+                    FindingKind::TrackedInsertion,
+                    FindingKind::EmbeddedFile,
+                ],
+                notes: Some(
+                    "RSMF short-message deleted/edited message and media attachment inspection"
+                        .to_string(),
+                ),
+            },
+            Self {
+                format: "slack".to_string(),
+                supported_kinds: vec![FindingKind::TrackedDeletion, FindingKind::TrackedInsertion],
+                notes: Some("Slack chat deleted and edited message inspection".to_string()),
+            },
+            Self {
+                format: "teams".to_string(),
+                supported_kinds: vec![FindingKind::TrackedDeletion, FindingKind::TrackedInsertion],
+                notes: Some(
+                    "Microsoft Teams chat deleted and edited message inspection".to_string(),
+                ),
+            },
+            Self {
+                format: "whatsapp".to_string(),
+                supported_kinds: vec![FindingKind::TrackedDeletion, FindingKind::TrackedInsertion],
+                notes: Some("WhatsApp chat deleted and edited message inspection".to_string()),
+            },
+            Self {
+                format: "wpd".to_string(),
+                supported_kinds: vec![
+                    FindingKind::HiddenText,
+                    FindingKind::Comment,
+                    FindingKind::AuthorAndModificationHistory,
+                ],
+                notes: Some(
+                    "Corel WordPerfect prefix/packet and WP6 function group inspection".to_string(),
+                ),
+            },
+            Self {
+                format: "hwp".to_string(),
+                supported_kinds: vec![
+                    FindingKind::HiddenText,
+                    FindingKind::Comment,
+                    FindingKind::EmbeddedFile,
+                    FindingKind::AuthorAndModificationHistory,
+                ],
+                notes: Some(
+                    "Hangul Word Processor (HWP v5 OLE / v3) section and BinData inspection"
+                        .to_string(),
+                ),
+            },
+            Self {
+                format: "hwpx".to_string(),
+                supported_kinds: vec![
+                    FindingKind::HiddenText,
+                    FindingKind::Comment,
+                    FindingKind::EmbeddedFile,
+                    FindingKind::AuthorAndModificationHistory,
+                ],
+                notes: Some("Hangul OWPML (HWPX) XML section and BinData inspection".to_string()),
+            },
         ]
     }
 }
