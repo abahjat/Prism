@@ -181,6 +181,70 @@ int32_t prism_document_set_markup_mode(PrismDocument* doc, uint32_t mode);
  */
 char* prism_document_forensic_facts(const PrismDocument* doc);
 
+/**
+ * Generate the cross-format `HiddenContentReport` (`items` and `coverage`) for `doc` as JSON.
+ * Release the returned string with `prism_free_string()`.
+ */
+char* prism_document_hidden_content(const PrismDocument* doc);
+
+/**
+ * Build the unified container and embedded-object `FamilyTree` for `doc` as JSON.
+ * Release the returned string with `prism_free_string()`.
+ */
+char* prism_document_children(const PrismDocument* doc);
+
+/**
+ * Open a child container/embedded-object node (`node_id`, e.g. `"root/0"`) from `doc` as a new `PrismDocument*`.
+ * Release the returned handle with `prism_document_close()`.
+ */
+PrismDocument* prism_document_open_child(const PrismDocument* doc, const char* node_id);
+
+/**
+ * Load and validate an `AnnotationSidecar` JSON string into `doc`.
+ * Returns 0 on success, -1 on error.
+ */
+int32_t prism_document_load_annotations(PrismDocument* doc, const char* sidecar_json);
+
+/**
+ * Serialize `doc`'s current `AnnotationSidecar` to deterministic JSON.
+ * Release the returned string with `prism_free_string()`.
+ */
+char* prism_document_save_annotations(const PrismDocument* doc);
+
+/**
+ * Add a single `Annotation` (serialized as JSON) to `doc`'s sidecar.
+ * Returns 0 on success, -1 on error.
+ */
+int32_t prism_document_add_annotation(PrismDocument* doc, const char* annotation_json);
+
+/**
+ * Remove an annotation by `annotation_id` from `doc`'s sidecar.
+ * Returns 0 on success, -1 on error.
+ */
+int32_t prism_document_remove_annotation(PrismDocument* doc, const char* annotation_id);
+
+/**
+ * Resolve all annotations in `doc`'s sidecar against `doc`'s current layout (`Exact`, `Moved`, `Unresolved`) as JSON.
+ * Release the returned string with `prism_free_string()`.
+ */
+char* prism_document_annotations(const PrismDocument* doc);
+
+/**
+ * Export `doc` with all approved redactions destructively applied and verified automatically.
+ * `format`: `PRISM_EXPORT_FORMAT_PDF` (0) or `PRISM_EXPORT_FORMAT_TIFF` (1).
+ * Release `*out_buf` with `prism_buffer_free(*out_buf, *out_len)` and `*out_log_json` (if non-NULL)
+ * with `prism_free_string(*out_log_json)`.
+ * Returns 0 on success, -1 on error.
+ */
+int32_t prism_document_export_redacted(
+    const PrismDocument* doc,
+    uint32_t format,
+    float dpi,
+    uint8_t** out_buf,
+    size_t* out_len,
+    char** out_log_json
+);
+
 /* ========================================================================== *
  * Workbook Grid-Mode API (`PrismWorkbook`)                                   *
  * ========================================================================== */

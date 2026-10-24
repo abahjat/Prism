@@ -8,6 +8,7 @@
 pub mod condfmt;
 pub mod layout;
 pub mod model;
+pub mod review;
 pub mod udm;
 pub mod xls;
 pub mod xlsx;

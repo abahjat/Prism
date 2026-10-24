@@ -627,6 +627,25 @@ impl FontStore {
         self.fonts.get(&id)
     }
 
+    /// Map a Unicode character `ch` to its glyph index in `font_id` using the font's `cmap` table
+    /// (returning `0` `.notdef` if the character is unmapped or the font has no `cmap`).
+    #[must_use]
+    pub fn map_char_to_glyph(&self, font_id: FontId, ch: char) -> u16 {
+        let Some(entry) = self.fonts.get(&font_id) else {
+            return 0;
+        };
+        if entry.data.is_empty() {
+            return 0;
+        }
+        let Ok(font_ref) = skrifa::FontRef::from_index(&entry.data, entry.face_index) else {
+            return 0;
+        };
+        font_ref
+            .charmap()
+            .map(ch)
+            .map_or(0, |gid| u16::try_from(gid.to_u32()).unwrap_or(0))
+    }
+
     /// Cache a precomputed `1000.0`-upem outline for `glyph_id` in `font_id` (used for PDF Type1/CFF/subset fonts).
     pub fn insert_precomputed_outline(
         &mut self,
@@ -920,24 +939,7 @@ pub struct LineDecoration {
     pub thickness: f32,
 }
 
-/// Back-reference to the UDM source element that produced an item.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct SourceRef {
-    /// Zero-based UDM page index.
-    pub page: u32,
-    /// Zero-based content block index on the UDM page.
-    pub block: u32,
-    /// Zero-based run index within the content block.
-    pub run: u32,
-}
-
-impl SourceRef {
-    /// Construct a new [`SourceRef`].
-    #[must_use]
-    pub const fn new(page: u32, block: u32, run: u32) -> Self {
-        Self { page, block, run }
-    }
-}
+pub use prism_core::review::SourceRef;
 
 /// A vector path item on a [`LayoutPage`].
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]

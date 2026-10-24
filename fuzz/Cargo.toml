@@ -19,7 +19,9 @@ prism-layout = { path = "../crates/prism-layout" }
 prism-numfmt = { path = "../crates/prism-numfmt" }
 prism-parsers = { path = "../crates/prism-parsers" }
 prism-ppt = { path = "../crates/prism-ppt" }
+prism-production = { path = "../crates/prism-production" }
 prism-render = { path = "../crates/prism-render" }
+prism-review = { path = "../crates/prism-review" }
 prism-word = { path = "../crates/prism-word" }
 
 [[bin]]
@@ -95,6 +97,34 @@ bench = false
 [[bin]]
 name = "chart_render"
 path = "fuzz_targets/chart_render.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "sidecar_parse"
+path = "fuzz_targets/sidecar_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "redaction_apply"
+path = "fuzz_targets/redaction_apply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "loadfile_parse"
+path = "fuzz_targets/loadfile_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "container_tree"
+path = "fuzz_targets/container_tree.rs"
 test = false
 doc = false
 bench = false

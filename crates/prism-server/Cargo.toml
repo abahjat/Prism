@@ -20,6 +20,7 @@ path = "src/main.rs"
 prism-core = { workspace = true }
 prism-parsers = { workspace = true }
 prism-render = { workspace = true }
+prism-review = { workspace = true }
 prism-sandbox = { workspace = true }
 
 # Async runtime

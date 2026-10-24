@@ -68,8 +68,12 @@ pub mod office;
 pub mod pdf;
 /// Parser registry
 pub mod registry;
+/// Cross-format hidden-content report providers
+pub mod review;
 /// Text format parsers
 pub mod text;
+/// Unified container and embedded-object family tree walker
+pub mod tree;
 
 // Re-export commonly used types
 pub use archive::ArchiveParser;

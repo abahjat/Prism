@@ -2,7 +2,10 @@
 //! PDF document parser
 //!
 //! Keeps the original PDF for native rendering (see `prism-render`) and
-//! extracts its text and document information with lopdf.
+//! extracts its text and document information with lopdf, including recursive
+//! traversal of `/Subtype /Form` `XObjects` invoked via `"Do"`.
+
+#![allow(clippy::doc_markdown)]
 
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -87,9 +90,15 @@ fn estimate_text_advance(text: &str, state: &PdfTextState) -> f64 {
 fn decode_pdf_bytes(
     bytes: &[u8],
     font_name: Option<&[u8]>,
-    encodings: &BTreeMap<Vec<u8>, Encoding<'_>>,
+    local_encodings: Option<&BTreeMap<Vec<u8>, Encoding<'_>>>,
+    page_encodings: &BTreeMap<Vec<u8>, Encoding<'_>>,
 ) -> String {
-    if let Some(enc) = font_name.and_then(|name| encodings.get(name))
+    let enc = font_name.and_then(|name| {
+        local_encodings
+            .and_then(|m| m.get(name))
+            .or_else(|| page_encodings.get(name))
+    });
+    if let Some(enc) = enc
         && let Ok(decoded) = LopdfDocument::decode_text(enc, bytes)
     {
         return decoded;
@@ -159,8 +168,8 @@ impl PdfParser {
             .join("\n\n")
     }
 
-    /// Extract text from a single page using position-aware content stream traversal
-    #[allow(clippy::too_many_lines)]
+    /// Extract text from a single page using position-aware content stream traversal,
+    /// including recursive traversal of `/Subtype /Form` XObjects invoked by `"Do"`.
     fn extract_page_text(
         pdf: &LopdfDocument,
         page_id: ObjectId,
@@ -180,6 +189,8 @@ impl PdfParser {
             })
             .collect();
 
+        let page_resources = Self::resolve_page_resources(pdf, page_id);
+
         let mut out = String::new();
         let mut state = PdfTextState::default();
         let mut state_stack: Vec<PdfTextState> = Vec::new();
@@ -188,56 +199,139 @@ impl PdfParser {
         // Previous run end in user space: (end_x, baseline_y, effective_em_size)
         let mut last_pos: Option<(f64, f64, f64)> = None;
 
-        let emit_run = |bytes: &[u8],
-                        state: &PdfTextState,
-                        tm: &mut [f64; 6],
-                        last_pos: &mut Option<(f64, f64, f64)>,
-                        out: &mut String| {
-            let decoded = decode_pdf_bytes(bytes, state.font_name.as_deref(), &encodings);
-            if decoded.is_empty() {
-                return;
-            }
-
-            let m = multiply_matrix(*tm, state.ctm);
-            let x = m[4];
-            let y = m[5];
-            let scale = m[0].hypot(m[1]).max(m[2].hypot(m[3])).max(1e-6);
-            let em = (state.font_size.abs().max(1.0) * scale).max(1.0);
-
-            if let Some((prev_end_x, prev_y, prev_em)) = *last_pos {
-                let line_em = prev_em.max(em);
-                if (y - prev_y).abs() > line_em * 0.45 {
-                    while out.ends_with(' ') {
-                        out.pop();
-                    }
-                    if !out.is_empty() && !out.ends_with('\n') {
-                        out.push('\n');
-                    }
-                } else {
-                    let gap = x - prev_end_x;
-                    if gap > line_em * 0.22
-                        && !out.is_empty()
-                        && !out.ends_with([' ', '\n'])
-                        && !decoded.starts_with(' ')
-                    {
-                        out.push(' ');
-                    }
-                }
-            }
-
-            out.push_str(&decoded);
-            let adv = estimate_text_advance(&decoded, state);
-            *tm = multiply_matrix([1.0, 0.0, 0.0, 1.0, adv, 0.0], *tm);
-            let end_m = multiply_matrix(*tm, state.ctm);
-            *last_pos = Some((end_m[4], end_m[5], em));
+        let mut ctx = PdfExtractContext {
+            pdf,
+            stream_limit,
+            state: &mut state,
+            state_stack: &mut state_stack,
+            tm: &mut tm,
+            tlm: &mut tlm,
+            last_pos: &mut last_pos,
+            out: &mut out,
+            forms_invoked: 0,
+            active_forms: Vec::new(),
         };
 
-        for op in &content.operations {
+        ctx.walk_operations(&content.operations, page_resources, None, &encodings, 0);
+
+        Some(out)
+    }
+
+    /// Walk up the page tree from `page_id` to find the effective `/Resources` dictionary.
+    fn resolve_page_resources(pdf: &LopdfDocument, page_id: ObjectId) -> Option<&Dictionary> {
+        let mut current_id = page_id;
+        for _ in 0..32 {
+            let dict = pdf.get_dictionary(current_id).ok()?;
+            if let Ok(res_obj) = dict.get(b"Resources")
+                && let Some(res_dict) = Self::deref_dict(pdf, res_obj)
+            {
+                return Some(res_dict);
+            }
+            match dict.get(b"Parent").and_then(Object::as_reference) {
+                Ok(parent_id) if parent_id != current_id => current_id = parent_id,
+                _ => break,
+            }
+        }
+        None
+    }
+
+    /// Resolve a direct or indirect PDF `Object` as a `&Dictionary`.
+    fn deref_dict<'a>(pdf: &'a LopdfDocument, obj: &'a Object) -> Option<&'a Dictionary> {
+        match obj {
+            Object::Dictionary(d) => Some(d),
+            Object::Reference(id) => pdf.get_dictionary(*id).ok(),
+            _ => None,
+        }
+    }
+}
+
+/// Mutable state for recursive PDF content stream and Form XObject text extraction
+struct PdfExtractContext<'a> {
+    pdf: &'a LopdfDocument,
+    stream_limit: usize,
+    state: &'a mut PdfTextState,
+    state_stack: &'a mut Vec<PdfTextState>,
+    tm: &'a mut [f64; 6],
+    tlm: &'a mut [f64; 6],
+    last_pos: &'a mut Option<(f64, f64, f64)>,
+    out: &'a mut String,
+    /// Form XObjects invoked so far on this page (see [`MAX_FORM_XOBJECT_INVOCATIONS`]).
+    forms_invoked: usize,
+    /// Indirect forms currently being walked, to skip a form that invokes itself.
+    active_forms: Vec<ObjectId>,
+}
+
+const MAX_FORM_XOBJECT_DEPTH: usize = 16;
+/// Total Form XObject invocations per page. The depth limit alone does not bound the work: a
+/// form that invokes another form several times per level grows exponentially with depth.
+const MAX_FORM_XOBJECT_INVOCATIONS: usize = 4096;
+
+impl<'a> PdfExtractContext<'a> {
+    fn emit_run(
+        &mut self,
+        bytes: &[u8],
+        local_encodings: Option<&BTreeMap<Vec<u8>, Encoding<'_>>>,
+        page_encodings: &BTreeMap<Vec<u8>, Encoding<'_>>,
+    ) {
+        let decoded = decode_pdf_bytes(
+            bytes,
+            self.state.font_name.as_deref(),
+            local_encodings,
+            page_encodings,
+        );
+        if decoded.is_empty() {
+            return;
+        }
+
+        let m = multiply_matrix(*self.tm, self.state.ctm);
+        let x = m[4];
+        let y = m[5];
+        let scale = m[0].hypot(m[1]).max(m[2].hypot(m[3])).max(1e-6);
+        let em = (self.state.font_size.abs().max(1.0) * scale).max(1.0);
+
+        if let Some((prev_end_x, prev_y, prev_em)) = *self.last_pos {
+            let line_em = prev_em.max(em);
+            if (y - prev_y).abs() > line_em * 0.45 {
+                while self.out.ends_with(' ') {
+                    self.out.pop();
+                }
+                if !self.out.is_empty() && !self.out.ends_with('\n') {
+                    self.out.push('\n');
+                }
+            } else {
+                let gap = x - prev_end_x;
+                if gap > line_em * 0.22
+                    && !self.out.is_empty()
+                    && !self.out.ends_with([' ', '\n'])
+                    && !decoded.starts_with(' ')
+                {
+                    self.out.push(' ');
+                }
+            }
+        }
+
+        self.out.push_str(&decoded);
+        let adv = estimate_text_advance(&decoded, self.state);
+        *self.tm = multiply_matrix([1.0, 0.0, 0.0, 1.0, adv, 0.0], *self.tm);
+        let end_m = multiply_matrix(*self.tm, self.state.ctm);
+        *self.last_pos = Some((end_m[4], end_m[5], em));
+    }
+
+    #[allow(clippy::too_many_lines)]
+    fn walk_operations(
+        &mut self,
+        operations: &[lopdf::content::Operation],
+        resources: Option<&'a Dictionary>,
+        local_encodings: Option<&BTreeMap<Vec<u8>, Encoding<'a>>>,
+        page_encodings: &BTreeMap<Vec<u8>, Encoding<'a>>,
+        depth: usize,
+    ) {
+        for op in operations {
             match op.operator.as_str() {
-                "q" => state_stack.push(state.clone()),
+                "q" => self.state_stack.push(self.state.clone()),
                 "Q" => {
-                    if let Some(prev) = state_stack.pop() {
-                        state = prev;
+                    if let Some(prev) = self.state_stack.pop() {
+                        *self.state = prev;
                     }
                 }
                 "cm" if op.operands.len() >= 6 => {
@@ -245,88 +339,91 @@ impl PdfParser {
                     for (i, operand) in op.operands.iter().take(6).enumerate() {
                         m[i] = obj_to_f64(operand).unwrap_or(0.0);
                     }
-                    state.ctm = multiply_matrix(m, state.ctm);
+                    self.state.ctm = multiply_matrix(m, self.state.ctm);
                 }
                 "BT" => {
-                    tm = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0];
-                    tlm = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0];
+                    *self.tm = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0];
+                    *self.tlm = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0];
                 }
                 "Tf" if op.operands.len() >= 2 => {
-                    state.font_name = op
+                    self.state.font_name = op
                         .operands
                         .first()
                         .and_then(|o| o.as_name().ok())
                         .map(<[u8]>::to_vec);
                     if let Some(sz) = op.operands.get(1).and_then(obj_to_f64) {
-                        state.font_size = sz;
+                        self.state.font_size = sz;
                     }
                 }
                 "Tc" => {
                     if let Some(v) = op.operands.first().and_then(obj_to_f64) {
-                        state.char_space = v;
+                        self.state.char_space = v;
                     }
                 }
                 "Tw" => {
                     if let Some(v) = op.operands.first().and_then(obj_to_f64) {
-                        state.word_space = v;
+                        self.state.word_space = v;
                     }
                 }
                 "Tz" => {
                     if let Some(v) = op.operands.first().and_then(obj_to_f64) {
-                        state.horiz_scale = v / 100.0;
+                        self.state.horiz_scale = v / 100.0;
                     }
                 }
                 "TL" => {
                     if let Some(v) = op.operands.first().and_then(obj_to_f64) {
-                        state.leading = v;
+                        self.state.leading = v;
                     }
                 }
                 "Td" if op.operands.len() >= 2 => {
                     let tx = obj_to_f64(&op.operands[0]).unwrap_or(0.0);
                     let ty = obj_to_f64(&op.operands[1]).unwrap_or(0.0);
-                    tlm = multiply_matrix([1.0, 0.0, 0.0, 1.0, tx, ty], tlm);
-                    tm = tlm;
+                    *self.tlm = multiply_matrix([1.0, 0.0, 0.0, 1.0, tx, ty], *self.tlm);
+                    *self.tm = *self.tlm;
                 }
                 "TD" if op.operands.len() >= 2 => {
                     let tx = obj_to_f64(&op.operands[0]).unwrap_or(0.0);
                     let ty = obj_to_f64(&op.operands[1]).unwrap_or(0.0);
-                    state.leading = -ty;
-                    tlm = multiply_matrix([1.0, 0.0, 0.0, 1.0, tx, ty], tlm);
-                    tm = tlm;
+                    self.state.leading = -ty;
+                    *self.tlm = multiply_matrix([1.0, 0.0, 0.0, 1.0, tx, ty], *self.tlm);
+                    *self.tm = *self.tlm;
                 }
                 "Tm" if op.operands.len() >= 6 => {
                     for (i, operand) in op.operands.iter().take(6).enumerate() {
-                        tm[i] = obj_to_f64(operand).unwrap_or(0.0);
+                        self.tm[i] = obj_to_f64(operand).unwrap_or(0.0);
                     }
-                    tlm = tm;
+                    *self.tlm = *self.tm;
                 }
                 "T*" => {
-                    tlm = multiply_matrix([1.0, 0.0, 0.0, 1.0, 0.0, -state.leading], tlm);
-                    tm = tlm;
+                    *self.tlm =
+                        multiply_matrix([1.0, 0.0, 0.0, 1.0, 0.0, -self.state.leading], *self.tlm);
+                    *self.tm = *self.tlm;
                 }
                 "Tj" => {
                     if let Some(Object::String(bytes, _)) = op.operands.first() {
-                        emit_run(bytes, &state, &mut tm, &mut last_pos, &mut out);
+                        self.emit_run(bytes, local_encodings, page_encodings);
                     }
                 }
                 "'" => {
-                    tlm = multiply_matrix([1.0, 0.0, 0.0, 1.0, 0.0, -state.leading], tlm);
-                    tm = tlm;
+                    *self.tlm =
+                        multiply_matrix([1.0, 0.0, 0.0, 1.0, 0.0, -self.state.leading], *self.tlm);
+                    *self.tm = *self.tlm;
                     if let Some(Object::String(bytes, _)) = op.operands.first() {
-                        emit_run(bytes, &state, &mut tm, &mut last_pos, &mut out);
+                        self.emit_run(bytes, local_encodings, page_encodings);
                     }
                 }
                 "\"" if op.operands.len() >= 3 => {
                     if let Some(w) = obj_to_f64(&op.operands[0]) {
-                        state.word_space = w;
+                        self.state.word_space = w;
                     }
                     if let Some(c) = obj_to_f64(&op.operands[1]) {
-                        state.char_space = c;
+                        self.state.char_space = c;
                     }
-                    tlm = multiply_matrix([1.0, 0.0, 0.0, 1.0, 0.0, -state.leading], tlm);
-                    tm = tlm;
+                    *self.tlm =
+                        multiply_matrix([1.0, 0.0, 0.0, 1.0, 0.0, -self.state.leading], *self.tlm);
+                    *self.tm = *self.tlm;
                     if let Object::String(bytes, _) = &op.operands[2] {
-                        emit_run(bytes, &state, &mut tm, &mut last_pos, &mut out);
+                        self.emit_run(bytes, local_encodings, page_encodings);
                     }
                 }
                 "TJ" => {
@@ -334,22 +431,26 @@ impl PdfParser {
                         for item in items {
                             match item {
                                 Object::String(bytes, _) => {
-                                    emit_run(bytes, &state, &mut tm, &mut last_pos, &mut out);
+                                    self.emit_run(bytes, local_encodings, page_encodings);
                                 }
                                 Object::Integer(_) | Object::Real(_) => {
                                     if let Some(adj) = obj_to_f64(item) {
-                                        let tx =
-                                            -(adj / 1000.0) * state.font_size * state.horiz_scale;
-                                        tm = multiply_matrix([1.0, 0.0, 0.0, 1.0, tx, 0.0], tm);
+                                        let tx = -(adj / 1000.0)
+                                            * self.state.font_size
+                                            * self.state.horiz_scale;
+                                        *self.tm = multiply_matrix(
+                                            [1.0, 0.0, 0.0, 1.0, tx, 0.0],
+                                            *self.tm,
+                                        );
                                         if adj <= -180.0
-                                            && !out.is_empty()
-                                            && !out.ends_with([' ', '\n'])
+                                            && !self.out.is_empty()
+                                            && !self.out.ends_with([' ', '\n'])
                                         {
-                                            out.push(' ');
+                                            self.out.push(' ');
                                         }
-                                        if let Some((_, prev_y, prev_em)) = last_pos {
-                                            let end_m = multiply_matrix(tm, state.ctm);
-                                            last_pos = Some((end_m[4], prev_y, prev_em));
+                                        if let Some((_, prev_y, prev_em)) = *self.last_pos {
+                                            let end_m = multiply_matrix(*self.tm, self.state.ctm);
+                                            *self.last_pos = Some((end_m[4], prev_y, prev_em));
                                         }
                                     }
                                 }
@@ -358,11 +459,120 @@ impl PdfParser {
                         }
                     }
                 }
+                "Do" if depth < MAX_FORM_XOBJECT_DEPTH => {
+                    if let Some(xobj_name) = op.operands.first().and_then(|o| o.as_name().ok()) {
+                        self.invoke_form_xobject(xobj_name, resources, page_encodings, depth);
+                    }
+                }
                 _ => {}
             }
         }
+    }
 
-        Some(out)
+    fn invoke_form_xobject(
+        &mut self,
+        xobj_name: &[u8],
+        resources: Option<&'a Dictionary>,
+        page_encodings: &BTreeMap<Vec<u8>, Encoding<'a>>,
+        depth: usize,
+    ) {
+        let Some(res_dict) = resources else {
+            return;
+        };
+        let Ok(xobjects_obj) = res_dict.get(b"XObject") else {
+            return;
+        };
+        let Some(xobjects_dict) = PdfParser::deref_dict(self.pdf, xobjects_obj) else {
+            return;
+        };
+        let Ok(target_obj) = xobjects_dict.get(xobj_name) else {
+            return;
+        };
+        let (stream, form_id) = match target_obj {
+            Object::Stream(s) => (s, None),
+            Object::Reference(id) => match self.pdf.get_object(*id) {
+                Ok(Object::Stream(s)) => (s, Some(*id)),
+                _ => return,
+            },
+            _ => return,
+        };
+        if self.forms_invoked >= MAX_FORM_XOBJECT_INVOCATIONS
+            || form_id.is_some_and(|id| self.active_forms.contains(&id))
+        {
+            return;
+        }
+        self.forms_invoked += 1;
+
+        let is_form = stream
+            .dict
+            .get(b"Subtype")
+            .and_then(Object::as_name)
+            .is_ok_and(|subtype| subtype == b"Form");
+        if !is_form {
+            return;
+        }
+
+        let Ok(form_bytes) = stream.decompressed_content_with_limit(self.stream_limit) else {
+            return;
+        };
+        let Ok(form_content) = Content::decode(&form_bytes) else {
+            return;
+        };
+
+        let saved_state = self.state.clone();
+        let saved_stack_len = self.state_stack.len();
+
+        if let Ok(Object::Array(matrix_arr)) = stream.dict.get(b"Matrix")
+            && matrix_arr.len() >= 6
+        {
+            let mut m = [0.0; 6];
+            for (i, item) in matrix_arr.iter().take(6).enumerate() {
+                m[i] = obj_to_f64(item).unwrap_or(0.0);
+            }
+            self.state.ctm = multiply_matrix(m, self.state.ctm);
+        }
+
+        let form_resources = stream
+            .dict
+            .get(b"Resources")
+            .ok()
+            .and_then(|obj| PdfParser::deref_dict(self.pdf, obj))
+            .or(resources);
+
+        // Extract any font encodings defined in the Form XObject's own /Resources/Font dictionary
+        let mut form_encodings: Option<BTreeMap<Vec<u8>, Encoding<'a>>> = None;
+        if let Some(f_res) = form_resources
+            && let Ok(font_obj) = f_res.get(b"Font")
+            && let Some(font_dict) = PdfParser::deref_dict(self.pdf, font_obj)
+        {
+            let mut map = BTreeMap::new();
+            for (font_name, font_ref) in font_dict {
+                if let Some(f_dict) = PdfParser::deref_dict(self.pdf, font_ref)
+                    && let Ok(enc) =
+                        f_dict.get_font_encoding_with_limit(self.pdf, self.stream_limit)
+                {
+                    map.insert(font_name.clone(), enc);
+                }
+            }
+            form_encodings = Some(map);
+        }
+
+        if let Some(id) = form_id {
+            self.active_forms.push(id);
+        }
+        self.walk_operations(
+            &form_content.operations,
+            form_resources,
+            form_encodings.as_ref(),
+            page_encodings,
+            depth + 1,
+        );
+        if form_id.is_some() {
+            self.active_forms.pop();
+        }
+
+        self.state_stack.truncate(saved_stack_len);
+        *self.state = saved_state;
     }
 }
 
@@ -526,6 +736,169 @@ mod tests {
             document.pages[0].content[0],
             ContentBlock::Embedded(_)
         ));
+    }
+
+    #[tokio::test]
+    async fn extracts_text_from_form_xobject() {
+        use lopdf::content::{Content, Operation};
+        use lopdf::{Object, Stream, dictionary};
+
+        let mut doc = LopdfDocument::with_version("1.5");
+        let page_tree_id = doc.new_object_id();
+        let font_id = doc.add_object(dictionary! {
+            "Type" => "Font", "Subtype" => "Type1", "BaseFont" => "Helvetica",
+        });
+        let form_content = Content {
+            operations: vec![
+                Operation::new("BT", vec![]),
+                Operation::new("Tf", vec!["F1".into(), 14.into()]),
+                Operation::new("Td", vec![10.into(), 50.into()]),
+                Operation::new(
+                    "Tj",
+                    vec![Object::string_literal("FormXObject Secret Text")],
+                ),
+                Operation::new("ET", vec![]),
+            ],
+        };
+        let form_stream = Stream::new(
+            dictionary! {
+                "Type" => "XObject",
+                "Subtype" => "Form",
+                "BBox" => vec![0.into(), 0.into(), 200.into(), 100.into()],
+                "Matrix" => vec![1.into(), 0.into(), 0.into(), 1.into(), 72.into(), 600.into()],
+                "Resources" => dictionary! {
+                    "Font" => dictionary! { "F1" => font_id },
+                },
+            },
+            form_content.encode().unwrap(),
+        );
+        let form_id = doc.add_object(form_stream);
+        let resources_id = doc.add_object(dictionary! {
+            "Font" => dictionary! { "F1" => font_id },
+            "XObject" => dictionary! { "Fm1" => form_id },
+        });
+        let page_content = Content {
+            operations: vec![
+                Operation::new("BT", vec![]),
+                Operation::new("Tf", vec!["F1".into(), 18.into()]),
+                Operation::new("Td", vec![72.into(), 720.into()]),
+                Operation::new("Tj", vec![Object::string_literal("Main Page Header")]),
+                Operation::new("ET", vec![]),
+                Operation::new("Do", vec!["Fm1".into()]),
+            ],
+        };
+        let content_id =
+            doc.add_object(Stream::new(dictionary! {}, page_content.encode().unwrap()));
+        let page_id = doc.add_object(dictionary! {
+            "Type" => "Page", "Parent" => page_tree_id, "Contents" => content_id,
+        });
+        doc.objects.insert(
+            page_tree_id,
+            Object::Dictionary(dictionary! {
+                "Type" => "Pages", "Kids" => vec![page_id.into()], "Count" => 1,
+                "Resources" => resources_id, "MediaBox" => vec![0.into(), 0.into(), 612.into(), 792.into()],
+            }),
+        );
+        let catalog_id =
+            doc.add_object(dictionary! { "Type" => "Catalog", "Pages" => page_tree_id });
+        doc.trailer.set("Root", catalog_id);
+        let mut pdf_bytes = Vec::new();
+        doc.save_to(&mut pdf_bytes).unwrap();
+
+        let parser = PdfParser::new();
+        let context = ParseContext {
+            format: Format::pdf(),
+            filename: Some("xobj.pdf".to_string()),
+            size: pdf_bytes.len(),
+            options: prism_core::parser::ParseOptions::default(),
+        };
+        let document = parser.parse(Bytes::from(pdf_bytes), context).await.unwrap();
+        let text = document.extract_text();
+        assert!(text.contains("Main Page Header"), "got {text:?}");
+        assert!(
+            text.contains("FormXObject Secret Text"),
+            "Form XObject text was not extracted: {text:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn nested_form_xobjects_cannot_multiply_the_work() {
+        use lopdf::content::{Content, Operation};
+        use lopdf::{Object, Stream, dictionary};
+
+        // Forms F0..F15, each drawing a word and invoking the next form ten times: 10^15
+        // invocations without a budget. F15 also invokes F0, which the cycle check skips.
+        let mut doc = LopdfDocument::with_version("1.5");
+        let page_tree_id = doc.new_object_id();
+        let font_id = doc.add_object(dictionary! {
+            "Type" => "Font", "Subtype" => "Type1", "BaseFont" => "Helvetica",
+        });
+        let ids: Vec<ObjectId> = (0..16).map(|_| doc.new_object_id()).collect();
+        for (i, &id) in ids.iter().enumerate() {
+            let next = ids[(i + 1) % ids.len()];
+            let mut ops = vec![
+                Operation::new("BT", vec![]),
+                Operation::new("Tf", vec!["F1".into(), 10.into()]),
+                Operation::new("Tj", vec![Object::string_literal("w")]),
+                Operation::new("ET", vec![]),
+            ];
+            ops.extend((0..10).map(|_| Operation::new("Do", vec!["Next".into()])));
+            let stream = Stream::new(
+                dictionary! {
+                    "Type" => "XObject",
+                    "Subtype" => "Form",
+                    "BBox" => vec![0.into(), 0.into(), 10.into(), 10.into()],
+                    "Resources" => dictionary! {
+                        "Font" => dictionary! { "F1" => font_id },
+                        "XObject" => dictionary! { "Next" => next },
+                    },
+                },
+                Content { operations: ops }.encode().unwrap(),
+            );
+            doc.objects.insert(id, Object::Stream(stream));
+        }
+        let resources_id = doc.add_object(dictionary! {
+            "Font" => dictionary! { "F1" => font_id },
+            "XObject" => dictionary! { "Next" => ids[0] },
+        });
+        let page_content = Content {
+            operations: vec![Operation::new("Do", vec!["Next".into()])],
+        };
+        let content_id =
+            doc.add_object(Stream::new(dictionary! {}, page_content.encode().unwrap()));
+        let page_id = doc.add_object(dictionary! {
+            "Type" => "Page", "Parent" => page_tree_id, "Contents" => content_id,
+        });
+        doc.objects.insert(
+            page_tree_id,
+            Object::Dictionary(dictionary! {
+                "Type" => "Pages", "Kids" => vec![page_id.into()], "Count" => 1,
+                "Resources" => resources_id, "MediaBox" => vec![0.into(), 0.into(), 612.into(), 792.into()],
+            }),
+        );
+        let catalog_id =
+            doc.add_object(dictionary! { "Type" => "Catalog", "Pages" => page_tree_id });
+        doc.trailer.set("Root", catalog_id);
+        let mut pdf_bytes = Vec::new();
+        doc.save_to(&mut pdf_bytes).unwrap();
+
+        let context = ParseContext {
+            format: Format::pdf(),
+            filename: Some("forms.pdf".to_string()),
+            size: pdf_bytes.len(),
+            options: prism_core::parser::ParseOptions::default(),
+        };
+        let start = std::time::Instant::now();
+        let document = PdfParser::new()
+            .parse(Bytes::from(pdf_bytes), context)
+            .await
+            .unwrap();
+        assert!(start.elapsed() < std::time::Duration::from_secs(20));
+        let words = document.extract_text().matches('w').count();
+        assert!(
+            words > 0 && words <= MAX_FORM_XOBJECT_INVOCATIONS,
+            "{words}"
+        );
     }
 
     #[tokio::test]

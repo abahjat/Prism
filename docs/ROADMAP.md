@@ -139,18 +139,39 @@ Parsers ──► Flow/fixed model ──► prism-layout ──► LayoutPage[]
       are not in place yet; the page-on-demand C ABI already opens PPTX/PPT and
       XLSX/XLS through the new engines.
 
-## Phase 4 – Review and production features, 3–6 months
+## Phase 4 – Review and production features, 3–6 months (in progress)
 
-- Hidden-content report across formats: tracked changes, comments, hidden text,
-  white or tiny text, speaker notes, hidden slides/sheets/rows, embedded
-  objects, macros present, external links.
-- Annotation and redaction API with stable page coordinates; burned-in
-  redactions on export.
-- Image/PDF productions with Bates numbering and endorsements.
-- Process-isolated parser worker pool (memory, CPU and time limits) so a
-  hostile document cannot take down the host. WASM sandboxing re-evaluated
-  after that.
-- Caching by content hash; deterministic, versioned output.
+- [ ] **Hidden-content report** (`prism-core::review`, `prism-parsers::review`). Done:
+      findings with severity, location and source references, and a per-provider coverage
+      list; providers for DOCX/DOC, PPTX/PPT, XLSX/XLS, PDF, EML/MBOX/MSG and ZIP/TAR/7z;
+      viewer findings panel; C ABI `prism_document_hidden_content`. Pending: RTF and ODF
+      providers (they report zero-width characters only); MBOX beyond the first message.
+- [ ] **Container family tree** (`prism-parsers::tree`). Done: archives, email attachments,
+      OLE object pools, OOXML embeddings and PDF embedded files, with depth, byte and member
+      budgets enforced while decompressing and SHA-256 cycle detection; C ABI
+      `prism_document_children` / `prism_document_open_child`.
+- [ ] **Annotations and redaction** (`prism-review`). Done: external sidecar with a JSON
+      schema, text anchors re-resolved across engine versions, proposed versus approved
+      redactions, destructive removal of glyphs, image pixels, cells, formulas, comments and
+      metadata, and verification of every export. Pending: cutting vector paths that only
+      partly overlap a redaction (they stay under the box); verification by redacted area, so
+      redacting one occurrence of text that also appears elsewhere does not fail the export.
+- [ ] **Productions** (`prism-production`). Done: Bates numbering with family ranges,
+      six-position endorsements, slip sheets, TIFF/PNG/PDF output, PDF/A-2b through krilla's
+      validator, Concordance/Opticon/CSV load files, and a manifest rewritten after every
+      document so interrupted runs resume. Pending: external PDF/A validation (veraPDF);
+      CSV reader support for multi-line fields; import tests against a review platform.
+- [ ] **Process isolation** (`prism-sandbox`, `prism-worker`). Done: warm worker pool over
+      a stdin/stdout protocol, per-job heap limit, wall-clock timeout, Windows Job Objects,
+      Linux `no_new_privs`, no core dumps and an address-space backstop; `prism-cli` and
+      `prism-server` run documents through it. Pending: an OS-level network block; creating
+      workers suspended so they join their Job Object before running; the C ABI still parses
+      in the host process.
+- [x] **WASM sandboxing re-evaluated**: deferred in favour of process isolation (ADR 0012).
+- [ ] **Caching and versioned output**. Done: content-addressed cache keyed by input hash,
+      engine version, options (including the filename) and artifact kind; `ENGINE_VERSION` in
+      sidecars, manifests and cache keys. Pending: `LAYOUT_ALGORITHM_VERSION` is bumped by
+      hand, and nothing checks that layout output changed only when it was bumped.
 
 ## Measuring fidelity
 

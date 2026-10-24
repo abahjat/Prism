@@ -68,6 +68,14 @@ pub struct Document {
 
     /// Embedded files/attachments
     pub attachments: Vec<Attachment>,
+
+    /// Cross-format hidden-content and forensic findings report, when computed.
+    #[serde(default)]
+    pub hidden_content: Option<crate::review::HiddenContentReport>,
+
+    /// Unified container and embedded-object family tree, when computed.
+    #[serde(default)]
+    pub family_tree: Option<crate::tree::FamilyTree>,
 }
 
 impl Document {
@@ -83,6 +91,8 @@ impl Document {
             resources: ResourceStore::default(),
             structure: DocumentStructure::default(),
             attachments: Vec::new(),
+            hidden_content: None,
+            family_tree: None,
         }
     }
 

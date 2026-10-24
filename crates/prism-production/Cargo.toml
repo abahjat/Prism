@@ -1,0 +1,32 @@
+[package]
+name = "prism-production"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+description = "Deterministic eDiscovery productions (Bates numbering, endorsements, slip sheets, TIFF/PDF/PDF-A, text, Concordance/Opticon/CSV load files, and resumable manifests)"
+keywords = ["ediscovery", "production", "bates", "concordance", "opticon"]
+categories = ["text-processing", "multimedia"]
+
+[dependencies]
+prism-core = { workspace = true }
+prism-excel = { workspace = true }
+prism-layout = { workspace = true }
+prism-parsers = { workspace = true }
+prism-ppt = { workspace = true }
+prism-render = { workspace = true }
+prism-review = { workspace = true }
+prism-word = { workspace = true }
+
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+bytes = { workspace = true }
+tiff = "0.10"
+
+[dev-dependencies]
+tempfile = { workspace = true }
