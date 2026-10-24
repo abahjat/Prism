@@ -144,9 +144,9 @@ cargo run --bin prism-server -- \
   --host 127.0.0.1 \
   --port 8080 \
   --worker-pool-size 4 \
-  --worker-memory-mb 512 \
-  --worker-timeout-ms 30000 \
-  --max-upload-mb 100
+  --max-memory-mb 512 \
+  --timeout-seconds 30 \
+  --max-file-size-mb 100
 ```
 
 | Endpoint | Method | Description |
